@@ -1,4 +1,5 @@
 const BAKIM_MODU = false;
+// Apps Script URL'si (Kendi URL'nizle güncelleyin)
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby3kd04k2u9XdVDD1-vdbQQAsHNW6WLIn8bNYxTlVCL3U1a0WqZo6oPp9zfBWIpwJEinQ/exec";
 
 // --- OYUN DEĞİŞKENLERİ ---
@@ -13,16 +14,17 @@ const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Te
 // --- GLOBAL DEĞİŞKENLER ---
 let database = [], newsData = [], sportsData = [], salesScripts = [], quizQuestions = [];
 let currentUser = "";
-let isAdminMode = false;
-let isEditingActive = false;
+let isAdminMode = false;    // YETKİ
+let isEditingActive = false;    // GÖRÜNÜM
 let sessionTimeout;
 let activeCards = [];
 let currentCategory = 'all';
 let adminUserList = [];
-let allEvaluationsData = []; 
+let allEvaluationsData = []; // Tüm kalite verisi burada tutulur
 let wizardStepsData = {};
+let qualityChartInstance = null;
 
-// --- KALİTE PUANLAMA LOGİĞİ ---
+// --- KALİTE PUANLAMA LOGİĞİ (Slider) ---
 window.updateRowScore = function(index, max) {
     const slider = document.getElementById(`slider-${index}`);
     const badge = document.getElementById(`badge-${index}`);
@@ -33,14 +35,24 @@ window.updateRowScore = function(index, max) {
     const val = parseInt(slider.value);
     badge.innerText = val;
     
+    // Görsel değişimler
     if (val < max) {
         if(noteInput) noteInput.style.display = 'block';
         badge.style.background = '#d32f2f'; // Kırmızı
-        if(row) { row.style.borderColor = '#ffcdd2'; row.style.background = '#fff5f5'; }
+        if(row) {
+            row.style.borderColor = '#ffcdd2';
+            row.style.background = '#fff5f5';
+        }
     } else {
-        if(noteInput) { noteInput.style.display = 'none'; noteInput.value = ''; }
+        if(noteInput) {
+            noteInput.style.display = 'none';
+            noteInput.value = ''; // Puan tamsa notu sil
+        }
         badge.style.background = '#2e7d32'; // Yeşil
-        if(row) { row.style.borderColor = '#eee'; row.style.background = '#fff'; }
+        if(row) {
+            row.style.borderColor = '#eee';
+            row.style.background = '#fff';
+        }
     }
     window.recalcTotalScore();
 };
@@ -51,6 +63,7 @@ window.recalcTotalScore = function() {
     const sliders = document.querySelectorAll('.slider-input');
     sliders.forEach(s => {
         currentTotal += parseInt(s.value) || 0;
+        // Max değerini slider'ın özelliğinden dinamik alıyoruz
         maxTotal += parseInt(s.getAttribute('max')) || 0;
     });
     const liveScoreEl = document.getElementById('live-score');
@@ -58,6 +71,7 @@ window.recalcTotalScore = function() {
     if(liveScoreEl) liveScoreEl.innerText = currentTotal;
     if(ringEl) {
         let color = '#2e7d32';
+        // Oran hesapla (Maksimum puana göre)
         let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
         if(ratio < 50) color = '#d32f2f';
         else if(ratio < 85) color = '#ed6c02';
@@ -72,12 +86,20 @@ function getFavs() { return JSON.parse(localStorage.getItem('sSportFavs') || '[]
 function toggleFavorite(title) {
     event.stopPropagation();
     let favs = getFavs();
-    if (favs.includes(title)) { favs = favs.filter(t => t !== title); } else { favs.push(title); }
+    if (favs.includes(title)) {
+        favs = favs.filter(t => t !== title);
+    } else {
+        favs.push(title);
+    }
     localStorage.setItem('sSportFavs', JSON.stringify(favs));
+    // Eğer favoriler sekmesindeysek anlık güncelle
     if (currentCategory === 'fav') {
         const btn = document.querySelector('.btn-fav');
         if(btn) filterCategory(btn, 'fav');
-    } else { renderCards(activeCards); }
+    } else {
+        // Kartın üzerindeki yıldızı güncellemek için render
+        renderCards(activeCards);
+    }
 }
 function isFav(title) { return getFavs().includes(title); }
 function formatDateToDDMMYYYY(dateString) {
@@ -99,9 +121,14 @@ function isNew(dateStr) {
         const cleanDate = dateStr.split(' ')[0];
         const parts = cleanDate.split('.');
         date = new Date(parts[2], parts[1] - 1, parts[0]);
-    } else { date = new Date(dateStr); }
+    } else {
+        date = new Date(dateStr);
+    }
     if (isNaN(date.getTime())) return false;
-    return Math.ceil(Math.abs(new Date() - date) / (1000 * 60 * 60 * 24)) <= 3;
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 3;
 }
 function getCategorySelectHtml(currentCategory, id) {
     let options = VALID_CATEGORIES.map(cat => `<option value="${cat}" ${cat === currentCategory ? 'selected' : ''}>${cat}</option>`).join('');
@@ -114,10 +141,11 @@ function escapeForJsString(text) {
     if (!text) return "";
     return text.toString().replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '');
 }
-
 document.addEventListener('contextmenu', event => event.preventDefault());
 document.onkeydown = function(e) { if(e.keyCode == 123) return false; }
-document.addEventListener('DOMContentLoaded', () => { checkSession(); });
+document.addEventListener('DOMContentLoaded', () => {
+    checkSession();
+});
 
 // --- SESSION & LOGIN ---
 function checkSession() {
@@ -169,7 +197,14 @@ function girisYap() {
             localStorage.setItem("sSportToken", data.token);
             localStorage.setItem("sSportRole", data.role);
             if (data.forceChange === true) {
-                changePasswordPopup(true);
+                Swal.fire({
+                    icon: 'warning',
+                    title: '  ⚠️   Güvenlik Uyarısı',
+                    text: 'İlk girişiniz. Lütfen şifrenizi değiştirin.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    confirmButtonText: 'Şifremi Değiştir'
+                }).then(() => { changePasswordPopup(true); });
             } else {
                 document.getElementById("login-screen").style.display = "none";
                 document.getElementById("user-display").innerText = currentUser;
@@ -188,6 +223,7 @@ function girisYap() {
             errorMsg.style.display = "block";
         }
     }).catch(error => {
+        console.error("Login Error:", error);
         loadingMsg.style.display = "none";
         document.querySelector('.login-btn').disabled = false;
         errorMsg.innerText = "Sunucu hatası! Lütfen sayfayı yenileyin.";
@@ -229,6 +265,65 @@ function startSessionTimer() {
         Swal.fire({ icon: 'warning', title: 'Oturum Süresi Doldu', text: 'Güvenlik nedeniyle otomatik çıkış yapıldı.', confirmButtonText: 'Tamam' }).then(() => { logout(); });
     }, 3600000);
 }
+function openUserMenu() {
+    let options = {
+        title: `Merhaba, ${currentUser}`,
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: '  🔑   Şifre Değiştir',
+        denyButtonText: '  🚪   Çıkış Yap',
+        cancelButtonText: 'İptal'
+    };
+    Swal.fire(options).then((result) => {
+        if (result.isConfirmed) changePasswordPopup();
+        else if (result.isDenied) logout();
+    });
+}
+async function changePasswordPopup(isMandatory = false) {
+    const { value: formValues } = await Swal.fire({
+        title: isMandatory ? 'Yeni Şifre Belirleyin' : 'Şifre Değiştir',
+        html: `${isMandatory ? '<p style="font-size:0.9rem; color:#d32f2f;">İlk giriş şifrenizi değiştirmeden devam edemezsiniz.</p>' : ''}<input id="swal-old-pass" type="password" class="swal2-input" placeholder="Eski Şifre (Mevcut)"><input id="swal-new-pass" type="password" class="swal2-input" placeholder="Yeni Şifre">`,
+        focusConfirm: false,
+        showCancelButton: !isMandatory,
+        allowOutsideClick: !isMandatory,
+        allowEscapeKey: !isMandatory,
+        confirmButtonText: 'Değiştir',
+        cancelButtonText: 'İptal',
+        preConfirm: () => {
+            const o = document.getElementById('swal-old-pass').value;
+            const n = document.getElementById('swal-new-pass').value;
+            if(!o || !n) { Swal.showValidationMessage('Alanlar boş bırakılamaz'); }
+            return [ o, n ]
+        }
+    });
+    if (formValues) {
+        Swal.fire({ title: 'İşleniyor...', didOpen: () => { Swal.showLoading() } });
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+                action: "changePassword",
+                username: currentUser,
+                oldPass: CryptoJS.SHA256(formValues[0]).toString(),
+                newPass: CryptoJS.SHA256(formValues[1]).toString(),
+                token: getToken()
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.result === "success") {
+                Swal.fire('Başarılı!', 'Şifreniz güncellendi. Güvenlik gereği yeniden giriş yapınız.', 'success').then(() => { logout(); });
+            } else {
+                Swal.fire('Hata', data.message || 'İşlem başarısız.', 'error').then(() => { if(isMandatory) changePasswordPopup(true); });
+            }
+        }).catch(err => {
+            Swal.fire('Hata', 'Sunucu hatası.', 'error');
+            if(isMandatory) changePasswordPopup(true);
+        });
+    } else if (isMandatory) {
+        changePasswordPopup(true);
+    }
+}
 
 // --- DATA FETCHING ---
 function loadContentData() {
@@ -243,26 +338,50 @@ function loadContentData() {
         document.getElementById('loading').style.display = 'none';
         if (data.result === "success") {
             const rawData = data.data;
-            database = rawData.filter(i => ['card','bilgi','teknik','kampanya','ikna'].includes(i.Type.toLowerCase())).map(i => ({
-                title: i.Title, category: i.Category, text: i.Text, script: i.Script, code: i.Code, link: i.Link, date: formatDateToDDMMYYYY(i.Date)
+            // Verileri Type alanına göre ayır
+            const fetchedCards = rawData.filter(i => ['card','bilgi','teknik','kampanya','ikna'].includes(i.Type.toLowerCase())).map(i => ({
+                title: i.Title,
+                category: i.Category,
+                text: i.Text,
+                script: i.Script,
+                code: i.Code,
+                link: i.Link,
+                date: formatDateToDDMMYYYY(i.Date)
             }));
-            newsData = rawData.filter(i => i.Type.toLowerCase() === 'news').map(i => ({
-                date: formatDateToDDMMYYYY(i.Date), title: i.Title, desc: i.Text, type: i.Category, status: i.Status
+            const fetchedNews = rawData.filter(i => i.Type.toLowerCase() === 'news').map(i => ({
+                date: formatDateToDDMMYYYY(i.Date),
+                title: i.Title,
+                desc: i.Text,
+                type: i.Category,
+                status: i.Status
             }));
-            sportsData = rawData.filter(i => i.Type.toLowerCase() === 'sport').map(i => ({
-                title: i.Title, icon: i.Icon, desc: i.Text, tip: i.Tip, detail: i.Detail, pronunciation: i.Pronunciation
+            const fetchedSports = rawData.filter(i => i.Type.toLowerCase() === 'sport').map(i => ({
+                title: i.Title,
+                icon: i.Icon,
+                desc: i.Text,
+                tip: i.Tip,
+                detail: i.Detail,
+                pronunciation: i.Pronunciation
             }));
-            salesScripts = rawData.filter(i => i.Type.toLowerCase() === 'sales').map(i => ({
-                title: i.Title, text: i.Text
+            const fetchedSales = rawData.filter(i => i.Type.toLowerCase() === 'sales').map(i => ({
+                title: i.Title,
+                text: i.Text
             }));
-            quizQuestions = rawData.filter(i => i.Type.toLowerCase() === 'quiz').map(i => ({
-                q: i.Text, opts: i.QuizOptions ? i.QuizOptions.split(',').map(o => o.trim()) : [], a: parseInt(i.QuizAnswer)
+            const fetchedQuiz = rawData.filter(i => i.Type.toLowerCase() === 'quiz').map(i => ({
+                q: i.Text,
+                opts: i.QuizOptions ? i.QuizOptions.split(',').map(o => o.trim()) : [],
+                a: parseInt(i.QuizAnswer)
             }));
-            activeCards = database;
+            database = fetchedCards;
+            newsData = fetchedNews;
+            sportsData = fetchedSports;
+            salesScripts = fetchedSales;
+            quizQuestions = fetchedQuiz;
             if(currentCategory === 'fav') {
                 const btn = document.querySelector('.btn-fav');
                 if(btn) filterCategory(btn, 'fav');
             } else {
+                activeCards = database;
                 renderCards(database);
             }
             startTicker();
@@ -271,6 +390,7 @@ function loadContentData() {
         }
     })
     .catch(error => {
+        console.error("Fetch Hatası:", error);
         document.getElementById('loading').innerHTML = 'Bağlantı Hatası! Sunucuya ulaşılamıyor.';
     });
 }
@@ -318,7 +438,10 @@ function renderCards(data) {
         let rawText = item.text || "";
         let formattedText = rawText.replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<b>$1</b>');
         let html = `<div class="card ${item.category}">${newBadge}
-            <div class="icon-wrapper">${editIconHtml}<i class="${favClass} fav-icon" onclick="toggleFavorite('${safeTitle}')"></i></div>
+            <div class="icon-wrapper">
+                ${editIconHtml}
+                <i class="${favClass} fav-icon" onclick="toggleFavorite('${safeTitle}')"></i>
+            </div>
             <div class="card-header"><h3 class="card-title">${highlightText(item.title)}</h3><span class="badge">${item.category}</span></div>
             <div class="card-content" onclick="showCardDetail('${safeTitle}', '${escapeForJsString(item.text)}')">
                 <div class="card-text-truncate">${highlightText(formattedText)}</div>
@@ -492,6 +615,7 @@ async function addNewCardPopup() {
             };
         },
         preConfirm: () => {
+            // Form verilerini toplama
             const type = document.getElementById('swal-type-select').value;
             const today = new Date();
             const dateStr = today.getDate() + "." + (today.getMonth()+1) + "." + today.getFullYear();
@@ -704,65 +828,28 @@ function openQualityArea() {
         selectEl.appendChild(opt);
     }
     
-    // Grup Filtresi
-    const groupSelect = document.getElementById('group-select-filter');
-    if(groupSelect) {
-        groupSelect.innerHTML = '<option value="all">Tüm Gruplar</option>';
-        groupSelect.style.display = isAdminMode ? 'block' : 'none';
-    }
-
     if (isAdminMode) {
         fetchUserListForAdmin().then(users => {
-            // Grupları doldur
-            const groups = [...new Set(users.map(u => u.group).filter(g => g))];
-            groups.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g; opt.textContent = g;
-                groupSelect.appendChild(opt);
-            });
-
-            // İlk yüklemede tüm temsilcileri listele
-            populateAgentSelect(users);
-            
-            // 3. TÜM VERİYİ ÇEK (Admin için 'all')
+            const selectEl = document.getElementById('agent-select-admin');
+            selectEl.innerHTML = `<option value="all" data-group="all">-- Tüm Temsilciler --</option>` +
+            users.map(u => `<option value="${u.name}" data-group="${u.group}">${u.name} (${u.group})</option>`).join('');
             fetchEvaluationsForAgent('all');
         });
     } else {
-        // Normal kullanıcı sadece kendi verisi
         fetchEvaluationsForAgent(currentUser);
     }
 }
 
-function populateAgentSelect(users) {
-    const selectEl = document.getElementById('agent-select-admin');
-    selectEl.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>` +
-        users.map(u => `<option value="${u.name}" data-group="${u.group}">${u.name} (${u.group})</option>`).join('');
-}
-
-function filterAgentsByGroup() {
-    const selectedGroup = document.getElementById('group-select-filter').value;
-    let filteredUsers = adminUserList;
-    
-    if (selectedGroup !== 'all') {
-        filteredUsers = adminUserList.filter(u => u.group === selectedGroup);
-    }
-    
-    populateAgentSelect(filteredUsers);
-    // Grup değişince otomatik olarak UI güncelle (API'den 'all' çekildiği varsayımıyla)
-    updateDashboardUI();
-}
-
 function fetchEvaluationsForAgent(forcedName) {
     const listEl = document.getElementById('evaluations-list-dashboard');
-    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Veriler yükleniyor...</div>';
+    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Veriler analiz ediliyor...</div>';
     
-    // Admin ise HER ZAMAN 'all' çekiyoruz
-    let targetRequest = isAdminMode ? 'all' : currentUser;
+    let target = forcedName || (isAdminMode ? document.getElementById('agent-select-admin').value : currentUser);
     
     fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "fetchEvaluations", targetAgent: targetRequest, username: currentUser, token: getToken() })
+        body: JSON.stringify({ action: "fetchEvaluations", targetAgent: target, username: currentUser, token: getToken() })
     }).then(r => r.json()).then(data => {
         if (data.result === "success") {
             allEvaluationsData = data.evaluations;
@@ -771,185 +858,124 @@ function fetchEvaluationsForAgent(forcedName) {
             listEl.innerHTML = '<div style="text-align:center; color:red;">Veri alınamadı.</div>';
         }
     }).catch(err => {
-        listEl.innerHTML = '<div style="text-align:center; color:red;">Bağlantı hatası.</div>';
+        listEl.innerHTML = '<div style="text-align:center; color:red;">Sunucu hatası.</div>';
     });
 }
 
 function updateDashboardUI() {
     const monthFilter = document.getElementById('month-select-filter').value;
-    const selectedGroup = isAdminMode ? document.getElementById('group-select-filter').value : null;
-    const selectedAgent = isAdminMode ? document.getElementById('agent-select-admin').value : currentUser;
-    
-    // 1. ADIM: Önce AY'a ve GRUBA göre filtrele (Sıralama Tablosu için)
-    // Bu veri seti, o gruptaki HERKESİ içermeli.
-    const groupData = allEvaluationsData.filter(item => {
+    const filtered = allEvaluationsData.filter(item => {
         if(!item.date) return false;
         const parts = item.date.split('.'); 
-        const isMonthMatch = (parts.length >= 3 && `${parts[1]}.${parts[2]}` === monthFilter);
-        if (!isMonthMatch) return false;
-
-        // Grup Kontrolü
-        if (isAdminMode && selectedGroup && selectedGroup !== 'all') {
-            let itemGroup = item.group;
-            // Veride grup yoksa listeden bul
-            if (!itemGroup && adminUserList.length > 0) {
-                const u = adminUserList.find(u => u.name === (item.agent || item.agentName));
-                if(u) itemGroup = u.group;
-            }
-            return itemGroup === selectedGroup;
-        }
-        return true;
+        return (parts.length >= 3 && `${parts[1]}.${parts[2]}` === monthFilter);
     });
 
-    // 2. ADIM: Sıralama Tablosunu Oluştur (groupData kullanarak)
-    updateRankingTable(groupData, selectedAgent);
-
-    // 3. ADIM: Şimdi SEÇİLİ TEMSİLCİYE göre filtrele (Sol Liste ve Kartlar için)
-    let displayedData = groupData;
-    if (selectedAgent && selectedAgent !== 'all') {
-        displayedData = groupData.filter(item => (item.agent === selectedAgent || item.agentName === selectedAgent));
-    }
-
-    // 4. ADIM: Kartları ve Sol Listeyi Güncelle
-    updateKPIsAndList(displayedData, displayedData.length);
-}
-
-function updateRankingTable(data, activeAgentName) {
-    const rankBody = document.getElementById('group-ranking-body');
-    rankBody.innerHTML = '';
-    const groupNameEl = document.getElementById('ranking-group-name');
-    
-    if (isAdminMode) {
-        const grp = document.getElementById('group-select-filter').value;
-        groupNameEl.innerText = grp === 'all' ? '(Tümü)' : `(${grp})`;
-    } else {
-        // Normal kullanıcı için kendi grubunu bul
-        const myRec = data.find(d => d.agent === currentUser || d.agentName === currentUser);
-        groupNameEl.innerText = myRec ? `(${myRec.group})` : '';
-    }
-
-    if (data.length === 0) {
-        rankBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#999;">Veri yok.</td></tr>';
-        return;
-    }
-
-    // Kişi bazlı grupla
-    let stats = {};
-    data.forEach(d => {
-        let name = d.agent || d.agentName;
-        if (!stats[name]) stats[name] = { total: 0, count: 0 };
-        stats[name].total += (parseInt(d.score) || 0);
-        stats[name].count++;
-    });
-
-    // Ortalamaya göre sırala
-    let ranking = Object.keys(stats).map(key => ({
-        name: key,
-        avg: (stats[key].total / stats[key].count).toFixed(1)
-    })).sort((a, b) => b.avg - a.avg);
-
-    // Tabloyu yaz
-    ranking.forEach((r, idx) => {
-        let icon = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx+1}`));
-        let style = (r.name === activeAgentName) ? 'background-color:#fff9c4; font-weight:bold;' : '';
-        
-        rankBody.innerHTML += `
-            <tr style="border-bottom:1px solid #eee; ${style}">
-                <td style="padding:8px;">${icon}</td>
-                <td style="padding:8px;">${r.name}</td>
-                <td style="padding:8px; text-align:right;">${r.avg}</td>
-            </tr>
-        `;
-    });
-}
-
-function updateKPIsAndList(data, totalCount) {
     // İstatistikler
-    let totalScore = 0;
-    let scores = data.map(i => parseInt(i.score) || 0);
-    if (totalCount > 0) totalScore = scores.reduce((a, b) => a + b, 0);
-
-    const avg = totalCount > 0 ? (totalScore / totalCount).toFixed(1) : 0;
-    const targetRate = totalCount > 0 ? ((scores.filter(s => s >= 90).length / totalCount) * 100).toFixed(0) : 0;
+    let totalScore = 0, count = filtered.length;
+    let scores = filtered.map(i => parseInt(i.score)||0);
+    if (count > 0) totalScore = scores.reduce((a,b)=>a+b, 0);
+    
+    const avg = count > 0 ? (totalScore/count).toFixed(1) : 0;
+    const targetRate = count > 0 ? ((scores.filter(s=>s>=90).length/count)*100).toFixed(0) : 0;
 
     document.getElementById('dash-total-score').innerText = avg;
-    document.getElementById('dash-total-score').style.color = avg >= 90 ? 'var(--success)' : (avg >= 80 ? 'var(--warning)' : 'var(--accent)');
-    document.getElementById('dash-total-count').innerText = totalCount;
+    document.getElementById('dash-total-score').style.color = avg>=90 ? 'var(--success)' : (avg>=80 ? 'var(--warning)' : 'var(--accent)');
+    
+    document.getElementById('dash-total-count').innerText = count;
     document.getElementById('dash-target-rate').innerText = `%${targetRate}`;
 
-    // Sol Liste (Detaylı)
+    // LİSTELEME VE GRUP SIRALAMASI
     const listEl = document.getElementById('evaluations-list-dashboard');
     listEl.innerHTML = '';
+    
+    const rankBody = document.getElementById('group-ranking-body');
+    rankBody.innerHTML = '';
 
-    if (totalCount === 0) {
-        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ccc;">Kayıt bulunamadı.</div>';
+    // SOL TARAF: ÇAĞRI LİSTESİ (FULL LİSTE)
+    if(count === 0) {
+        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ccc;">Bu dönem kayıt yok.</div>';
     } else {
-        // Yeniden eskiye
-        data.slice().reverse().forEach(item => {
+        const sortedList = filtered.slice().reverse();
+        sortedList.forEach(item => {
             let badgeClass = item.score >= 90 ? 'score-green' : (item.score >= 70 ? 'score-yellow' : 'score-red');
-            let agentName = item.agent || item.agentName;
-            let callDate = item.callDate || item.date; 
-
             let html = `
-                <div class="dash-list-item" onclick="showEvaluationDetail('${item.callId}')">
-                    <div style="display:flex; align-items:center; gap:10px; width:50%;">
-                        <div style="width:35px; height:35px; background:#f1f5f9; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#64748b; font-weight:bold;">
-                            ${agentName.charAt(0)}
-                        </div>
-                        <div>
-                            <div style="font-weight:bold; color:#334155; font-size:0.9rem;">${agentName}</div>
-                            <div style="font-size:0.75rem; color:#94a3b8;">ID: ${item.callId || '-'}</div>
-                        </div>
+                <div class="dash-list-item" onclick="showEvaluationDetail('${item.callId}')" style="cursor:pointer;">
+                    <div>
+                        <div style="font-weight:bold; color:#333;">${item.callId || 'ID Yok'}</div>
+                        <div style="font-size:0.75rem; color:#999;">${item.date}</div>
                     </div>
-                    <div style="font-size:0.8rem; color:#64748b;">${callDate}</div>
                     <div>
                         <span class="dash-score-badge ${badgeClass}">${item.score}</span>
+                        <i class="fas fa-chevron-right" style="font-size:0.8rem; color:#ccc; margin-left:10px;"></i>
                     </div>
                 </div>`;
             listEl.innerHTML += html;
         });
     }
+
+    // SAĞ TARAF: GRUP SIRALAMASI
+    let rankingTargetGroup = ""; 
+    if(isAdminMode) {
+        const sel = document.getElementById('agent-select-admin');
+        const opt = sel.options[sel.selectedIndex];
+        if(opt) rankingTargetGroup = opt.getAttribute('data-group');
+    } else {
+        const myData = allEvaluationsData.find(d => d.agent === currentUser || d.agentName === currentUser);
+        if(myData) rankingTargetGroup = myData.group; 
+    }
     
-    // Grafik Varsa Güncelle (Grafik kütüphanesi ekliyse)
-    const ctx = document.getElementById('qualityChart');
-    if(ctx) {
-        const chartCtx = ctx.getContext('2d');
-        if(qualityChartInstance) qualityChartInstance.destroy();
-        
-        // Grafiği soldan sağa çizmek için tarih sıralaması
-        const sortedForChart = data.slice().sort((a,b) => {
-            let da = a.date.split('.').reverse().join('');
-            let db = b.date.split('.').reverse().join('');
-            return da.localeCompare(db);
-        });
-        
-        qualityChartInstance = new Chart(chartCtx, {
-            type: 'line',
-            data: {
-                labels: sortedForChart.map(d => d.date.split('.').slice(0,2).join('/')),
-                datasets: [{
-                    label: 'Kalite Puanı',
-                    data: sortedForChart.map(d => d.score),
-                    borderColor: '#3B82F6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 2,
-                    tension: 0.3,
-                    fill: true,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#3B82F6'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: {display:false} },
-                scales: { y: { min:0, max:100, grid:{color:'#f0f0f0'} }, x: { grid:{display:false} } }
+    document.getElementById('ranking-group-name').innerText = rankingTargetGroup ? `(${rankingTargetGroup})` : '';
+
+    if(!rankingTargetGroup) {
+        rankBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px; color:#999;">Grup bilgisi yok.</td></tr>';
+    } else {
+        const groupData = allEvaluationsData.filter(item => {
+            if(!item.date) return false;
+            const parts = item.date.split('.');
+            const isMonth = (parts.length >= 3 && `${parts[1]}.${parts[2]}` === monthFilter);
+            let itemGroup = item.group; 
+            if(!itemGroup && adminUserList.length > 0) {
+                const u = adminUserList.find(u => u.name === (item.agent || item.agentName));
+                if(u) itemGroup = u.group;
             }
+            return isMonth && itemGroup === rankingTargetGroup;
         });
+
+        let agentStats = {};
+        groupData.forEach(d => {
+            let name = d.agent || d.agentName;
+            if(!agentStats[name]) agentStats[name] = { total: 0, count: 0 };
+            agentStats[name].total += (parseInt(d.score)||0);
+            agentStats[name].count++;
+        });
+
+        let ranking = Object.keys(agentStats).map(name => {
+            return {
+                name: name,
+                avg: (agentStats[name].total / agentStats[name].count).toFixed(1),
+                count: agentStats[name].count
+            };
+        }).sort((a,b) => b.avg - a.avg);
+
+        if(ranking.length === 0) {
+            rankBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px; color:#999;">Veri yok.</td></tr>';
+        } else {
+            ranking.forEach((r, idx) => {
+                let rankIcon = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx+1}`));
+                let highlight = (r.name === (isAdminMode ? document.getElementById('agent-select-admin').value : currentUser)) ? 'background:#fff8e1;' : '';
+                
+                rankBody.innerHTML += `
+                <tr style="border-bottom:1px solid #eee; ${highlight}">
+                    <td style="padding:8px; font-weight:bold;">${rankIcon}</td>
+                    <td style="padding:8px; font-size:0.8rem;">${r.name}</td>
+                    <td style="padding:8px; text-align:right; font-weight:bold;">${r.avg}</td>
+                </tr>`;
+            });
+        }
     }
 }
 
-// --- GÜZELLEŞTİRİLMİŞ DETAY POPUP ---
+// YENİ: Detay Görüntüleme Fonksiyonu
 function showEvaluationDetail(callId) {
     const item = allEvaluationsData.find(i => i.callId == callId);
     if (!item) return;
@@ -957,175 +983,66 @@ function showEvaluationDetail(callId) {
     let detailHtml = '';
     try {
         const details = JSON.parse(item.details);
-        detailHtml = '<div style="margin-top:10px; border-top:1px solid #eee;">';
+        detailHtml = '<table style="width:100%; text-align:left; font-size:0.9rem; border-collapse:collapse;">';
         details.forEach(d => {
-            let scoreColor = d.score < d.max ? '#dc2626' : '#16a34a'; 
-            let noteHtml = d.note ? `<div style="font-size:0.75rem; color:#dc2626; margin-top:2px; font-style:italic;">⚠️ ${d.note}</div>` : '';
-            detailHtml += `
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:10px 0; border-bottom:1px solid #f1f5f9;">
-                    <div style="width:85%; font-size:0.9rem; color:#334155;">
-                        ${d.q}
-                        ${noteHtml}
-                    </div>
-                    <div style="font-weight:800; font-size:0.95rem; color:${scoreColor}; white-space:nowrap;">
-                        ${d.score} / ${d.max}
-                    </div>
-                </div>
-            `;
+            let color = d.score < d.max ? 'color:red;' : 'color:green;';
+            detailHtml += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:8px;">${d.q} <br><small style="color:#999;">${d.note || ''}</small></td>
+                <td style="padding:8px; font-weight:bold; ${color}">${d.score}/${d.max}</td>
+            </tr>`;
         });
-        detailHtml += '</div>';
+        detailHtml += '</table>';
     } catch(e) {
         detailHtml = `<p>${item.details}</p>`;
     }
 
-    let editBtn = isAdminMode ? `<button onclick="editEvaluation('${item.callId}')" class="swal2-confirm swal2-styled" style="background-color:#0e1b42; margin-top:10px;">Düzenle</button>` : '';
+    let editBtn = isAdminMode ? `<button onclick="editEvaluation('${item.callId}')" style="margin-top:15px; padding:10px; width:100%; background:#0e1b42; color:white; border:none; border-radius:5px; cursor:pointer;"><i class="fas fa-edit"></i> Düzenle</button>` : '';
 
     Swal.fire({
-        title: `<strong>Detaylar (ID: ${item.callId})</strong>`,
+        title: `Detaylar (ID: ${item.callId})`,
         html: `
             <div style="text-align:left;">
-                <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:10px; border-radius:8px; margin-bottom:10px;">
-                    <div>
-                        <span style="font-size:0.8rem; color:#64748b; display:block;">Değerlendirme Tarihi</span>
-                        <strong style="color:#0f172a;">${item.date}</strong>
-                    </div>
-                    <div>
-                        <span style="font-size:0.8rem; color:#64748b; display:block;">Çağrı Tarihi</span>
-                        <strong style="color:#0f172a;">${item.callDate || '-'}</strong>
-                    </div>
-                    <div style="text-align:right;">
-                        <span style="font-size:1.5rem; font-weight:900; color:${item.score>=90?'#16a34a':(item.score>=70?'#ca8a04':'#dc2626')}">${item.score} Puan</span>
-                    </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+                    <span><strong>Tarih:</strong> ${item.date}</span>
+                    <span style="font-size:1.2rem; font-weight:bold; color:${item.score>=90?'green':'red'}">${item.score} Puan</span>
                 </div>
                 ${detailHtml}
-                <div style="margin-top:15px; background:#eff6ff; padding:12px; border-radius:8px; border-left:4px solid #3b82f6;">
-                    <strong style="color:#1e40af; font-size:0.85rem;">Geri Bildirim:</strong>
-                    <p style="margin:5px 0 0 0; font-size:0.9rem; color:#334155;">${item.feedback || 'Geri bildirim girilmemiş.'}</p>
+                <div style="margin-top:15px; background:#f9f9f9; padding:10px; border-radius:5px;">
+                    <strong>Geri Bildirim:</strong><br>${item.feedback || '-'}
                 </div>
-                <div style="text-align:right; margin-top:10px;">${editBtn}</div>
+                ${editBtn}
             </div>
         `,
-        width: '700px',
         showConfirmButton: false,
         showCloseButton: true
     });
 }
 
-// --- CRUD Ekleme/Düzenleme ---
-async function addNewCardPopup() {
-    const catSelectHTML = getCategorySelectHtml('Bilgi', 'swal-new-cat');
-    const { value: formValues } = await Swal.fire({
-        title: 'Yeni İçerik Ekle',
-        html: `
-        <div style="margin-bottom:15px; text-align:left;">
-        <label style="font-weight:bold; font-size:0.9rem;">Ne Ekleyeceksin?</label>
-        <select id="swal-type-select" class="swal2-input" style="width:100%; margin-top:5px; height:35px; font-size:0.9rem;" onchange="toggleAddFields()">
-        <option value="card">📌 Bilgi Kartı</option>
-        <option value="news">📢 Duyuru</option>
-        <option value="sales">📞 Telesatış Scripti</option>
-        <option value="sport">🏆 Spor İçeriği</option>
-        <option value="quiz">❓ Quiz Sorusu</option>
-        </select>
-        </div>
-        <div id="preview-card" class="card Bilgi" style="text-align:left; box-shadow:none; border:1px solid #e0e0e0; margin-top:10px;">
-        <div class="card-header" style="align-items: center; gap: 10px;">
-        <input id="swal-new-title" class="swal2-input" style="margin:0; height:40px; flex-grow:1; border:none; border-bottom:2px solid #eee; padding:0 5px; font-weight:bold; color:#0e1b42;" placeholder="Başlık Giriniz...">
-        <div id="cat-container" style="width: 110px;">${catSelectHTML}</div>
-        </div>
-        <div class="card-content" style="margin-bottom:10px;">
-        <textarea id="swal-new-text" class="swal2-textarea" style="margin:0; width:100%; box-sizing:border-box; border:none; resize:none; font-family:inherit; min-height:100px; padding:10px; background:#f9f9f9;" placeholder="İçerik metni..."></textarea>
-        </div>
-        <div id="script-container" class="script-box" style="padding:0; border:1px solid #f0e68c;">
-        <textarea id="swal-new-script" class="swal2-textarea" style="margin:0; width:100%; box-sizing:border-box; border:none; background:transparent; font-style:italic; min-height:80px; font-size:0.9rem;" placeholder="Script metni (İsteğe bağlı)..."></textarea>
-        </div>
-        <div id="extra-container" class="card-actions" style="margin-top:15px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-        <div style="position:relative;"><i class="fas fa-code" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-new-code" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" placeholder="Kod"></div>
-        <div style="position:relative;"><i class="fas fa-link" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-new-link" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" placeholder="Link"></div>
-        </div>
-        <div id="sport-extra" style="display:none; padding:10px;">
-        <label style="font-weight:bold;">Kısa Açıklama (Desc)</label><input id="swal-sport-tip" class="swal2-input" placeholder="Kısa İpucu/Tip">
-        <label style="font-weight:bold;">Detaylı Metin (Detail)</label><input id="swal-sport-detail" class="swal2-input" placeholder="Detaylı Açıklama (Alt Metin)">
-        <label style="font-weight:bold;">Okunuşu (Pronunciation)</label><input id="swal-sport-pron" class="swal2-input" placeholder="Okunuşu">
-        <label style="font-weight:bold;">İkon Sınıfı (Icon)</label><input id="swal-sport-icon" class="swal2-input" placeholder="FontAwesome İkon Sınıfı">
-        </div>
-        <div id="news-extra" style="display:none; padding:10px;">
-        <label style="font-weight:bold;">Duyuru Tipi</label><select id="swal-news-type" class="swal2-input"><option value="info">Bilgi</option><option value="update">Değişiklik</option><option value="fix">Çözüldü</option></select>
-        <label style="font-weight:bold;">Durum</label><select id="swal-news-status" class="swal2-input"><option value="Aktif">Aktif</option><option value="Pasif">Pasif (Gizle)</option></select>
-        </div>
-        <div id="quiz-extra" style="display:none; padding:10px;">
-        <label style="font-weight:bold;">Soru Metni (Text)</label><textarea id="swal-quiz-q" class="swal2-textarea" placeholder="Quiz sorusu..."></textarea>
-        <label style="font-weight:bold;">Seçenekler (Virgülle Ayırın)</label><input id="swal-quiz-opts" class="swal2-input" placeholder="Örn: şık A,şık B,şık C,şık D">
-        <label style="font-weight:bold;">Doğru Cevap İndeksi</label><input id="swal-quiz-ans" type="number" class="swal2-input" placeholder="0-3 arası rakam" min="0" max="3">
-        </div>
-        </div>`,
-        width: '700px',
-        showCancelButton: true,
-        confirmButtonText: '<i class="fas fa-plus"></i> Ekle',
-        cancelButtonText: 'İptal',
-        focusConfirm: false,
-        didOpen: () => {
-            const selectEl = document.getElementById('swal-new-cat');
-            const cardEl = document.getElementById('preview-card');
-            if(selectEl) {
-                selectEl.style.margin = "0"; selectEl.style.height = "30px"; selectEl.style.fontSize = "0.8rem"; selectEl.style.padding = "0 5px";
-                selectEl.addEventListener('change', function() { cardEl.className = 'card ' + this.value; });
-            }
-            window.toggleAddFields = function() {
-                const type = document.getElementById('swal-type-select').value;
-                document.getElementById('cat-container').style.display = type === 'card' ? 'block' : 'none';
-                document.getElementById('script-container').style.display = (type === 'card' || type === 'sales') ? 'block' : 'none';
-                document.getElementById('extra-container').style.display = type === 'card' ? 'grid' : 'none';
-                document.getElementById('sport-extra').style.display = type === 'sport' ? 'block' : 'none';
-                document.getElementById('news-extra').style.display = type === 'news' ? 'block' : 'none';
-                document.getElementById('quiz-extra').style.display = type === 'quiz' ? 'block' : 'none';
-            };
-        },
-        preConfirm: () => {
-            // Form verilerini toplama
-            const type = document.getElementById('swal-type-select').value;
-            const today = new Date();
-            const dateStr = today.getDate() + "." + (today.getMonth()+1) + "." + today.getFullYear();
-            return {
-                cardType: type,
-                category: type === 'card' ? document.getElementById('swal-new-cat').value : (type === 'news' ? document.getElementById('swal-news-type').value : ''),
-                title: document.getElementById('swal-new-title').value,
-                text: type === 'quiz' ? document.getElementById('swal-quiz-q').value : document.getElementById('swal-new-text').value,
-                script: (type === 'card' || type === 'sales') ? document.getElementById('swal-new-script').value : '',
-                code: type === 'card' ? document.getElementById('swal-new-code').value : '',
-                status: type === 'news' ? document.getElementById('swal-news-status').value : '',
-                link: type === 'card' ? document.getElementById('swal-new-link').value : '',
-                tip: type === 'sport' ? document.getElementById('swal-sport-tip').value : '',
-                detail: type === 'sport' ? document.getElementById('swal-sport-detail').value : '',
-                pronunciation: type === 'sport' ? document.getElementById('swal-sport-pron').value : '',
-                icon: type === 'sport' ? document.getElementById('swal-sport-icon').value : '',
-                date: dateStr,
-                quizOptions: type === 'quiz' ? document.getElementById('swal-quiz-opts').value : '',
-                quizAnswer: type === 'quiz' ? document.getElementById('swal-quiz-ans').value : ''
-            };
-        }
-    });
-    
-    if (formValues) {
-        if(!formValues.title) { Swal.fire('Hata', 'Başlık zorunlu!', 'error'); return; }
-        Swal.fire({ title: 'Ekleniyor...', didOpen: () => { Swal.showLoading() } });
+function fetchUserListForAdmin() {
+    return new Promise((resolve) => {
         fetch(SCRIPT_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: "addCard", username: currentUser, token: getToken(), ...formValues })
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "getUserList", username: currentUser, token: getToken() })
         }).then(r => r.json()).then(data => {
             if (data.result === "success") {
-                Swal.fire({icon: 'success', title: 'Başarılı', timer: 1500, showConfirmButton: false});
-                setTimeout(loadContentData, 1600);
-            } else { Swal.fire('Hata', data.message || 'Eklenemedi.', 'error'); }
-        });
-    }
+                const filteredUsers = data.users.filter(u => u.group !== 'Yönetim');
+                adminUserList = filteredUsers;
+                resolve(filteredUsers);
+            } else resolve([]);
+        }).catch(() => resolve([]));
+    });
 }
 
-// --- Diğer Edit Fonksiyonları (Hatasız çalışması için) ---
-async function editContent(i) { /* ... Kart düzenleme (Orijinaldeki gibi) ... */ }
-async function editSport(t) { /* ... Spor düzenleme ... */ }
-async function editSales(t) { /* ... Sales düzenleme ... */ }
-async function editNews(i) { /* ... News düzenleme ... */ }
+function fetchCriteria(groupName) {
+    return new Promise((resolve) => {
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "getCriteria", group: groupName, username: currentUser, token: getToken() })
+        }).then(r => r.json()).then(data => resolve(data.result==="success" ? data.criteria : [])).catch(() => resolve([]));
+    });
+}
 
 // --- LOG EVALUATION & EDIT ---
 async function logEvaluationPopup() {
@@ -1690,147 +1607,4 @@ function changePasswordPopup(force) {
             });
         }
     });
-}
-
-/* --- YENİ EKLENEN DASHBOARD CSS --- */
-
-.dash-grid-container {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin-top: 20px;
-}
-
-.dash-card {
-    background: #fff;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    border: 1px solid #f0f0f0;
-    transition: transform 0.2s;
-    position: relative;
-    overflow: hidden;
-}
-.dash-card:hover { transform: translateY(-2px); }
-
-.dash-card-icon {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    opacity: 0.2;
-}
-
-.dash-card-title { font-size: 0.75rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-.dash-card-value { font-size: 2.5rem; font-weight: 800; color: #0e1b42; margin-top: 5px; }
-.dash-card-sub { font-size: 0.8rem; color: #94a3b8; margin-top: 5px; }
-
-.dash-main-area {
-    grid-column: span 3;
-    display: grid;
-    grid-template-columns: 2fr 1fr; /* Sol geniş, Sağ dar */
-    gap: 20px;
-    height: 500px; /* Sabit yükseklik */
-}
-
-/* Ortak Kutu Stili */
-.dash-chart-box, .dash-list-box {
-    background: white;
-    border-radius: 12px;
-    border: 1px solid #f0f0f0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    height: 100%;
-}
-
-.dash-list-header {
-    padding: 15px;
-    border-bottom: 1px solid #f1f5f9;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 700;
-    color: #0f172a;
-    background: #fff;
-}
-
-.dash-list-content {
-    overflow-y: auto;
-    flex-grow: 1;
-    padding: 10px;
-    background: #f8fafc;
-}
-
-/* Liste Elemanları */
-.dash-list-item {
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 12px 15px;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-}
-
-.dash-list-item:hover {
-    border-color: #cbd5e1;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    transform: translateX(2px);
-}
-
-.dash-score-badge {
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-weight: 800;
-    font-size: 0.9rem;
-    min-width: 40px;
-    text-align: center;
-}
-
-.score-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-.score-yellow { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
-.score-red { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-
-/* Sağdaki Grup Sıralaması Tablosu İçin Stil */
-.ranking-table { 
-    width: 100%; 
-    border-collapse: collapse; 
-    font-size: 0.85rem; 
-}
-.ranking-table th, .ranking-table td { 
-    padding: 10px; 
-    text-align: left; 
-    border-bottom: 1px solid #f1f5f9; 
-}
-.ranking-table th { 
-    font-weight: 600; 
-    color: #64748b; 
-    background: #f8fafc; 
-    position: sticky; 
-    top: 0; 
-    z-index: 1; 
-}
-.ranking-table td:last-child { 
-    text-align: right; 
-    font-weight: bold; 
-}
-.ranking-table tr:last-child td { 
-    border-bottom: none; 
-}
-
-@media (max-width: 900px) {
-    .dash-grid-container { grid-template-columns: 1fr; }
-    .dash-main-area { grid-template-columns: 1fr; height: auto; }
-    .dash-chart-box, .dash-list-box { height: 400px; margin-bottom: 20px; }
 }
