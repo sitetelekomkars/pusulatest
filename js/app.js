@@ -904,7 +904,7 @@ function startTicker() {
     }).join(' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ');
 
     t.innerHTML = tickerText + ' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ' + tickerText + ' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ' + tickerText;
-    t.style.animation = 'ticker-scroll 90s linear infinite';
+    t.style.animation = 'ticker-scroll 150s linear infinite';
 }
 
 function openNews() {
