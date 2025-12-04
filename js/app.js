@@ -268,7 +268,7 @@ function startSessionTimer() {
     if (sessionTimeout) clearTimeout(sessionTimeout);
     sessionTimeout = setTimeout(() => {
         Swal.fire({ icon: 'warning', title: 'Oturum Süresi Doldu', text: 'Güvenlik nedeniyle otomatik çıkış yapıldı.', confirmButtonText: 'Tamam' }).then(() => { logout(); });
-    }, 3600000);
+    },  28800000);
 }
 function openUserMenu() {
     let options = {
@@ -1434,8 +1434,8 @@ async function logEvaluationPopup() {
             const feedback = document.getElementById('eval-feedback').value;
             const feedbackType = document.getElementById('feedback-type').value; 
             
-            if (!callId || !callDateRaw || !feedback) {
-                Swal.showValidationMessage('Lütfen Çağrı ID, Tarih ve Genel Geri Bildirim alanlarını doldurun.');
+            if (!callId || !callDateRaw ) {
+                Swal.showValidationMessage('Lütfen Çağrı ID, Tarih  alanlarını doldurun.');
                 return false;
             }
             
