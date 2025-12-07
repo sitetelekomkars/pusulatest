@@ -7,7 +7,6 @@ let firstAnswerIndex = -1;
 const VALID_CATEGORIES = ['Teknik', 'İkna', 'Kampanya', 'Bilgi'];
 // --- GLOBAL DEĞİŞKENLER ---
 let database = [], newsData = [], sportsData = [], salesScripts = [], quizQuestions = [];
-let techWizardData = {}; // Teknik Sihirbaz Verisi
 let currentUser = "";
 let isAdminMode = false;    
 let isEditingActive = false;
@@ -18,7 +17,6 @@ let adminUserList = [];
 let allEvaluationsData = [];
 let wizardStepsData = {};
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
-
 // --- KALİTE PUANLAMA LOGİĞİ ---
 window.updateRowScore = function(index, max) {
     const slider = document.getElementById(`slider-${index}`);
@@ -41,30 +39,29 @@ window.updateRowScore = function(index, max) {
         row.style.borderColor = '#eee';
         row.style.background = '#fff';
     }
+    window.recalcTotalScore = function() {
+        let currentTotal = 0;
+        let maxTotal = 0;
+        const sliders = document.querySelectorAll('.slider-input');
+        sliders.forEach(s => {
+            currentTotal += parseInt(s.value) || 0;
+            maxTotal += parseInt(s.getAttribute('max')) || 0;
+        });
+        const liveScoreEl = document.getElementById('live-score');
+        const ringEl = document.getElementById('score-ring');
+        
+        if(liveScoreEl) liveScoreEl.innerText = currentTotal;
+        
+        if(ringEl) {
+            let color = '#2e7d32';
+            let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
+            if(ratio < 50) color = '#d32f2f';
+            else if(ratio < 85) color = '#ed6c02';
+            else if(ratio < 95) color = '#fabb00';
+            ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
+        }
+    };
     window.recalcTotalScore();
-};
-
-window.recalcTotalScore = function() {
-    let currentTotal = 0;
-    let maxTotal = 0;
-    const sliders = document.querySelectorAll('.slider-input');
-    sliders.forEach(s => {
-        currentTotal += parseInt(s.value) || 0;
-        maxTotal += parseInt(s.getAttribute('max')) || 0;
-    });
-    const liveScoreEl = document.getElementById('live-score');
-    const ringEl = document.getElementById('score-ring');
-    
-    if(liveScoreEl) liveScoreEl.innerText = currentTotal;
-    
-    if(ringEl) {
-        let color = '#2e7d32';
-        let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
-        if(ratio < 50) color = '#d32f2f';
-        else if(ratio < 85) color = '#ed6c02';
-        else if(ratio < 95) color = '#fabb00';
-        ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
-    }
 };
 
 // --- YARDIMCI FONKSİYONLAR ---
@@ -125,22 +122,11 @@ function escapeForJsString(text) {
     if (!text) return "";
     return text.toString().replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '');
 }
-// YENİ GÜVENLİ KOPYALAMA FONKSİYONU (Sihirbaz İçin)
-function copyScriptContent(encodedText) {
-    const text = decodeURIComponent(encodedText);
-    copyText(text);
-}
-function copyText(t) {
-    navigator.clipboard.writeText(t.replace(/\\n/g, '\n')).then(() => 
-        Swal.fire({icon:'success', title:'Kopyalandı', toast:true, position:'top-end', showConfirmButton:false, timer:1500}) );
-}
-
 document.addEventListener('contextmenu', event => event.preventDefault());
 document.onkeydown = function(e) { if(e.keyCode == 123) return false; }
 document.addEventListener('DOMContentLoaded', () => {
     checkSession();
 });
-
 // --- SESSION & LOGIN ---
 function checkSession() {
     const savedUser = localStorage.getItem("sSportUser");
@@ -158,7 +144,6 @@ function checkSession() {
             document.getElementById("main-app").style.display = "block";
             loadContentData();
             loadWizardData();
-            loadTechWizardData(); // YENİ: Otomatik yükle
         }
     }
 }
@@ -212,7 +197,6 @@ function girisYap() {
                     document.getElementById("main-app").style.display = "block";
                     loadContentData();
                     loadWizardData();
-                    loadTechWizardData(); // YENİ: Yükle
                 }
             }
         } else {
@@ -268,7 +252,7 @@ function startSessionTimer() {
     if (sessionTimeout) clearTimeout(sessionTimeout);
     sessionTimeout = setTimeout(() => {
         Swal.fire({ icon: 'warning', title: 'Oturum Süresi Doldu', text: 'Güvenlik nedeniyle otomatik çıkış yapıldı.', confirmButtonText: 'Tamam' }).then(() => { logout(); });
-    },  28800000);
+    }, 3600000);
 }
 function openUserMenu() {
     let options = {
@@ -419,27 +403,6 @@ function loadWizardData() {
         });
     });
 }
-function loadTechWizardData() {
-    return new Promise((resolve, reject) => {
-        fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "getTechWizardData" })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.result === "success" && data.steps) {
-                techWizardData = data.steps;
-                resolve();
-            } else {
-                techWizardData = {};
-            }
-        })
-        .catch(error => {
-            techWizardData = {};
-        });
-    });
-}
 // --- RENDER & FILTERING ---
 function renderCards(data) {
     activeCards = data;
@@ -528,6 +491,10 @@ function showCardDetail(title, text) {
         width: '600px',
         background: '#f8f9fa'
     });
+}
+function copyText(t) {
+    navigator.clipboard.writeText(t.replace(/\\n/g, '\n')).then(() => 
+        Swal.fire({icon:'success', title:'Kopyalandı', toast:true, position:'top-end', showConfirmButton:false, timer:1500}) );
 }
 function toggleEditMode() {
     if (!isAdminMode) return;
@@ -879,7 +846,7 @@ function startTicker() {
         return `<span style="color:#fabb00; font-weight:bold;">[${i.date}]</span> <span style="color:#fff;">${i.title}:</span> <span style="color:#ddd;">${i.desc}</span>`;
     }).join(' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ');
     t.innerHTML = tickerText + ' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ' + tickerText + ' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ' + tickerText;
-    t.style.animation = 'ticker-scroll 190s linear infinite';
+    t.style.animation = 'ticker-scroll 90s linear infinite';
 }
 function openNews() {
     document.getElementById('news-modal').style.display = 'flex';
@@ -1434,8 +1401,8 @@ async function logEvaluationPopup() {
             const feedback = document.getElementById('eval-feedback').value;
             const feedbackType = document.getElementById('feedback-type').value; 
             
-            if (!callId || !callDateRaw ) {
-                Swal.showValidationMessage('Lütfen Çağrı ID, Tarih  alanlarını doldurun.');
+            if (!callId || !callDateRaw || !feedback) {
+                Swal.showValidationMessage('Lütfen Çağrı ID, Tarih ve Genel Geri Bildirim alanlarını doldurun.');
                 return false;
             }
             
@@ -1679,7 +1646,7 @@ function useJoker(type) {
         Swal.fire({ icon: 'success', title: ' ✂️  Yarı Yarıya Kullanıldı', text: 'İki yanlış şık elendi!', toast: true, position: 'top', showConfirmButton: false, timer: 1500 });
     } else if (type === 'double') {
         doubleChanceUsed = true;
-        Swal.fire({ icon: 'warning', title: '2️  Çift Cevap', text: 'Bu soruda bir kez yanlış cevap verme hakkınız var. İlk cevabınız yanlışsa, ikinci kez deneyebilirsiniz.', toast: true, position: 'top', showConfirmButton: false, timer: 2500 });
+        Swal.fire({ icon: 'warning', title: '2️ ⃣  Çift Cevap', text: 'Bu soruda bir kez yanlış cevap verme hakkınız var. İlk cevabınız yanlışsa, ikinci kez deneyebilirsiniz.', toast: true, position: 'top', showConfirmButton: false, timer: 2500 });
     }
 }
 function openPenaltyGame() {
@@ -1921,102 +1888,113 @@ function renderStep(k){
     b.innerHTML = h;
 }
 
-// --- TEKNİK SİHİRBAZ MODÜLÜ (DİNAMİK VERİ İLE) ---
+// --- SATIŞ PERFORMANS FONKSİYONLARI (YENİ) ---
 
-// State Yönetimi
-const twState = {
-    currentStep: 'start',
-    history: []
-};
+function openSalesPerformance() {
+    document.getElementById('performance-modal').style.display = 'flex';
+    fetchSalesPerformance();
+}
 
-// Modal Açma Fonksiyonu
-function openTechWizard() {
-    document.getElementById('tech-wizard-modal').style.display = 'flex';
-    // Eğer veri henüz yüklenmediyse tekrar dene
-    if (Object.keys(techWizardData).length === 0) {
-        Swal.fire({ title: 'Veriler Yükleniyor...', didOpen: () => Swal.showLoading() });
-        loadTechWizardData().then(() => {
-            Swal.close();
-            twResetWizard();
+function fetchSalesPerformance() {
+    const tbody = document.getElementById('sales-table-body');
+    const thead = document.querySelector('#sales-table thead');
+    // Yükleniyor mesajı
+    tbody.innerHTML = '<tr><td colspan="100" style="text-align:center; padding:20px;">Veriler güncelleniyor...</td></tr>';
+    thead.innerHTML = ''; // Başlığı temizle
+
+    fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getSalesPerformance" })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.result === "success") {
+            renderSalesTable(data.data);
+        } else {
+            tbody.innerHTML = `<tr><td colspan="100" style="text-align:center; color:red; padding:20px;">Hata: ${data.message}</td></tr>`;
+        }
+    })
+    .catch(error => {
+        tbody.innerHTML = '<tr><td colspan="100" style="text-align:center; color:red; padding:20px;">Bağlantı Hatası!</td></tr>';
+    });
+}
+
+function renderSalesTable(data) {
+    const tableHead = document.querySelector('#sales-table thead');
+    const tableBody = document.getElementById('sales-table-body');
+    
+    // 1. Benzersiz Temsilcileri ve Kampanyaları Bul
+    const agents = [...new Set(data.map(item => item.agent))].sort();
+    const campaigns = [...new Set(data.map(item => item.campaign))];
+    
+    // --- HEADER OLUŞTURMA ---
+    // Üst Satır: Kampanyalar Başlığı + Her Temsilci İçin Birleştirilmiş Hücre + Genel Toplam
+    let headerRow1 = `<tr><th rowspan="2" style="background:#fff; color:#000;">KAMPANYALAR</th>`;
+    // Alt Satır: Verilen | Akt. ayrımı
+    let headerRow2 = `<tr>`;
+    
+    agents.forEach(agent => {
+        headerRow1 += `<th colspan="2">${agent}</th>`;
+        headerRow2 += `<th>Verilen</th><th>Akt.</th>`;
+    });
+    
+    // Genel Toplam Sütun Başlıkları
+    headerRow1 += `<th colspan="1" style="background:#eee; color:#000;">TOPLAM</th></tr>`;
+    headerRow2 += `<th style="background:#eee;">Akt.</th></tr>`;
+    
+    tableHead.innerHTML = headerRow1 + headerRow2;
+    
+    // --- BODY OLUŞTURMA ---
+    let bodyHtml = '';
+    let grandTotalActivation = 0;
+    
+    // Temsilci Bazlı Dikey Toplamları Tutmak İçin
+    let agentTotals = {}; 
+    agents.forEach(a => agentTotals[a] = { given: 0, act: 0 });
+
+    campaigns.forEach(camp => {
+        let rowHtml = `<tr><td>${camp}</td>`;
+        let rowTotalAct = 0;
+        
+        agents.forEach(agent => {
+            // İlgili kampanya ve ajana ait veriyi bul
+            const record = data.find(d => d.campaign === camp && d.agent === agent) || { given: 0, activation: 0 };
+            
+            // Sayıları formatla
+            let given = parseInt(record.given) || 0;
+            let act = parseInt(record.activation) || 0;
+            
+            // Toplamları hesapla
+            rowTotalAct += act;
+            agentTotals[agent].given += given;
+            agentTotals[agent].act += act;
+            
+            // Görseldeki gibi 0 olanları boş gösterebiliriz veya 0 yazabiliriz.
+            let givenDisplay = given > 0 ? given : '';
+            let actDisplay = act > 0 ? act : '';
+            
+            // Renklendirme mantığı (Sadece değer varsa renk ver)
+            let givenClass = given > 0 ? 'cell-given' : '';
+            let actClass = act > 0 ? 'cell-activation' : '';
+
+            rowHtml += `<td class="${givenClass}">${givenDisplay}</td>
+                        <td class="${actClass}">${actDisplay}</td>`;
         });
-    } else {
-        twRenderStep();
-    }
-}
+        
+        grandTotalActivation += rowTotalAct;
+        // Satır sonu toplamı
+        rowHtml += `<td class="col-total" style="text-align:center; font-size:1.1rem;">${rowTotalAct > 0 ? rowTotalAct : ''}</td></tr>`;
+        bodyHtml += rowHtml;
+    });
 
-// Navigasyon ve Render Mantığı
-function twRenderStep() {
-    const contentDiv = document.getElementById('tech-wizard-content');
-    const backBtn = document.getElementById('tw-btn-back');
-    const stepData = techWizardData[twState.currentStep];
-
-    // Geri butonu kontrolü
-    if (twState.history.length > 0) backBtn.style.display = 'block';
-    else backBtn.style.display = 'none';
-
-    if (!stepData) {
-        contentDiv.innerHTML = `<div class="alert" style="color:red;">Hata: Adım bulunamadı (${twState.currentStep}). Lütfen tabloyu kontrol edin.</div>`;
-        return;
-    }
-
-    let html = `<div class="tech-step-title">${stepData.title || ''}</div>`;
-
-    // Metin (Varsa)
-    if (stepData.text) {
-        html += `<p style="font-size:1rem; margin-bottom:15px;">${stepData.text}</p>`;
-    }
-
-    // Script Kutusu (Varsa) - GÜVENLİ KOPYALAMA BUTONU EKLENDİ
-    if (stepData.script) {
-        // Encode URI Component ile metni güvenli hale getiriyoruz (Tırnak ve satır hatalarını önler)
-        const safeScript = encodeURIComponent(stepData.script);
-        html += `
-        <div class="tech-script-box">
-            <span class="tech-script-label">Müşteriye iletilecek:</span>
-            "${stepData.script}"
-            <div style="margin-top:10px; text-align:right;">
-                <button class="btn btn-copy" style="font-size:0.8rem; padding:5px 10px;" onclick="copyScriptContent('${safeScript}')">
-                    <i class="fas fa-copy"></i> Kopyala
-                </button>
-            </div>
-        </div>`;
-    }
-
-    // Uyarı/Alert (Varsa)
-    if (stepData.alert) {
-        html += `<div class="tech-alert">${stepData.alert}</div>`;
-    }
-
-    // Butonlar
-    if (stepData.buttons && stepData.buttons.length > 0) {
-        html += `<div class="tech-buttons-area">`;
-        stepData.buttons.forEach(btn => {
-            let btnClass = btn.style === 'option' ? 'tech-btn-option' : 'tech-btn-primary';
-            html += `<button class="tech-btn ${btnClass}" onclick="twChangeStep('${btn.next}')">${btn.text}</button>`;
-        });
-        html += `</div>`;
-    }
-
-    contentDiv.innerHTML = html;
-}
-
-// Navigasyon Fonksiyonları
-function twChangeStep(newStep) {
-    // Özel komutlar (Eski hardcoded mantıktan kalanlar varsa buraya eklenebilir ama şu an hepsi tabloda)
-    twState.history.push(twState.currentStep);
-    twState.currentStep = newStep;
-    twRenderStep();
-}
-
-function twGoBack() {
-    if (twState.history.length > 0) {
-        twState.currentStep = twState.history.pop();
-        twRenderStep();
-    }
-}
-
-function twResetWizard() {
-    twState.currentStep = 'start';
-    twState.history = [];
-    twRenderStep();
+    // --- EN ALT (FOOTER) GENEL TOPLAM SATIRI ---
+    let footerRow = `<tr style="background:#0e1b42; color:white; font-weight:bold;"><td>GENEL TOPLAM</td>`;
+    agents.forEach(agent => {
+        footerRow += `<td style="color:#fabb00;">${agentTotals[agent].given}</td>
+                      <td style="color:#00e676;">${agentTotals[agent].act}</td>`;
+    });
+    footerRow += `<td style="font-size:1.2rem;">${grandTotalActivation}</td></tr>`;
+    
+    tableBody.innerHTML = bodyHtml + footerRow;
 }
