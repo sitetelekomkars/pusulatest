@@ -16,6 +16,7 @@ let activeCards = [];
 let currentCategory = 'all';
 let adminUserList = [];
 let allEvaluationsData = [];
+let trainingRecordsData = []; // YENİ: Eğitim Kayıtları
 let wizardStepsData = {};
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 // --- KALİTE PUANLAMA LOGİĞİ ---
@@ -966,6 +967,120 @@ if (i === 0) { option.selected = true; }
 selectEl.appendChild(option);
 }
 }
+async function fetchTrainingRecords(targetAgent, targetGroup, selectedMonth) {
+    // Temsilci olmayanlar için eğitim kaydı çekme
+    if (!isAdminMode) {
+        targetAgent = currentUser;
+        targetGroup = 'all'; 
+    }
+    
+    // Simülasyon Verisi (Backend hazır olana kadar)
+    let sampleData = [
+        { date: '01.12.2025', title: '**Özel Geri Bildirim Görüşmesi:** Yeni Kural İhlali', status: 'Görüşme Kayıt', evaluator: 'Ayşe T.', resultScore: 80, isCompleted: false },
+        { date: '14.11.2025', title: 'Yeni Kampanya İkna Eğitimi', status: 'Tamamlandı', evaluator: 'Mehmet K.', resultScore: 95, isCompleted: true },
+        { date: '28.10.2025', title: 'Hatalı Bilgi Düzeltme Eğitimi', status: 'Tamamlandı', evaluator: 'Ayşe T.', resultScore: 88, isCompleted: true },
+        { date: '05.09.2025', title: 'Teknik Destek Süreç Geliştirme Eğitimi', status: 'Tamamlandı', evaluator: 'Ali Y.', resultScore: 92, isCompleted: true },
+    ];
+
+    // Gerçek API çağrısı bu kısma eklenecek
+    /*
+    try {
+        const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "fetchTraining", targetAgent, targetGroup, month: selectedMonth, token: getToken() })
+        });
+        const data = await response.json();
+        if (data.result === "success") {
+            trainingRecordsData = data.trainings || [];
+            return trainingRecordsData;
+        } else {
+            console.error("Eğitim verisi çekme hatası:", data.message);
+            return sampleData; // Hata durumunda simülasyon verisi dön
+        }
+    } catch(err) {
+        console.error("Bağlantı hatası:", err);
+        return sampleData; // Hata durumunda simülasyon verisi dön
+    }
+    */
+    
+    // Şimdilik simülasyon verisini döndürüyoruz.
+    trainingRecordsData = sampleData;
+    return trainingRecordsData;
+}
+
+function renderTrainingTab(targetAgent, targetGroup, selectedMonth) {
+    const listEl = document.getElementById('training-records-list');
+    const tableEl = document.getElementById('training-performance-body'); // Yeni eklenecek tablo body ID'si
+
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">Eğitim verileri yükleniyor...</div>';
+    
+    fetchTrainingRecords(targetAgent, targetGroup, selectedMonth).then(trainings => {
+        let listHtml = '';
+        let tableHtml = '';
+        let perfTableData = [];
+
+        if (trainings.length === 0) {
+            listHtml = `<p style="text-align:center; color:#666; margin-top:10px;">Bu dönem için atanmış/tamamlanmış eğitim kaydı yok.</p>`;
+        } else {
+            trainings.forEach((t, i) => {
+                let statusClass = 'status-success';
+                if (t.status.includes('Görüşme Kayıt')) statusClass = 'status-red';
+                if (t.status.includes('Planlandı')) statusClass = 'status-warning';
+
+                listHtml += `
+                <div class="training-item" onclick="openTrainingDetail('${escapeForJsString(t.title)}', '${t.date}')">
+                    <div class="training-date">${t.date}</div>
+                    <div class="training-title">${t.title.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</div>
+                    <div class="training-status ${statusClass}">${t.status}</div>
+                </div>`;
+                
+                // Performans Takip Tablosu için veri hazırla
+                if (t.resultScore && t.isCompleted) {
+                    perfTableData.push({
+                        date: t.date,
+                        topic: t.title.substring(0, 40) + '...',
+                        score: `${t.resultScore} / 100`,
+                        evaluator: t.evaluator
+                    });
+                }
+            });
+        }
+        
+        listEl.innerHTML = `<div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">${listHtml}</div>`;
+        
+        // Performans Tablosunu Doldur
+        if (perfTableData.length > 0) {
+            perfTableData.forEach(p => {
+                tableHtml += `<tr><td>${p.date}</td><td>${p.topic}</td><td>${p.score}</td><td>${p.evaluator}</td></tr>`;
+            });
+            // Tablo body'sini bulup doldurun
+            if (document.getElementById('training-performance-body')) {
+                document.getElementById('training-performance-body').innerHTML = tableHtml;
+            }
+        } else {
+             if (document.getElementById('training-performance-body')) {
+                document.getElementById('training-performance-body').innerHTML = `<tr><td colspan="4" style="text-align:center;">Eğitim sonrası performans kaydı yok.</td></tr>`;
+            }
+        }
+
+    }).catch(err => {
+        listEl.innerHTML = `<p style="text-align:center; color:red; padding:20px;">Eğitim verileri yüklenirken hata oluştu.</p>`;
+    });
+}
+function openTrainingDetail(title, date) {
+    // Simülasyon amaçlı detay pop-up
+    Swal.fire({
+        title: title.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'),
+        html: `<p style="font-size:0.9rem; color:#888;">Tarih: ${date}</p>
+               <p style="text-align:left;">Bu alanda, atanan eğitimin içeriği, tamamlanması gereken adımlar ve varsa ilgili doküman linkleri gösterilecektir.</p>
+               ${!isAdminMode ? '<button class="btn btn-copy" style="background:var(--success); margin-top:15px;" onclick="Swal.close()">  ✅   Eğitimi Tamamla</button>' : ''}`,
+        showCloseButton: true,
+        showConfirmButton: false,
+        width: '500px'
+    });
+}
 function openQualityArea() {
 // HOŞ GELDİNİZ MESAJI EKLENİYOR
 Swal.fire({
@@ -1015,6 +1130,8 @@ updateAgentListBasedOnGroup();
 } else {
 fetchEvaluationsForAgent(currentUser);
 }
+// Eğitim sekmesi için veriyi önceden yükleyelim (görünüm değişince render edeceğiz)
+renderTrainingTab(currentUser, 'all', document.getElementById('month-select-filter').value); 
 }
 // YENİ FONKSİYON: Gruba Göre Temsilci Listesini Güncelleme
 function updateAgentListBasedOnGroup() {
@@ -1138,9 +1255,9 @@ filteredEvals.forEach(evalItem => {
 });
 
 
-if(dashAvg) dashAvg.innerText = monthlyAvg % 1 === 0 ? monthlyAvg : monthlyAvg.toFixed(1);
-if(dashCount) dashCount.innerText = monthlyCount;
-if(dashTarget) dashTarget.innerText = `%${targetRate}`;
+if(dashAvg) dashAvg.innerText = monthlyAvg % 1 === 0 ? monthlyAvg : monthlyAvg.toFixed(1); [cite: 1357]
+if(dashCount) dashCount.innerText = monthlyCount; [cite: 1358]
+if(dashTarget) dashTarget.innerText = `%${targetRate}`; [cite: 1359]
 if(dashNegativeNotes) dashNegativeNotes.innerText = totalNegativeNotes;
 if(dashRevisionCount) dashRevisionCount.innerText = revisionCount;
 
@@ -1209,6 +1326,9 @@ ${detailHtml}
 </div>`;
 });
 listEl.innerHTML = html;
+// Eğitim sekmesini de güncelleyelim
+renderTrainingTab(targetAgent, targetGroup, selectedMonth);
+
 } else {
 listEl.innerHTML = `<p style="color:red; text-align:center;">Veri çekme hatası: ${data.message || 'Bilinmeyen Hata'}</p>`;
 }
