@@ -19,7 +19,9 @@ let allEvaluationsData = [];
 let wizardStepsData = {};
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
-// --- YENİ KALİTE PUANLAMA LOGİĞİ: BUTON TABANLI ---
+// ==========================================================
+// --- KALİTE PUANLAMA LOGİĞİ: CHAT (BUTON TABANLI) ---
+// ==========================================================
 
 /**
  * Puanlama butonuna basıldığında ilgili satırın skorunu ve görünümünü günceller.
@@ -61,7 +63,7 @@ window.setButtonScore = function(index, score, max) {
 };
 
 /**
- * Toplam skoru hesaplar ve göstergeyi günceller.
+ * Toplam skoru hesaplar ve göstergeyi günceller (Buton Versiyonu).
  */
 window.recalcTotalScore = function() {
     let currentTotal = 0;
@@ -83,6 +85,71 @@ window.recalcTotalScore = function() {
     const liveScoreEl = document.getElementById('live-score');
     const ringEl = document.getElementById('score-ring');
 
+    if(liveScoreEl) liveScoreEl.innerText = currentTotal;
+
+    if(ringEl) {
+        let color = '#2e7d32';
+        let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
+        if(ratio < 50) color = '#d32f2f';
+        else if(ratio < 85) color = '#ed6c02';
+        else if(ratio < 95) color = '#fabb00';
+        ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
+    }
+};
+
+// ==========================================================
+// --- KALİTE PUANLAMA LOGİĞİ: TELE SATIŞ (SLIDER TABANLI) ---
+// ==========================================================
+
+/**
+ * Puanlama slider'ı hareket ettiğinde ilgili satırın skorunu ve görünümünü günceller.
+ * Bu fonksiyon Telesatış için eski slider mantığını geri getirir.
+ * @param {number} index - Kriterin dizin numarası.
+ * @param {number} max - Kriterin maksimum puanı.
+ */
+window.updateRowSliderScore = function(index, max) {
+    const slider = document.getElementById(`slider-${index}`);
+    const badge = document.getElementById(`badge-${index}`);
+    const noteInput = document.getElementById(`note-${index}`);
+    const row = document.getElementById(`row-${index}`);
+
+    if(!slider) return;
+    const val = parseInt(slider.value);
+    badge.innerText = val;
+    
+    // Stil Güncelleme (Max puandan düşükse kırmızı, değilse yeşil/normal)
+    if (val < max) {
+        noteInput.style.display = 'block';
+        badge.style.background = '#d32f2f';
+        row.style.borderColor = '#ffcdd2';
+        row.style.background = '#fff5f5';
+    } else {
+        noteInput.style.display = 'none';
+        noteInput.value = '';
+        badge.style.background = '#2e7d32';
+        row.style.borderColor = '#eee';
+        row.style.background = '#fff';
+    }
+    window.recalcTotalSliderScore();
+};
+
+/**
+ * Toplam skoru hesaplar ve göstergeyi günceller (Slider Versiyonu).
+ */
+window.recalcTotalSliderScore = function() {
+    let currentTotal = 0;
+    let maxTotal = 0;
+    const sliders = document.querySelectorAll('.slider-input');
+    
+    sliders.forEach(s => {
+        // Slider input'larının hepsi toplanır
+        currentTotal += parseInt(s.value) || 0;
+        maxTotal += parseInt(s.getAttribute('max')) || 0;
+    });
+
+    const liveScoreEl = document.getElementById('live-score');
+    const ringEl = document.getElementById('score-ring');
+    
     if(liveScoreEl) liveScoreEl.innerText = currentTotal;
 
     if(ringEl) {
@@ -1421,18 +1488,17 @@ async function logEvaluationPopup() {
         agentGroup = foundUser.group;
     }
     
-    // Chat personeli için Chat-Normal/Teknik ayrımı kaldırıldı, direkt 'Chat' kriterleri istenir.
-    // NOTE: Eski kodda chat tipi seçimi vardı, ancak son talep üzerine bu kaldırılıp direkt 'Chat' grubuna atanıyordu.
-    // Ancak backend'e sadece "Chat" yerine "Chat-Normal" veya "Chat-Teknik" gönderilmesi gerekiyorsa (eski yapının korunması için),
-    // bu seçim burada yapılmalıdır. Mevcut projede "Chat" kriterleri tek bir grupta toplanmıştır.
-    if (agentGroup.indexOf('Chat') > -1) {
-        agentGroup = 'Chat'; 
-    }
+    // Chat personeli için 'Chat' grubunu kullan, Telesatış için 'Telesatış'
+    const isChat = agentGroup.indexOf('Chat') > -1;
+    const isTelesatis = agentGroup.indexOf('Telesatış') > -1;
+    
+    if (isChat) agentGroup = 'Chat';
+    // Telesatış zaten "Telesatış" olarak kalmalı
     
     Swal.fire({ title: 'Değerlendirme Formu Hazırlanıyor...', didOpen: () => Swal.showLoading() });
     
     let criteriaList = [];
-    // 2. ADIM: Kriterleri Çekme (Settings'ten Orta/Kötü puanları da alıyoruz)
+    // 2. ADIM: Kriterleri Çekme
     if(agentGroup && agentGroup !== 'Genel') { 
         criteriaList = await fetchCriteria(agentGroup);
     } 
@@ -1444,34 +1510,51 @@ async function logEvaluationPopup() {
     let criteriaFieldsHtml = '';
     let manualScoreHtml = '';
     
-    // 3. ADIM: Kriterlere Göre Form Alanlarını Oluşturma (Butonlar eklendi)
+    // 3. ADIM: Form Alanlarını Gruba Göre Oluşturma
     if (isCriteriaBased) {
         criteriaFieldsHtml += `<div class="criteria-container">`;
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0;
-            let mPts = parseInt(c.mediumScore) || 0;
-            let bPts = parseInt(c.badScore) || 0;
-            let initialScore = pts; // Başlangıçta İyi Puan (Max)
-
-            // Eğer max puan 0 ise butonu göstermeyiz (pasif kriter)
-            if (pts === 0) return;
+            let initialScore = pts; 
             
-            criteriaFieldsHtml += `
-                <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
-                    <div class="criteria-header">
-                        <span>${i+1}. ${c.text}</span>
-                        <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
-                    </div>
-                    <div class="criteria-controls">
-                        <div class="eval-button-group">
-                            <button class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
-                            ${mPts > 0 ? `<button class="eval-button eval-medium" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
-                            ${bPts > 0 ? `<button class="eval-button eval-bad" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+            if (pts === 0) return; // Pasif kriterleri atla
+
+            if (isChat) {
+                // CHAT: Butonlu Puanlama
+                let mPts = parseInt(c.mediumScore) || 0;
+                let bPts = parseInt(c.badScore) || 0;
+                
+                criteriaFieldsHtml += `
+                    <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
+                        <div class="criteria-header">
+                            <span>${i+1}. ${c.text}</span>
+                            <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
                         </div>
-                        <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block; background:#2e7d32;">${initialScore}</span>
-                    </div>
-                    <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni veya not ekle..." style="display:none;">
-                </div>`;
+                        <div class="criteria-controls">
+                            <div class="eval-button-group">
+                                <button class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
+                                ${mPts > 0 ? `<button class="eval-button eval-medium" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
+                                ${bPts > 0 ? `<button class="eval-button eval-bad" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                            </div>
+                            <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block; background:#2e7d32;">${initialScore}</span>
+                        </div>
+                        <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni veya not ekle..." style="display:none;">
+                    </div>`;
+            } else if (isTelesatis) {
+                 // TELESATIŞ: Slider Puanlama (Eski mantık geri getirildi)
+                 criteriaFieldsHtml += `
+                    <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
+                        <div class="criteria-header">
+                            <span>${i+1}. ${c.text}</span>
+                            <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
+                        </div>
+                        <div class="criteria-controls" style="display: flex; align-items: center; gap: 15px; background: #f9f9f9; padding: 8px; border-radius: 6px;">
+                            <input type="range" class="custom-range slider-input" id="slider-${i}" min="0" max="${pts}" value="${pts}" data-index="${i}" oninput="updateRowSliderScore(${i}, ${pts})" style="flex-grow: 1;">
+                            <span class="score-badge" id="badge-${i}" style="background:#2e7d32;">${initialScore}</span>
+                        </div>
+                        <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni veya not ekle..." style="display:none;">
+                    </div>`;
+            }
         });
         criteriaFieldsHtml += `</div>`;
     } else {
@@ -1485,6 +1568,8 @@ async function logEvaluationPopup() {
             <textarea id="eval-details" class="swal2-textarea" placeholder="Değerlendirme detayları..." style="margin-bottom:15px;"></textarea>
         `;
     }
+    
+    // HTML Yapısı
     const contentHtml = `
         <div class="eval-modal-wrapper">
             <div class="score-dashboard">
@@ -1533,7 +1618,13 @@ async function logEvaluationPopup() {
         cancelButtonText: 'İptal',
         focusConfirm: false,
         didOpen: () => {
-            if(isCriteriaBased) window.recalcTotalScore();
+            if (isTelesatis) {
+                // Telesatış için slider skorunu başlat
+                window.recalcTotalSliderScore();
+            } else if (isChat) {
+                // Chat için buton skorunu başlat
+                window.recalcTotalScore();
+            }
         },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value;
@@ -1552,24 +1643,38 @@ async function logEvaluationPopup() {
             if (isCriteriaBased) {
                 let total = 0;
                 let detailsArr = [];
-                // Puanları badge'lerden topla
                 for (let i = 0; i < criteriaList.length; i++) {
                     const c = criteriaList[i];
-                    // Atanan puan 0 olan kriterleri atla (formda gösterilmez)
                     if (parseInt(c.points) === 0) continue; 
                     
-                    let val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
-                    let maxPoints = parseInt(c.points) || 0;
-                    let note = document.getElementById(`note-${i}`).value;
-
-                    // Kırılım Notu Zorunluluğu Kontrolü
-                    if (val < maxPoints && !note) {
-                        Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
-                        return false;
-                    }
+                    let val;
+                    let note;
                     
+                    if (isChat) {
+                         // CHAT: Butonlardan Oku
+                        val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
+                        note = document.getElementById(`note-${i}`).value;
+
+                        // Kırılım Notu Zorunluluğu Kontrolü (Sadece Chat'te Orta/Kötü'ye basınca not beklenir)
+                        if (val < parseInt(c.points) && !note) {
+                            Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                            return false;
+                        }
+
+                    } else if (isTelesatis) {
+                         // TELESATIŞ: Slider'dan Oku
+                        val = parseInt(document.getElementById(`slider-${i}`).value) || 0;
+                        note = document.getElementById(`note-${i}`).value;
+                        
+                        // Telesatışta da düşük puanda not zorunlu olabilir
+                        if (val < parseInt(c.points) && !note) {
+                            Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                            return false;
+                        }
+                    }
+
                     total += val;
-                    detailsArr.push({ q: c.text, max: maxPoints, score: val, note: note });
+                    detailsArr.push({ q: c.text, max: parseInt(c.points), score: val, note: note });
                 }
 
                 return { agentName, agentGroup, callId, callDate: formattedCallDate, score: total, details: JSON.stringify(detailsArr), feedback, feedbackType: feedbackType }; 
@@ -1618,7 +1723,13 @@ async function editEvaluation(targetCallId) {
     
     const agentName = evalData.agent || evalData.agentName;
     // 2. Grup Kontrolü (Doğrudan Veriden Okuma)
-    const agentGroup = evalData.group || 'Genel';
+    const agentGroupRaw = evalData.group || 'Genel';
+    
+    // Grup tipini belirle
+    const isChat = agentGroupRaw.indexOf('Chat') > -1;
+    const isTelesatis = agentGroupRaw.indexOf('Telesatış') > -1;
+    const agentGroup = isChat ? 'Chat' : (isTelesatis ? 'Telesatış' : 'Genel');
+    
     Swal.fire({ title: 'Kayıtlar İnceleniyor...', didOpen: () => Swal.showLoading() });
     
     let criteriaList = [];
@@ -1638,7 +1749,7 @@ async function editEvaluation(targetCallId) {
     <div>
     <div style="font-size:0.9rem; opacity:0.8;">DÜZENLENEN</div>
     <div style="font-size:1.2rem; font-weight:bold; color:#1976d2;">${agentName}</div>
-    <div style="font-size:0.8rem; opacity:0.7;">(İtiraz / Düzeltme)</div>
+    <div style="font-size:0.8rem; opacity:0.7;">(${agentGroupRaw})</div>
     </div>
     <div class="score-circle-outer" id="score-ring">
     <div class="score-circle-inner" id="live-score">${evalData.score}</div>
@@ -1663,7 +1774,6 @@ async function editEvaluation(targetCallId) {
             let mPts = parseInt(c.mediumScore) || 0;
             let bPts = parseInt(c.badScore) || 0;
 
-            // Atanan puan 0 olan kriterleri atla (formda gösterilmez)
             if (pts === 0) return;
             
             // Eski Puan/Notu Bul
@@ -1673,36 +1783,48 @@ async function editEvaluation(targetCallId) {
             let currentVal = parseInt(oldItem.score);
             let currentNote = oldItem.note || '';
 
-            // Aktif Sınıfını Belirle (Edit için daha karmaşık kontrol gerekir)
-            let goodActive = currentVal === pts ? 'active' : '';
-            let mediumActive = currentVal === mPts && mPts !== 0 ? 'active' : '';
-            let badActive = currentVal === bPts && bPts !== 0 ? 'active' : '';
-            // Eğer puan direkt butona karşılık gelmiyorsa, hiçbirini seçili bırakma
-            if (currentVal !== pts && currentVal !== mPts && currentVal !== bPts) {
-                 goodActive = mediumActive = badActive = '';
-                 // Ancak 0 puan ise ve BadPuan 0 ise Bad butonu aktif edilebilir
-                 if (currentVal === 0 && bPts === 0) badActive = 'active';
-            } else if (currentVal === 0 && bPts > 0) {
-                 // 0 puan atanmışsa ve BadPuan > 0 ise, hiçbirini aktif etme
-                 goodActive = mediumActive = badActive = '';
-            }
+            if (isChat) {
+                // CHAT: Butonlu Düzenleme
+                let goodActive = currentVal === pts ? 'active' : '';
+                let mediumActive = currentVal === mPts && mPts !== 0 ? 'active' : '';
+                let badActive = currentVal === bPts && bPts !== 0 ? 'active' : '';
+                
+                if (currentVal !== pts && currentVal !== mPts && currentVal !== bPts) {
+                    goodActive = mediumActive = badActive = '';
+                    if (currentVal === 0 && bPts === 0) badActive = 'active';
+                } else if (currentVal === 0 && bPts > 0) {
+                    goodActive = mediumActive = badActive = '';
+                }
 
-            contentHtml += `
-            <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
-                <div class="criteria-header">
-                    <span>${i+1}. ${c.text}</span>
-                    <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
-                </div>
-                <div class="criteria-controls">
-                    <div class="eval-button-group">
-                        <button class="eval-button eval-good ${goodActive}" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
-                        ${mPts > 0 ? `<button class="eval-button eval-medium ${mediumActive}" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
-                        ${bPts > 0 ? `<button class="eval-button eval-bad ${badActive}" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                contentHtml += `
+                <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
+                    <div class="criteria-header"><span>${i+1}. ${c.text}</span><span style="font-size:0.8rem; color:#999;">Max: ${pts}</span></div>
+                    <div class="criteria-controls">
+                        <div class="eval-button-group">
+                            <button class="eval-button eval-good ${goodActive}" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
+                            ${mPts > 0 ? `<button class="eval-button eval-medium ${mediumActive}" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
+                            ${bPts > 0 ? `<button class="eval-button eval-bad ${badActive}" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                        </div>
+                        <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block;">${currentVal}</span>
                     </div>
-                    <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block;">${currentVal}</span>
-                </div>
-                <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni..." value="${currentNote}" style="display:${currentVal < pts ? 'block' : 'none'};">
-            </div>`;
+                    <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni..." value="${currentNote}" style="display:${currentVal < pts ? 'block' : 'none'};">
+                </div>`;
+
+            } else if (isTelesatis) {
+                // TELESATIŞ: Slider Düzenleme
+                 contentHtml += `
+                    <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
+                        <div class="criteria-header">
+                            <span>${i+1}. ${c.text}</span>
+                            <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
+                        </div>
+                        <div class="criteria-controls" style="display: flex; align-items: center; gap: 15px; background: #f9f9f9; padding: 8px; border-radius: 6px;">
+                            <input type="range" class="custom-range slider-input" id="slider-${i}" min="0" max="${pts}" value="${currentVal}" data-index="${i}" oninput="updateRowSliderScore(${i}, ${pts})" style="flex-grow: 1;">
+                            <span class="score-badge" id="badge-${i}" style="background:${currentVal < pts ? '#d32f2f' : '#2e7d32'};">${currentVal}</span>
+                        </div>
+                        <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni..." value="${currentNote}" style="display:${currentVal < pts ? 'block' : 'none'};">
+                    </div>`;
+            }
         });
         contentHtml += `</div>`;
     } else {
@@ -1730,26 +1852,16 @@ async function editEvaluation(targetCallId) {
         focusConfirm: false,
         didOpen: () => {
             document.getElementById('eval-feedback').value = evalData.feedback || '';
-            if(isCriteriaBased) {
-                // Not alanlarını ve renkleri didOpen'da manuel olarak ayarla
-                criteriaList.forEach((c, i) => {
-                    if (parseInt(c.points) === 0) return;
-                    
-                    let pts = parseInt(c.points);
-                    let currentVal = parseInt(document.getElementById(`badge-${i}`).innerText);
-                    const badge = document.getElementById(`badge-${i}`);
-                    const noteInp = document.getElementById(`note-${i}`);
-                    
-                    if (currentVal < pts) {
-                        badge.style.background = '#d32f2f';
-                        noteInp.style.display = 'block';
-                    } else {
-                        badge.style.background = '#2e7d32';
-                        noteInp.style.display = 'none';
-                    }
-                });
+            
+            // Edit açılırken tüm puanları güncelle
+            if(isTelesatis) {
+                // Sliderlar için total puanı hesapla ve slider event'ını tekrar bağla (gerekirse)
+                window.recalcTotalSliderScore();
+            } else if (isChat) {
+                // Butonlar için total puanı hesapla
                 window.recalcTotalScore();
             }
+            
         },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value;
@@ -1762,14 +1874,30 @@ async function editEvaluation(targetCallId) {
                     const c = criteriaList[i];
                     if (parseInt(c.points) === 0) continue; 
                     
-                    let val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
+                    let val;
                     let maxPoints = parseInt(c.points) || 0;
                     let note = document.getElementById(`note-${i}`).value;
 
-                    // Kırılım Notu Zorunluluğu Kontrolü
-                    if (val < maxPoints && !note) {
-                        Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
-                        return false;
+                    if (isChat) {
+                         // CHAT: Butonlardan Oku
+                        val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
+                        
+                        if (val < maxPoints && !note) {
+                            Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                            return false;
+                        }
+
+                    } else if (isTelesatis) {
+                         // TELESATIŞ: Slider'dan Oku
+                        const slider = document.getElementById(`slider-${i}`);
+                        val = parseInt(slider.value) || 0;
+                        
+                        if (val < maxPoints && !note) {
+                            Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                            return false;
+                        }
+                    } else {
+                        val = maxPoints; // Varsayılan
                     }
 
                     total += val;
