@@ -19,23 +19,73 @@ let allEvaluationsData = [];
 let wizardStepsData = {};
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
-// --- KALİTE PUANLAMA LOGİĞİ ---
+// --- YENİ KALİTE PUANLAMA LOGİĞİ: BUTON TABANLI ---
 
-// Eski slider puanlama fonksiyonu (updateRowScore) tamamen kaldırılmıştır.
+/**
+ * Puanlama butonuna basıldığında ilgili satırın skorunu ve görünümünü günceller.
+ * @param {number} index - Kriterin dizin numarası.
+ * @param {number} score - Atanan puan (İyi/Orta/Kötü'den gelen).
+ * @param {number} max - Kriterin maksimum puanı.
+ */
+window.setButtonScore = function(index, score, max) {
+    const row = document.getElementById(`row-${index}`);
+    const badge = document.getElementById(`badge-${index}`);
+    const noteInput = document.getElementById(`note-${index}`);
+    const buttons = row.querySelectorAll('.eval-button');
 
+    // Butonları resetle
+    buttons.forEach(b => b.classList.remove('active'));
+
+    // Aktif butonu ayarla
+    const activeBtn = row.querySelector(`.eval-button[data-score="${score}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    // Puanı göster
+    badge.innerText = score;
+
+    // Not Alanını Güncelle (Max puandan düşükse göster)
+    if (score < max) {
+        noteInput.style.display = 'block';
+        badge.style.background = '#d32f2f'; // Kırmızıya çek
+        row.style.borderColor = '#ffcdd2';
+        row.style.background = '#fff5f5';
+    } else {
+        noteInput.style.display = 'none';
+        noteInput.value = ''; // Notu temizle
+        badge.style.background = '#2e7d32'; // Yeşile çek
+        row.style.borderColor = '#eee';
+        row.style.background = '#fff';
+    }
+
+    window.recalcTotalScore();
+};
+
+/**
+ * Toplam skoru hesaplar ve göstergeyi günceller.
+ * (Artık slider yerine .score-badge'lerden okur ve .criteria-row'ların data-max-score attribute'ünden max puanı alır)
+ */
 window.recalcTotalScore = function() {
     let currentTotal = 0;
     let maxTotal = 0;
-    const sliders = document.querySelectorAll('.hidden-score-input');
-    sliders.forEach(s => {
-        currentTotal += parseInt(s.value) || 0;
-        maxTotal += parseInt(s.getAttribute('max')) || 0;
+    
+    // Puanları badge'lerden topla
+    const scoreBadges = document.querySelectorAll('.score-badge');
+    scoreBadges.forEach(b => {
+        currentTotal += parseInt(b.innerText) || 0;
     });
+    
+    // Max puanları row attribute'ünden topla
+    const maxScores = document.querySelectorAll('.criteria-row');
+    maxScores.forEach(row => {
+        const max = parseInt(row.getAttribute('data-max-score')) || 0;
+        maxTotal += max;
+    });
+    
     const liveScoreEl = document.getElementById('live-score');
     const ringEl = document.getElementById('score-ring');
-    
+
     if(liveScoreEl) liveScoreEl.innerText = currentTotal;
-    
+
     if(ringEl) {
         let color = '#2e7d32';
         let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
@@ -45,50 +95,6 @@ window.recalcTotalScore = function() {
         ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
     }
 };
-
-// YENİ: Dinamik puanlamayı ve not alanını yöneten fonksiyon (İyi/Orta/Kötü butonları için)
-function setButtonScore(btnEl, score, max) {
-    const rowEl = btnEl.closest('.criteria-row');
-    const index = rowEl.dataset.index;
-    
-    // 1. Gizli Input değerini ayarla
-    const slider = document.getElementById(`slider-${index}`);
-    if (slider) slider.value = score;
-    
-    // 2. Buton stillerini ayarla
-    rowEl.querySelectorAll('.eval-button').forEach(b => b.classList.remove('active'));
-    btnEl.classList.add('active');
-    
-    // 3. Puanı ve Notu güncelle
-    const badge = document.getElementById(`badge-${index}`);
-    const noteInput = document.getElementById(`note-${index}`);
-    
-    badge.innerText = score;
-    
-    // KIRILIM MANTIĞI: Eğer alınan puan maksimum puandan az ise notu göster
-    if (score < max) { 
-        noteInput.style.display = 'block';
-        // Renk mantığı: Kötü (Max'ın %25'i altı) kırmızı, Orta (diğerleri) turuncu, İyi yeşil
-        const scoreRatio = score / max;
-        if(scoreRatio < 0.25) { // Kötü
-            badge.style.background = '#d32f2f';
-            rowEl.style.borderColor = '#ffcdd2';
-            rowEl.style.background = '#fff5f5';
-        } else { // Orta
-            badge.style.background = '#ed6c02';
-            rowEl.style.borderColor = '#fff3e0';
-            rowEl.style.background = '#fffdf5';
-        }
-    } else {
-        noteInput.style.display = 'none';
-        noteInput.value = ''; // Notu temizle
-        badge.style.background = '#2e7d32'; // İyi
-        rowEl.style.borderColor = '#eee';
-        rowEl.style.background = '#fff';
-    }
-    
-    window.recalcTotalScore();
-}
 
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
@@ -171,7 +177,7 @@ function checkSession() {
         currentUser = savedUser;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
-        checkAdmin(savedRole); // ROL KONTROLÜ
+        checkAdmin(savedRole);
         startSessionTimer();
         if (BAKIM_MODU)
             document.getElementById("maintenance-screen").style.display = "flex";
@@ -179,7 +185,7 @@ function checkSession() {
             document.getElementById("main-app").style.display = "block";
             loadContentData();
             loadWizardData();
-            loadTechWizardData();
+            loadTechWizardData(); // YENİ: Otomatik yükle
         }
     }
 }
@@ -225,7 +231,7 @@ function girisYap() {
             } else {
                 document.getElementById("login-screen").style.display = "none";
                 document.getElementById("user-display").innerText = currentUser;
-                checkAdmin(data.role); // ROL KONTROLÜ
+                checkAdmin(data.role);
                 startSessionTimer();
                 if (BAKIM_MODU)
                     document.getElementById("maintenance-screen").style.display = "flex";
@@ -233,7 +239,7 @@ function girisYap() {
                     document.getElementById("main-app").style.display = "block";
                     loadContentData();
                     loadWizardData();
-                    loadTechWizardData(); 
+                    loadTechWizardData(); // YENİ: Yükle
                 }
             }
         } else {
@@ -248,28 +254,13 @@ function girisYap() {
         errorMsg.style.display = "block";
     });
 }
-
-// GÜNCELLENMİŞ: Yetki Kısıtlaması için ROL KONTROLÜ
 function checkAdmin(role) {
     const addCardDropdown = document.getElementById('dropdownAddCard');
     const quickEditDropdown = document.getElementById('dropdownQuickEdit');
-
-    // TÜM MODÜL BUTONLARINI SEÇ
-    const filterButtons = document.querySelectorAll('.filter-btn');
-    const qualityButton = document.querySelector('button[onclick="openQualityArea()"]');
-
+    
     isAdminMode = (role === "admin");
-    const isQualityUser = (role === "qusers"); // Kaliteci rolünü tanımla
-
     isEditingActive = false;
     document.body.classList.remove('editing');
-    
-    // Varsayılan: Tüm modül butonları normal kullanıcılar için görünür.
-    filterButtons.forEach(btn => {
-        btn.style.display = 'flex';
-    });
-
-
     if(isAdminMode) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
         if(quickEditDropdown) {
@@ -277,29 +268,7 @@ function checkAdmin(role) {
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
-    } else if (isQualityUser) {
-        // Q-Users (Kaliteciler): Sadece kalite panelini görecekler, diğer modüller gizlenecek.
-        
-        // 1. Tüm ana modül butonlarını gizle
-        filterButtons.forEach(btn => {
-            // Favoriler ve Tümü filtrelerini TUT (Navigasyon için zorunlu)
-            if (!btn.classList.contains('btn-fav') && !btn.classList.contains('btn-all')) {
-                btn.style.display = 'none';
-            }
-        });
-
-        // 2. Sadece Kalite butonunu göster
-        if (qualityButton) qualityButton.style.display = 'flex';
-        
-        // 3. Yönetim Menülerini gizle
-        if(addCardDropdown) addCardDropdown.style.display = 'none';
-        if(quickEditDropdown) quickEditDropdown.style.display = 'none';
-
-        // 4. Otomatik olarak Kalite Paneline geçiş yap
-        setTimeout(openQualityArea, 500);
-
     } else {
-        // Normal kullanıcılar
         if(addCardDropdown) addCardDropdown.style.display = 'none';
         if(quickEditDropdown) quickEditDropdown.style.display = 'none';
     }
@@ -542,7 +511,7 @@ function renderCards(data) {
 }
 function highlightText(htmlContent) {
     if (!htmlContent) return "";
-    const searchTerm = document.getElementById('searchInput').value.trim();
+    const searchTerm = document.getElementById('searchInput').value.toLocaleLowerCase('tr-TR').trim();
     if (!searchTerm) return htmlContent;
     try {
         const regex = new RegExp(`(${searchTerm})`, "gi");
@@ -842,9 +811,9 @@ async function editSport(title) {
             <input id="swal-tip" class="swal2-input" style="width:100%; margin-bottom:10px;" value="${s.tip || ''}">
             <label style="font-weight:bold;">Detay (Alt Metin)</label>
             <textarea id="swal-detail" class="swal2-textarea" style="margin-bottom:10px;">${s.detail || ''}</textarea>
-            <label style="font-weight:bold;">Okunuşu</label>
+            <label style="font-weight:bold;">Okunuş</label>
             <input id="swal-pron" class="swal2-input" style="width:100%; margin-bottom:10px;" value="${s.pronunciation || ''}">
-            <label style="font-weight:bold;">İkon Sınıfı</label>
+            <label style="font-weight:bold;">İkon Sınıfı (Icon)</label>
             <input id="swal-icon" class="swal2-input" style="width:100%;" value="${s.icon || ''}">
         </div>`,
         width: '700px',
@@ -1032,20 +1001,6 @@ function populateMonthFilter() {
 function openQualityArea() {
     document.getElementById('quality-modal').style.display = 'flex';
     document.getElementById('admin-quality-controls').style.display = isAdminMode ? 'block' : 'none';
-    
-    // QUsers'ın değerlendirme yapmaması gerekiyor, bu yüzden Admin butonlarını gizliyoruz.
-    // Ancak sadece Kalite ekranını görsünler istendiği için,
-    // Sadece raporlama ve ekleme butonlarını saklıyoruz.
-    const addEvalButton = document.querySelector('.quality-controls-top .add-btn');
-    const exportButton = document.querySelector('.quality-controls-top .admin-btn');
-    
-    if (addEvalButton) addEvalButton.style.display = isAdminMode ? 'flex' : 'none';
-    if (exportButton) exportButton.style.display = isAdminMode ? 'flex' : 'none';
-
-    // QUsers'ın filtreleri kullanabilmesi için admin filtrelerini gösteriyoruz.
-    const filterGroup = document.querySelector('.quality-filter-group');
-    if (filterGroup) filterGroup.style.display = (isAdminMode || localStorage.getItem("sSportRole") === 'qusers') ? 'flex' : 'none';
-
     populateMonthFilter();
     
     // YENİ DASHBOARD ELEMENTLERİ (Hata Önlemi)
@@ -1059,6 +1014,7 @@ function openQualityArea() {
     if(dashTarget) dashTarget.innerText = "-%";
     const monthSelect = document.getElementById('month-select-filter');
     if (monthSelect) {
+        // Olay dinleyicisini yenilemek için element klonlanır
         const newMonthSelect = monthSelect.cloneNode(true);
         monthSelect.parentNode.replaceChild(newMonthSelect, monthSelect);
         newMonthSelect.addEventListener('change', function() {
@@ -1066,7 +1022,7 @@ function openQualityArea() {
             fetchEvaluationsForAgent();
         });
     }
-    if (isAdminMode || localStorage.getItem("sSportRole") === 'qusers') {
+    if (isAdminMode) {
         fetchUserListForAdmin().then(users => {
             const groupSelect = document.getElementById('group-select-admin');
             const agentSelect = document.getElementById('agent-select-admin');
@@ -1131,7 +1087,7 @@ async function fetchEvaluationsForAgent(forcedName) {
     
     let targetAgent = forcedName || currentUser;
     let targetGroup = 'all';
-    if (isAdminMode || localStorage.getItem("sSportRole") === 'qusers') {
+    if (isAdminMode) {
         targetAgent = forcedName || (agentSelect ? agentSelect.value : currentUser);
         targetGroup = groupSelect ? groupSelect.value : 'all';
         
@@ -1205,7 +1161,7 @@ async function fetchEvaluationsForAgent(forcedName) {
                 } catch (e) { detailHtml = `<p style="white-space:pre-wrap; margin:0; font-size:0.9rem;">${evalItem.details}</p>`; }
                 let editBtn = isAdminMode ? `<i class="fas fa-pen" style="font-size:1rem; color:#fabb00; cursor:pointer; margin-right:5px; padding:5px;" onclick="event.stopPropagation(); editEvaluation('${evalItem.callId}')" title="Kaydı Düzenle"></i>` : '';
                 // Eğer Toplu Gösterim modundaysak, her satırda Ajan adını da gösterelim ki karışmasın
-                let agentNameDisplay = (targetAgent === 'all') ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${evalItem.agent}</span>` : '';
+                let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${evalItem.agent}</span>` : '';
                 html += `<div class="evaluation-summary" id="eval-summary-${index}" style="position:relative; border:1px solid #eaedf2; border-left:4px solid ${scoreColor}; padding:15px; margin-bottom:10px; border-radius:8px; background:#fff; cursor:pointer; transition:all 0.2s ease;" onclick="toggleEvaluationDetail(${index})">
                     
                     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1255,19 +1211,16 @@ async function fetchEvaluationsForAgent(forcedName) {
     }
 }
 // --- YENİ RAPOR EXPORT FONKSİYONU ---
-// --- YENİ RAPOR EXPORT FONKSİYONU (DÜZELTİLMİŞ) ---
 async function exportEvaluations() {
     if (!isAdminMode) {
         Swal.fire('Hata', 'Bu işlem için yönetici yetkisi gereklidir.', 'error');
         return;
     }
-    // --- DEĞİŞİKLİK BAŞLANGICI ---
     const agentSelect = document.getElementById('agent-select-admin');
     const groupSelect = document.getElementById('group-select-admin'); // Grup seçim elementini alıyoruz
     
     const targetAgent = agentSelect ? agentSelect.value : 'all';
     const targetGroup = groupSelect ? groupSelect.value : 'all'; // Grup değerini alıyoruz (yoksa 'all' varsayıyoruz)
-    // --- DEĞİŞİKLİK BİTİŞİ ---
     const agentName = targetAgent === 'all' ? (targetGroup === 'all' ? 'Tüm Şirket' : targetGroup + ' Ekibi') : targetAgent;
     const { isConfirmed } = await Swal.fire({
         icon: 'question',
@@ -1367,6 +1320,8 @@ function toggleEvaluationDetail(index) {
         detailEl.style.marginTop = '10px';
     }
 }
+
+// --- GÜNCELLENMİŞ logEvaluationPopup FONKSİYONU ---
 async function logEvaluationPopup() {
     const agentSelect = document.getElementById('agent-select-admin');
     const agentName = agentSelect ? agentSelect.value : "";
@@ -1376,22 +1331,23 @@ async function logEvaluationPopup() {
         Swal.fire('Uyarı', 'Lütfen işlem yapmak için listeden bir personel seçiniz.', 'warning');
         return;
     }
-    // 1. ADIM: Grubun Doğru Belirlenmesi
+    
+    // 1. ADIM: Grubun Doğru Belirlenmesi (Chat/Telesatış/Genel)
     let agentGroup = 'Genel';
-    // Case-insensitive ve güvenli arama
     const foundUser = adminUserList.find(u => u.name.toLowerCase() === agentName.toLowerCase());
     if (foundUser && foundUser.group) {
         agentGroup = foundUser.group;
     }
-    // YENİ KONTROL: Eğer grubu "Chat" içeriyorsa, kriter çekmek için tek grup adı olan 'Chat'i kullan.
-    if (agentGroup.toLowerCase().includes('chat')) {
-        agentGroup = 'Chat';
+    
+    // Chat personeli için Chat-Normal/Teknik ayrımı kaldırıldı, direkt 'Chat' kriterleri istenir.
+    if (agentGroup.indexOf('Chat') > -1) {
+        agentGroup = 'Chat'; 
     }
     
     Swal.fire({ title: 'Değerlendirme Formu Hazırlanıyor...', didOpen: () => Swal.showLoading() });
     
     let criteriaList = [];
-    // 2. ADIM: Kriterleri Çekme
+    // 2. ADIM: Kriterleri Çekme (Settings'ten Orta/Kötü puanları da alıyoruz)
     if(agentGroup && agentGroup !== 'Genel') { 
         criteriaList = await fetchCriteria(agentGroup);
     } 
@@ -1402,36 +1358,39 @@ async function logEvaluationPopup() {
     
     let criteriaFieldsHtml = '';
     let manualScoreHtml = '';
+    
+    // 3. ADIM: Kriterlere Göre Form Alanlarını Oluşturma (Butonlar eklendi)
     if (isCriteriaBased) {
         criteriaFieldsHtml += `<div class="criteria-container">`;
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0;
-            // Apps Script'ten çekilen özel puanlar
-            let medium_score = parseInt(c.mediumScore) || Math.floor(pts / 2);
-            let bad_score = parseInt(c.badScore) || 1;
-            
-            let initial_score = pts; // Form açıldığında varsayılan olarak İYİ seçili gelsin
+            let mPts = parseInt(c.mediumScore) || 0;
+            let bPts = parseInt(c.badScore) || 0;
+            let initialScore = pts; // Başlangıçta İyi Puan (Max)
+
+            // Eğer max puan 0 ise butonu göstermeyiz (pasif kriter)
+            if (pts === 0) return;
             
             criteriaFieldsHtml += `
-            <div class="criteria-row" id="row-${i}" data-max="${pts}" data-index="${i}">
-                <div class="criteria-header">
-                    <span>${i+1}. ${c.text}</span>
-                    <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
-                </div>
-                <!-- YENİ: DİNAMİK PUANLI İYİ/ORTA/KÖTÜ BUTONLARI -->
-                <div class="criteria-controls" style="background:none; padding:0; justify-content:flex-end; gap:5px;">
-                    <button type="button" class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(this, ${pts}, ${pts})">İyi (${pts})</button>
-                    <button type="button" class="eval-button eval-medium" data-score="${medium_score}" onclick="setButtonScore(this, ${medium_score}, ${pts})">Orta (${medium_score})</button>
-                    <button type="button" class="eval-button eval-bad" data-score="${bad_score}" onclick="setButtonScore(this, ${bad_score}, ${pts})">Kötü (${bad_score})</button>
-                    <span class="score-badge" id="badge-${i}" style="min-width:30px; background:#2e7d32;">${initial_score}</span>
-                </div>
-                <!-- Puanı tutmak için gizli input (Buton skorunu tutar) -->
-                <input type="hidden" class="hidden-score-input" id="slider-${i}" min="0" max="${pts}" value="${initial_score}" data-index="${i}">
-                <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni veya not ekle..." style="display:none;">
-            </div>`;
+                <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
+                    <div class="criteria-header">
+                        <span>${i+1}. ${c.text}</span>
+                        <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
+                    </div>
+                    <div class="criteria-controls">
+                        <div class="eval-button-group">
+                            <button class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
+                            ${mPts > 0 ? `<button class="eval-button eval-medium" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
+                            ${bPts > 0 ? `<button class="eval-button eval-bad" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                        </div>
+                        <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block; background:#2e7d32;">${initialScore}</span>
+                    </div>
+                    <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni veya not ekle..." style="display:none;">
+                </div>`;
         });
         criteriaFieldsHtml += `</div>`;
     } else {
+        // Manuel Puanlama (Kriter yoksa)
         manualScoreHtml = `
             <div style="padding:15px; border:1px dashed #ccc; background:#fff; border-radius:8px; text-align:center; margin-bottom:15px;">
                 <p style="color:#e65100;">(Bu grup için otomatik kriter bulunamadı)</p>
@@ -1504,16 +1463,30 @@ async function logEvaluationPopup() {
             
             const dateParts = callDateRaw.split('-');
             const formattedCallDate = dateParts.length === 3 ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}` : callDateRaw;
+            
             if (isCriteriaBased) {
                 let total = 0;
                 let detailsArr = [];
-                criteriaList.forEach((c, i) => {
-                    let val = parseInt(document.getElementById(`slider-${i}`).value) || 0;
+                // Puanları badge'lerden topla
+                for (let i = 0; i < criteriaList.length; i++) {
+                    const c = criteriaList[i];
+                    // Atanan puan 0 olan kriterleri atla (formda gösterilmez)
+                    if (parseInt(c.points) === 0) continue; 
+                    
+                    let val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
                     let maxPoints = parseInt(c.points) || 0;
                     let note = document.getElementById(`note-${i}`).value;
+
+                    // Kırılım Notu Zorunluluğu Kontrolü
+                    if (val < maxPoints && !note) {
+                        Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                        return false;
+                    }
+                    
                     total += val;
                     detailsArr.push({ q: c.text, max: maxPoints, score: val, note: note });
-                });
+                }
+
                 return { agentName, agentGroup, callId, callDate: formattedCallDate, score: total, details: JSON.stringify(detailsArr), feedback, feedbackType: feedbackType }; 
             } else {
                 const score = document.getElementById('eval-manual-score').value;
@@ -1547,6 +1520,8 @@ async function logEvaluationPopup() {
         }).catch(err => { Swal.fire('Hata', 'Sunucu hatası.', 'error'); });
     }
 }
+
+// --- GÜNCELLENMİŞ editEvaluation FONKSİYONU ---
 async function editEvaluation(targetCallId) {
     // 1. ID Kontrolü (Güçlendirilmiş - String Eşleşmesi)
     const evalData = allEvaluationsData.find(item => String(item.callId).trim() === String(targetCallId).trim());
@@ -1557,7 +1532,7 @@ async function editEvaluation(targetCallId) {
     }
     
     const agentName = evalData.agent || evalData.agentName;
-    // 2. Grup Kontrolü (Doğrudan Veriden Okuma - Hatayı Önleyen Kritik Düzeltme)
+    // 2. Grup Kontrolü (Doğrudan Veriden Okuma)
     const agentGroup = evalData.group || 'Genel';
     Swal.fire({ title: 'Kayıtlar İnceleniyor...', didOpen: () => Swal.showLoading() });
     
@@ -1581,7 +1556,7 @@ async function editEvaluation(targetCallId) {
     <div style="font-size:0.8rem; opacity:0.7;">(İtiraz / Düzeltme)</div>
     </div>
     <div class="score-circle-outer" id="score-ring">
-    <div class="score-circle-inner" id="live-score">0</div>
+    <div class="score-circle-inner" id="live-score">${evalData.score}</div>
     </div>
     </div>
     <div class="eval-header-card">
@@ -1595,41 +1570,53 @@ async function editEvaluation(targetCallId) {
     </div>
     </div>
     `;
+
     if (isCriteriaBased) {
         contentHtml += `<div class="criteria-container">`;
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0;
-            let medium_score = parseInt(c.mediumScore) || Math.floor(pts / 2);
-            let bad_score = parseInt(c.badScore) || 1;
+            let mPts = parseInt(c.mediumScore) || 0;
+            let bPts = parseInt(c.badScore) || 0;
 
-            // Detayları Eşleştirme (Güvenli)
+            // Atanan puan 0 olan kriterleri atla (formda gösterilmez)
+            if (pts === 0) return;
+            
+            // Eski Puan/Notu Bul
             let oldItem = oldDetails.find(d => d.q === c.text);
             if (!oldItem && oldDetails[i]) { oldItem = oldDetails[i]; }
             if (!oldItem) { oldItem = { score: pts, note: '' }; }
-
             let currentVal = parseInt(oldItem.score);
             let currentNote = oldItem.note || '';
-            
-            // Hangi butonun aktif olacağını bul (En yakın skora göre)
-            let activeClass = 'eval-good';
-            if (currentVal === bad_score) activeClass = 'eval-bad';
-            else if (currentVal === medium_score) activeClass = 'eval-medium';
-            else if (currentVal !== pts) activeClass = 'eval-medium'; // Eğer tam puan değilse, varsayılan olarak Orta'yı aktif yap.
+
+            // Aktif Sınıfını Belirle (Edit için daha karmaşık kontrol gerekir)
+            let goodActive = currentVal === pts ? 'active' : '';
+            let mediumActive = currentVal === mPts && mPts !== 0 ? 'active' : '';
+            let badActive = currentVal === bPts && bPts !== 0 ? 'active' : '';
+            // Eğer puan direkt butona karşılık gelmiyorsa, hiçbirini seçili bırakma
+            if (currentVal !== pts && currentVal !== mPts && currentVal !== bPts) {
+                 goodActive = mediumActive = badActive = '';
+                 // Ancak 0 puan ise ve BadPuan 0 ise Bad butonu aktif edilebilir
+                 if (currentVal === 0 && bPts === 0) badActive = 'active';
+            } else if (currentVal === 0 && bPts > 0) {
+                 // 0 puan atanmışsa ve BadPuan > 0 ise, hiçbirini aktif etme
+                 goodActive = mediumActive = badActive = '';
+            }
 
             contentHtml += `
-            <div class="criteria-row" id="row-${i}" data-max="${pts}" data-index="${i}">
+            <div class="criteria-row" id="row-${i}" data-max-score="${pts}">
                 <div class="criteria-header">
                     <span>${i+1}. ${c.text}</span>
                     <span style="font-size:0.8rem; color:#999;">Max: ${pts}</span>
                 </div>
-                <div class="criteria-controls" style="background:none; padding:0; justify-content:flex-end; gap:5px;">
-                    <button type="button" class="eval-button eval-good ${activeClass === 'eval-good' ? 'active' : ''}" data-score="${pts}" onclick="setButtonScore(this, ${pts}, ${pts})">İyi (${pts})</button>
-                    <button type="button" class="eval-button eval-medium ${activeClass === 'eval-medium' ? 'active' : ''}" data-score="${medium_score}" onclick="setButtonScore(this, ${medium_score}, ${pts})">Orta (${medium_score})</button>
-                    <button type="button" class="eval-button eval-bad ${activeClass === 'eval-bad' ? 'active' : ''}" data-score="${bad_score}" onclick="setButtonScore(this, ${bad_score}, ${pts})">Kötü (${bad_score})</button>
-                    <span class="score-badge" id="badge-${i}" style="min-width:30px; background:#eee; color:#333;">${currentVal}</span>
+                <div class="criteria-controls">
+                    <div class="eval-button-group">
+                        <button class="eval-button eval-good ${goodActive}" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
+                        ${mPts > 0 ? `<button class="eval-button eval-medium ${mediumActive}" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
+                        ${bPts > 0 ? `<button class="eval-button eval-bad ${badActive}" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                    </div>
+                    <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block;">${currentVal}</span>
                 </div>
-                <input type="hidden" class="hidden-score-input" id="slider-${i}" min="0" max="${pts}" value="${currentVal}" data-index="${i}">
-                <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni..." value="${currentNote}" style="${currentVal < pts ? 'display:block;' : 'display:none;'}">
+                <input type="text" id="note-${i}" class="note-input" placeholder="Kırılım nedeni..." value="${currentNote}" style="display:${currentVal < pts ? 'block' : 'none'};">
             </div>`;
         });
         contentHtml += `</div>`;
@@ -1639,7 +1626,7 @@ async function editEvaluation(targetCallId) {
         <label style="font-weight:bold;">Manuel Puan</label><br>
         <input id="eval-manual-score" type="number" class="swal2-input" value="${evalData.score}" min="0" max="100" style="width:100px; text-align:center; font-size:1.5rem; font-weight:bold;">
         </div>
-        <textarea id="eval-details" class="swal2-textarea" placeholder="Detaylar..."></textarea>
+        <textarea id="eval-details" class="swal2-textarea" placeholder="Detaylar...">${typeof evalData.details === 'string' ? evalData.details : ''}</textarea>
         `;
     }
     contentHtml += `
@@ -1658,30 +1645,54 @@ async function editEvaluation(targetCallId) {
         focusConfirm: false,
         didOpen: () => {
             document.getElementById('eval-feedback').value = evalData.feedback || '';
-            if(!isCriteriaBased) {
-                const detEl = document.getElementById('eval-details');
-                if(detEl) detEl.value = (typeof evalData.details === 'string' ? evalData.details : '');
-            }
             if(isCriteriaBased) {
-                // Not: setButtonScore çağrılmadı, çünkü didOpen içinde manuel olarak stilleri ayarladık.
+                // Not alanlarını ve renkleri didOpen'da manuel olarak ayarla
+                criteriaList.forEach((c, i) => {
+                    if (parseInt(c.points) === 0) return;
+                    
+                    let pts = parseInt(c.points);
+                    let currentVal = parseInt(document.getElementById(`badge-${i}`).innerText);
+                    const badge = document.getElementById(`badge-${i}`);
+                    const noteInp = document.getElementById(`note-${i}`);
+                    
+                    if (currentVal < pts) {
+                        badge.style.background = '#d32f2f';
+                        noteInp.style.display = 'block';
+                    } else {
+                        badge.style.background = '#2e7d32';
+                        noteInp.style.display = 'none';
+                    }
+                });
                 window.recalcTotalScore();
             }
         },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value;
             const feedback = document.getElementById('eval-feedback').value;
+
             if (isCriteriaBased) {
                 let total = 0;
                 let detailsArr = [];
-                criteriaList.forEach((c, i) => {
-                    let val = parseInt(document.getElementById(`slider-${i}`).value) || 0;
+                for (let i = 0; i < criteriaList.length; i++) {
+                    const c = criteriaList[i];
+                    if (parseInt(c.points) === 0) continue; 
+                    
+                    let val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
                     let maxPoints = parseInt(c.points) || 0;
                     let note = document.getElementById(`note-${i}`).value;
+
+                    // Kırılım Notu Zorunluluğu Kontrolü
+                    if (val < maxPoints && !note) {
+                        Swal.showValidationMessage(`'${c.text}' için kırılım nedeni zorunludur.`);
+                        return false;
+                    }
+
                     total += val;
                     detailsArr.push({ q: c.text, max: maxPoints, score: val, note: note });
-                });
+                }
                 return { agentName, callId, score: total, details: JSON.stringify(detailsArr), feedback };
             } else {
+                // Manuel Puanlama
                 const score = document.getElementById('eval-manual-score').value;
                 const details = document.getElementById('eval-details').value;
                 return { agentName, callId, score: parseInt(score), details: details, feedback };
