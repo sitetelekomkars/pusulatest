@@ -718,27 +718,14 @@ function populateMonthFilter() {
 }
 function openQualityArea() {
     document.getElementById('quality-modal').style.display = 'flex';
-    document.getElementById('admin-quality-controls').style.display = isAdminMode ? 'block' : 'none';
+    // YENİ DÜZELTME: Doğru ID 'admin-filters'
+    const adminFilters = document.getElementById('admin-filters');
+    if(adminFilters) {
+        adminFilters.style.display = isAdminMode ? 'flex' : 'none';
+    }
+    
     populateMonthFilter();
     
-    // YENİ DASHBOARD ELEMENTLERİ (Hata Önlemi)
-    const dashAvg = document.getElementById('dash-avg-score');
-    const dashCount = document.getElementById('dash-eval-count');
-    const dashTarget = document.getElementById('dash-target-rate');
-    
-    // Varsa sıfırla, yoksa hata verme
-    if(dashAvg) dashAvg.innerText = "-";
-    if(dashCount) dashCount.innerText = "-";
-    if(dashTarget) dashTarget.innerText = "-%";
-    const monthSelect = document.getElementById('month-select-filter');
-    if (monthSelect) {
-        const newMonthSelect = monthSelect.cloneNode(true);
-        monthSelect.parentNode.replaceChild(newMonthSelect, monthSelect);
-        newMonthSelect.addEventListener('change', function() {
-            // Sadece fetch çağır, parametreler oradan okunacak
-            fetchEvaluationsForAgent();
-        });
-    }
     if (isAdminMode) {
         fetchUserListForAdmin().then(users => {
             const groupSelect = document.getElementById('group-select-admin');
@@ -782,17 +769,27 @@ function updateAgentListBasedOnGroup() {
     const agentSelect = document.getElementById('agent-select-admin');
     if(!groupSelect || !agentSelect) return;
     const selectedGroup = groupSelect.value;
+    
+    // Mevcut listeyi temizle
     agentSelect.innerHTML = '';
     
     let filteredUsers = adminUserList;
     if (selectedGroup !== 'all') {
         filteredUsers = adminUserList.filter(u => u.group === selectedGroup);
+        // O grubun tamamını seçme seçeneği ekle
         agentSelect.innerHTML = `<option value="all">-- Tüm ${selectedGroup} Ekibi --</option>`;
     } else {
+        // Tüm gruplar seçiliyse, tüm temsilciler seçeneği
         agentSelect.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>`;
     }
-    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${u.name}</option>`; });
-    fetchEvaluationsForAgent();
+    
+    // Kullanıcıları ekle
+    filteredUsers.forEach(u => {
+        agentSelect.innerHTML += `<option value="${u.name}">${u.name}</option>`;
+    });
+    
+    // Listeyi güncelledikten sonra otomatik veri çek
+    fetchEvaluationsForAgent(); 
 }
 function hubAgentChanged() { 
     fetchEvaluationsForAgent();
@@ -808,11 +805,12 @@ async function fetchEvaluationsForAgent(forcedName) {
     listEl.innerHTML = '';
     loader.style.display = 'block';
     // Admin Panelindeki Seçimler
-    const groupSelect = document.getElementById('group-select-admin');
     const agentSelect = document.getElementById('agent-select-admin');
+    const groupSelect = document.getElementById('group-select-admin');
     
     let targetAgent = forcedName || currentUser;
     let targetGroup = 'all';
+    
     if (isAdminMode) {
         targetAgent = forcedName || (agentSelect ? agentSelect.value : currentUser);
         targetGroup = groupSelect ? groupSelect.value : 'all';
@@ -826,10 +824,12 @@ async function fetchEvaluationsForAgent(forcedName) {
             return;
         }
     }
+    
     if (!targetAgent) {
         loader.innerHTML = '<span style="color:red;">Lütfen listeden bir temsilci seçimi yapın.</span>';
         return;
     }
+
     const selectedMonth = document.getElementById('month-select-filter').value;
     try {
         const response = await fetch(SCRIPT_URL, {
@@ -1051,12 +1051,18 @@ async function logEvaluationPopup() {
     }
     
     // Chat personeli için 'Chat' grubunu kullan, Telesatış için 'Telesatış'
-    const isChat = agentGroup.indexOf('Chat') > -1;
-    const isTelesatis = agentGroup.indexOf('Telesatış') > -1;
-    
-    if (isChat) agentGroup = 'Chat';
-    // Telesatış zaten "Telesatış" olarak kalmalı
-    
+    if (agentGroup.includes('Chat')) {
+        const { value: type } = await Swal.fire({ 
+            title: 'Form Tipi', 
+            input: 'radio', 
+            inputOptions: {'Chat-Normal':'Normal','Chat-Teknik':'Teknik'}, 
+            inputValidator: (v) => !v && 'Seçim yapmalısınız.' 
+        });
+        if(type) agentGroup = type; else return;
+    }
+    const isChat = agentGroup.includes('Chat');
+    const isTelesatis = agentGroup.includes('Telesatış');
+
     Swal.fire({ title: 'Değerlendirme Formu Hazırlanıyor...', didOpen: () => Swal.showLoading() });
     
     let criteriaList = [];
@@ -1094,8 +1100,8 @@ async function logEvaluationPopup() {
                         <div class="criteria-controls">
                             <div class="eval-button-group">
                                 <button class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>
-                                ${mPts > 0 ? `<button class="eval-button eval-medium" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}
-                                ${bPts > 0 ? `<button class="eval-button eval-bad" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}
+                                ${parseInt(c.mediumScore) > 0 ? `<button class="eval-button eval-medium" data-score="${c.mediumScore}" onclick="setButtonScore(${i}, ${c.mediumScore}, ${pts})">Orta (${c.mediumScore})</button>` : ''}
+                                ${parseInt(c.badScore) > 0 ? `<button class="eval-button eval-bad" data-score="${c.badScore}" onclick="setButtonScore(${i}, ${c.badScore}, ${pts})">Kötü (${c.badScore})</button>` : ''}
                             </div>
                             <span class="score-badge" id="badge-${i}" style="margin-top: 8px; display:block; background:#2e7d32;">${initialScore}</span>
                         </div>
@@ -1849,200 +1855,4 @@ function twResetWizard() {
     twState.currentStep = 'start';
     twState.history = [];
     twRenderStep();
-}
-// --- MANUEL FEEDBACK (HIZLI LOG) ---
-function saveManualFeedback() {
-    const agentSelect = document.getElementById('agent-select-admin');
-    const title = document.getElementById('mf-title').value;
-    const date = document.getElementById('mf-date').value;
-    const desc = document.getElementById('mf-desc').value;
-    const impact = document.getElementById('mf-impact').value;
-    const agentName = agentSelect ? agentSelect.value : currentUser; // Admin değilse kendi
-    
-    if(!isAdminMode) { Swal.fire('Hata','Yetkiniz yok.','error'); return; }
-    if(!agentName || agentName === 'all') { Swal.fire('Hata','Lütfen bir temsilci seçin.','warning'); return; }
-    if(!title || !desc) { Swal.fire('Eksik','Konu ve detay zorunludur.','warning'); return; }
-    
-    Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading() });
-    
-    let scoreVal = impact === 'N/A' ? 'Bilgi' : parseInt(impact);
-    
-    // Grup bilgisini bul
-    let agentGroup = 'Genel';
-    const foundUser = adminUserList.find(u => u.name === agentName);
-    if(foundUser) agentGroup = foundUser.group;
-
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ 
-            action: "logEvaluation", 
-            username: currentUser, 
-            token: getToken(),
-            agentName: agentName,
-            agentGroup: agentGroup,
-            callId: "MANUEL-" + Math.floor(Math.random()*100000), // Rastgele ID
-            callDate: date,
-            score: scoreVal,
-            details: JSON.stringify([{ q: title, note: desc, score: scoreVal }]), // Detay formatına uydurma
-            feedback: desc,
-            feedbackType: "Manuel Log"
-        })
-    })
-    .then(r => r.json()).then(d => {
-        if(d.result === "success") {
-            Swal.fire('Başarılı','Feedback kaydedildi.','success');
-            document.getElementById('mf-desc').value = '';
-            document.getElementById('mf-title').value = '';
-            fetchEvaluationsForAgent(); // Listeyi güncelle
-        } else {
-            Swal.fire('Hata', d.message, 'error');
-        }
-    });
-}
-// --- EĞİTİM MODÜLÜ ---
-function loadEducationData() {
-    const listEl = document.getElementById('education-list');
-    const loader = document.getElementById('education-loader');
-    const agentSelect = document.getElementById('agent-select-admin');
-    const targetAgent = isAdminMode ? (agentSelect ? agentSelect.value : 'all') : currentUser;
-    
-    // Admin panel görünürlüğü
-    document.getElementById('admin-edu-panel').style.display = isAdminMode ? 'block' : 'none';
-    
-    listEl.innerHTML = '';
-    loader.style.display = 'block';
-    
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getEducation", username: currentUser, token: getToken(), targetAgent: targetAgent })
-    })
-    .then(r => r.json()).then(data => {
-        loader.style.display = 'none';
-        if(data.result === "success") {
-            if(data.data.length === 0) { listEl.innerHTML = '<p style="color:#999;">Atanmış eğitim yok.</p>'; return; }
-            
-            data.data.forEach(edu => {
-                let isDone = edu.status === 'Tamamlandı';
-                let btnHtml = isDone 
-                    ? `<span style="color:green; font-weight:bold; float:right;"><i class="fas fa-check"></i> ${edu.completedDate}</span>` 
-                    : `<button class="edu-btn" onclick="completeEducation('${edu.id}')">Tamamla</button>`;
-                
-                let linkHtml = edu.link ? `<a href="${edu.link}" target="_blank" style="color:#0288d1; font-size:0.85rem; display:block; margin-bottom:10px;"><i class="fas fa-link"></i> Eğitime Git</a>` : '';
-                
-                listEl.innerHTML += `
-                <div class="edu-card ${isDone ? 'done' : ''}">
-                    <span class="edu-title">${edu.title}</span>
-                    <span style="font-size:0.7rem; color:#aaa;">Atayan: ${edu.assigner} | ${edu.date}</span>
-                    <p class="edu-desc">${edu.desc}</p>
-                    ${linkHtml}
-                    ${btnHtml}
-                </div>`;
-            });
-        }
-    });
-}
-function assignEducation() {
-    const title = document.getElementById('edu-assign-title').value;
-    const link = document.getElementById('edu-assign-link').value;
-    const desc = document.getElementById('edu-assign-desc').value;
-    const agentSelect = document.getElementById('agent-select-admin');
-    
-    if(!agentSelect || agentSelect.value === 'all') { Swal.fire('Uyarı','Lütfen belirli bir temsilci seçin.','warning'); return; }
-    if(!title) { Swal.fire('Uyarı','Başlık zorunludur.','warning'); return; }
-    
-    Swal.fire({ title: 'Atanıyor...', didOpen: () => Swal.showLoading() });
-    
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ 
-            action: "assignEducation", 
-            username: currentUser, 
-            token: getToken(),
-            targetAgent: agentSelect.value,
-            title: title,
-            desc: desc,
-            link: link
-        })
-    }).then(r => r.json()).then(d => {
-        if(d.result === "success") {
-            Swal.fire('Başarılı','Eğitim atandı.','success');
-            document.getElementById('edu-assign-title').value = '';
-            document.getElementById('edu-assign-desc').value = '';
-            loadEducationData();
-        }
-    });
-}
-function completeEducation(eduId) {
-    Swal.fire({
-        title: 'Eğitimi tamamladın mı?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Evet, Tamamladım'
-    }).then((res) => {
-        if(res.isConfirmed) {
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ action: "completeEducation", eduId: eduId })
-            }).then(r => r.json()).then(d => {
-                if(d.result === "success") {
-                    Swal.fire('Süper!', 'Eğitim tamamlandı olarak işaretlendi.', 'success');
-                    loadEducationData();
-                }
-            });
-        }
-    });
-}
-// --- BİLDİRİM KONTROLÜ ---
-function checkNewFeedbacks() {
-    const agentName = localStorage.getItem("sSportUser");
-    if (!agentName || isAdminMode) return; 
-    
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "checkNotifications", username: agentName })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.result === "success" && data.hasFeedback) {
-            const lastSeenId = localStorage.getItem('lastSeenFeedbackId');
-            
-            if (lastSeenId !== String(data.id)) {
-                let iconType = 'info';
-                let titleColor = '#0e1b42';
-                
-                if (data.score === 0 || data.score < 70) { iconType = 'warning'; titleColor = '#d32f2f'; }
-                else if (data.score >= 100) { iconType = 'success'; titleColor = '#2e7d32'; }
-                else if (data.score >= 70 && data.score < 100) { iconType = 'info'; titleColor = '#ed6c02'; }
-                
-                Swal.fire({
-                    title: `<span style="color:${titleColor}">🔔 Yeni Geri Bildirim!</span>`,
-                    html: `
-                        <div style="text-align:left; font-size:0.95rem; line-height:1.6;">
-                            <p><strong>Tarih:</strong> ${data.date}</p>
-                            <p><strong>Tür:</strong> ${data.type}</p>
-                            <p><strong>Puan:</strong> <span style="font-weight:bold; font-size:1.1rem; color:${titleColor}">${data.score}</span></p>
-                            <div style="background:#f8f9fa; padding:15px; border-left:5px solid ${titleColor}; border-radius:4px; margin-top:10px; font-style:italic; color:#555; white-space: pre-wrap;">
-                                "${data.feedback}"
-                            </div>
-                        </div>
-                    `,
-                    icon: iconType,
-                    confirmButtonText: 'Okudum, Anlaşıldı',
-                    confirmButtonColor: titleColor,
-                    allowOutsideClick: false,
-                    allowEscapeKey: false,
-                    backdrop: `rgba(0,0,123,0.4)`
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        localStorage.setItem('lastSeenFeedbackId', data.id);
-                    }
-                });
-            }
-        }
-    });
 }
