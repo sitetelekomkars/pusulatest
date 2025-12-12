@@ -22,6 +22,10 @@ let currentCategory = 'all';
 let adminUserList = [];
 let allEvaluationsData = [];
 let wizardStepsData = {};
+let trainingData = [];
+
+// YENİ: Chart instance'ı tutmak için
+let dashboardChart = null;
 
 // ==========================================================
 // --- KALİTE PUANLAMA LOGİĞİ: CHAT (BUTON TABANLI) ---
@@ -64,7 +68,6 @@ window.recalcTotalScore = function() {
     const maxScores = document.querySelectorAll('.criteria-row');
     maxScores.forEach(row => { maxTotal += parseInt(row.getAttribute('data-max-score')) || 0; });
     
-    // Hem eski modal hem yeni full screen uyumu için ID kontrolü
     const liveScoreEl = document.getElementById('live-score');
     const ringEl = document.getElementById('score-ring');
     
@@ -555,11 +558,11 @@ async function addNewCardPopup() {
         <div style="margin-bottom:15px; text-align:left;">
             <label style="font-weight:bold; font-size:0.9rem;">Ne Ekleyeceksin?</label>
             <select id="swal-type-select" class="swal2-input" style="width:100%; margin-top:5px; height:35px; font-size:0.9rem;" onchange="toggleAddFields()">
-                <option value="card">📌 Bilgi Kartı</option>
-                <option value="news">📢 Duyuru</option>
-                <option value="sales">📞 Telesatış Scripti</option>
-                <option value="sport">🏆 Spor İçeriği</option>
-                <option value="quiz">❓ Quiz Sorusu</option>
+                <option value="card"> 📌  Bilgi Kartı</option>
+                <option value="news"> 📢  Duyuru</option>
+                <option value="sales"> 📞  Telesatış Scripti</option>
+                <option value="sport"> 🏆  Spor İçeriği</option>
+                <option value="quiz"> ❓  Quiz Sorusu</option>
             </select>
         </div>
         <div id="preview-card" class="card Bilgi" style="text-align:left; box-shadow:none; border:1px solid #e0e0e0; margin-top:10px;">
@@ -678,7 +681,6 @@ async function addNewCardPopup() {
         }).catch(err => Swal.fire('Hata', 'Sunucu hatası: ' + err, 'error'));
     }
 }
-
 async function editContent(index) {
     const item = activeCards[index];
     const catSelectHTML = getCategorySelectHtml(item.category, 'swal-cat');
@@ -722,7 +724,6 @@ async function editContent(index) {
         if(formValues.title !== item.title) setTimeout(() => sendUpdate(item.title, "Title", formValues.title, 'card'), 2500);
     }
 }
-
 async function editSport(title) {
     event.stopPropagation();
     const s = sportsData.find(item => item.title === title);
@@ -754,7 +755,6 @@ async function editSport(title) {
         if(formValues[0] !== originalTitle) setTimeout(() => sendUpdate(originalTitle, "Title", formValues[0], 'sport'), 2500);
     }
 }
-
 async function editSales(title) {
     event.stopPropagation();
     const s = salesScripts.find(item => item.title === title);
@@ -772,7 +772,6 @@ async function editSales(title) {
         if(formValues[0] !== originalTitle) setTimeout(() => sendUpdate(originalTitle, "Title", formValues[0], 'sales'), 500);
     }
 }
-
 async function editNews(index) {
     const i = newsData[index];
     let statusOptions = `<option value="Aktif" ${i.status !== 'Pasif' ? 'selected' : ''}>Aktif</option><option value="Pasif" ${i.status === 'Pasif' ? 'selected' : ''}>Pasif</option>`;
@@ -798,10 +797,8 @@ async function editNews(index) {
         if(formValues[0] !== originalTitle) setTimeout(() => sendUpdate(originalTitle, "Title", formValues[0], 'news'), 2000);
     }
 }
-
 // --- STANDARD MODALS (TICKER, NEWS, GUIDE, SALES) ---
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
 function startTicker() {
     const t = document.getElementById('ticker-content');
     const activeNews = newsData.filter(i => i.status !== 'Pasif');
@@ -813,7 +810,6 @@ function startTicker() {
     t.innerHTML = tickerText + ' &nbsp;&nbsp;&nbsp;&nbsp; • &nbsp;&nbsp;&nbsp;&nbsp; ' + tickerText;
     t.style.animation = 'ticker-scroll 190s linear infinite';
 }
-
 function openNews() {
     document.getElementById('news-modal').style.display = 'flex';
     const c = document.getElementById('news-container');
@@ -827,7 +823,6 @@ function openNews() {
         c.innerHTML += `<div class="news-item" style="${passiveStyle}">${editBtn}<span class="news-date">${i.date}</span><span class="news-title">${i.title} ${passiveBadge}</span><div class="news-desc">${i.desc}</div><span class="news-tag ${cl}">${tx}</span></div>`;
     });
 }
-
 function openGuide() {
     document.getElementById('guide-modal').style.display = 'flex';
     const grid = document.getElementById('guide-grid');
@@ -848,7 +843,6 @@ function showSportDetail(index) {
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
 }
-
 function openSales() {
     document.getElementById('sales-modal').style.display = 'flex';
     const c = document.getElementById('sales-grid');
@@ -1082,17 +1076,32 @@ function openQualityArea() {
     if (isAdminMode) {
         if(adminFilters) adminFilters.style.display = 'flex';
         if(assignBtn) assignBtn.style.display = 'block';
-        fetchUserListForAdmin().then(users => {
-            const groupSelect = document.getElementById('q-admin-group');
-            if(groupSelect) {
-                const groups = [...new Set(users.map(u => u.group))].sort();
-                groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
-                updateAgentListBasedOnGroup();
-            }
-        });
+        
+        // Kullanıcı listesi boşsa çek, sonra filtreleri doldur
+        if (adminUserList.length === 0) {
+            fetchUserListForAdmin().then(users => {
+                const groupSelect = document.getElementById('q-admin-group');
+                if(groupSelect) {
+                    const groups = [...new Set(users.map(u => u.group))].sort();
+                    groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
+                    updateAgentListBasedOnGroup();
+                }
+                populateDashboardFilters(); // Dashboard filtrelerini de doldur
+            });
+        } else {
+            populateDashboardFilters(); // Liste zaten varsa direkt doldur
+        }
     } else {
         if(adminFilters) adminFilters.style.display = 'none';
         if(assignBtn) assignBtn.style.display = 'none';
+        
+        // Admin değilse filtreleri gizle
+        const dashFilterArea = document.querySelector('#view-dashboard .q-view-header > div');
+        if(dashFilterArea && dashFilterArea.style.display !== 'none') {
+             // Sadece dönem kalsın, diğerlerini gizleyebiliriz veya disable edebiliriz.
+             // Burada basitçe dashboard filtre fonksiyonu admin kontrolü yapıyor.
+             populateDashboardFilters(); 
+        }
     }
 
     // Varsayılan sekmeyi aç
@@ -1149,19 +1158,97 @@ function populateMonthFilterFull() {
     });
 }
 
+// YENİ: Dashboard Filtrelerini Doldurma
+function populateDashboardFilters() {
+    if(!isAdminMode) {
+        if(document.getElementById('q-dash-group')) document.getElementById('q-dash-group').style.display = 'none';
+        if(document.getElementById('q-dash-agent')) document.getElementById('q-dash-agent').style.display = 'none';
+        return;
+    }
+
+    const groupSelect = document.getElementById('q-dash-group');
+    if(!groupSelect) return;
+    
+    const groups = [...new Set(adminUserList.map(u => u.group).filter(g => g))].sort();
+    groupSelect.innerHTML = '<option value="all">Tüm Gruplar</option>';
+    groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g; opt.innerText = g;
+        groupSelect.appendChild(opt);
+    });
+
+    // İlk yüklemede tüm agentları listele
+    updateDashAgentList();
+}
+
+// YENİ: Dashboard Agent Listesini Güncelleme
+function updateDashAgentList() {
+    const groupSelect = document.getElementById('q-dash-group');
+    const agentSelect = document.getElementById('q-dash-agent');
+    if(!agentSelect) return;
+
+    const selectedGroup = groupSelect.value;
+    agentSelect.innerHTML = '<option value="all">Tüm Temsilciler</option>';
+    
+    let filteredUsers = adminUserList;
+    if (selectedGroup !== 'all') {
+        filteredUsers = adminUserList.filter(u => u.group === selectedGroup);
+    }
+
+    filteredUsers.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.name; 
+        opt.innerText = u.name;
+        agentSelect.appendChild(opt);
+    });
+    
+    refreshQualityData();
+}
+
 function refreshQualityData() {
     loadQualityDashboard();
 }
 
 function loadQualityDashboard() {
-    // Verileri çek (silent mode)
+    // Verileri çek (silent mode), veri gelince grafikleri çiz
     fetchEvaluationsForAgent(null, true).then(() => {
-        // allEvaluationsData doldu. Şimdi hesaplama yapalım.
-        const selectedMonth = document.getElementById('q-dash-month').value;
+        const monthSelect = document.getElementById('q-dash-month');
+        const groupSelect = document.getElementById('q-dash-group');
+        const agentSelect = document.getElementById('q-dash-agent');
+
+        const selectedMonth = monthSelect ? monthSelect.value : '';
+        const selectedGroup = groupSelect ? groupSelect.value : 'all';
+        const selectedAgent = agentSelect ? agentSelect.value : 'all';
         
         let filtered = allEvaluationsData.filter(e => {
             const eDate = e.date.substring(3); // dd.MM.yyyy -> MM.yyyy
-            return eDate === selectedMonth;
+            const matchMonth = (eDate === selectedMonth);
+            
+            let matchGroup = true;
+            let matchAgent = true;
+
+            // Admin filtreleme mantığı
+            if (isAdminMode) {
+                // Eğer veri içinde grup bilgisi varsa onu kullan, yoksa adminUserList'ten bakmak gerekir.
+                // Basitlik için: user'ın seçtiği filtreye göre isim eşleşmesi yapıyoruz.
+                // Eğer veride 'group' alanı yoksa ve seçili grup 'all' değilse, agent ismini user listesinde bulup grubuna bakmalıyız.
+                if (selectedGroup !== 'all') {
+                    if (e.group) {
+                        matchGroup = (e.group === selectedGroup);
+                    } else {
+                        // Veride grup yoksa user listesinden bul
+                        const user = adminUserList.find(u => u.name === e.agent);
+                        matchGroup = (user && user.group === selectedGroup);
+                    }
+                }
+                
+                if (selectedAgent !== 'all' && e.agent !== selectedAgent) matchAgent = false;
+            } else {
+                // Admin değilse sadece kendi verisi
+                if(e.agent !== currentUser) matchAgent = false;
+            }
+
+            return matchMonth && matchGroup && matchAgent;
         });
 
         const total = filtered.reduce((acc, curr) => acc + (parseInt(curr.score)||0), 0);
@@ -1180,26 +1267,136 @@ function loadQualityDashboard() {
         let color = '#2e7d32';
         if(avg < 70) color = '#d32f2f'; else if(avg < 85) color = '#ed6c02';
         const ratio = (avg / 100) * 100;
-        ring.style.background = `conic-gradient(${color} ${ratio}%, #eee ${ratio}%)`;
-        document.getElementById('q-dash-ring-text').innerText = Math.round(avg);
+        if(ring) ring.style.background = `conic-gradient(${color} ${ratio}%, #eee ${ratio}%)`;
+        if(document.getElementById('q-dash-ring-text')) document.getElementById('q-dash-ring-text').innerText = Math.round(avg);
 
-        // Son Değerlendirmeler Listesi (Dashboard için)
-        const recentList = document.getElementById('q-dash-recent-list');
-        recentList.innerHTML = '';
-        filtered.slice(0, 5).forEach(e => {
-            let badgeColor = e.score >= 90 ? 'green' : (e.score >= 70 ? 'orange' : 'red');
-            recentList.innerHTML += `
-            <div class="simple-item">
-                <div>
-                    <div style="font-weight:bold;">${e.callDate}</div>
-                    <div style="font-size:0.8rem; color:#888;">${e.evaluator}</div>
-                </div>
-                <div style="color:${badgeColor === 'green' ? '#2e7d32' : (badgeColor==='orange'?'#ed6c02':'#d32f2f')}; font-weight:bold; font-size:1.2rem;">
-                    ${e.score}
-                </div>
-            </div>`;
+        // Grafik Çizdir
+        renderDashboardChart(filtered);
+    });
+}
+
+function renderDashboardChart(data) {
+    const ctx = document.getElementById('q-breakdown-chart');
+    if (!ctx) return;
+
+    if (dashboardChart) {
+        dashboardChart.destroy();
+    }
+
+    // --- KRİTER BAZLI ANALİZ ---
+    // Her bir sorunun (kriterin) ortalama başarı oranını hesapla.
+    // Veri yapısı: item.details = '[{"q":"Soru metni", "score":8, "max":10}, ...]'
+    
+    let questionStats = {};
+
+    if (data.length > 0) {
+        data.forEach(item => {
+            try {
+                let details = [];
+                if (typeof item.details === 'string') {
+                    details = JSON.parse(item.details);
+                } else {
+                    details = item.details;
+                }
+
+                if(Array.isArray(details)) {
+                    details.forEach(d => {
+                        // Soruyu anahtar olarak kullan
+                        let qText = d.q;
+                        // Soru metni çok uzunsa kısalt
+                        if (qText.length > 25) qText = qText.substring(0, 25) + '...';
+
+                        if (!questionStats[qText]) {
+                            questionStats[qText] = { earned: 0, max: 0, count: 0 };
+                        }
+                        
+                        questionStats[qText].earned += parseInt(d.score || 0);
+                        questionStats[qText].max += parseInt(d.max || 0);
+                        questionStats[qText].count++;
+                    });
+                }
+            } catch (e) {
+                // JSON parse hatası veya eski veri formatı
+                console.log("Detay verisi işlenemedi", e);
+            }
         });
-        if(filtered.length === 0) recentList.innerHTML = '<div style="padding:10px; color:#999;">Bu dönem veri yok.</div>';
+    }
+
+    // İstatistikleri diziye çevirip başarı oranına göre sırala (En başarısız en solda olsun ki dikkat çeksin)
+    let chartLabels = [];
+    let chartData = [];
+
+    // Eğer detay verisi yoksa (Eski veriler için) genel dağılım göster
+    if (Object.keys(questionStats).length === 0) {
+        // Yedek Plan: Puan Aralıklarına Göre Dağılım
+        chartLabels = ['0-50 (Kritik)', '50-80 (Gelişim)', '80-95 (İyi)', '95-100 (Mükemmel)'];
+        let ranges = [0, 0, 0, 0];
+        data.forEach(item => {
+            let s = parseInt(item.score);
+            if(s < 50) ranges[0]++;
+            else if(s < 80) ranges[1]++;
+            else if(s < 95) ranges[2]++;
+            else ranges[3]++;
+        });
+        chartData = ranges;
+    } else {
+        // Kriter Bazlı Veri Varsa
+        let statsArray = Object.keys(questionStats).map(key => {
+            let s = questionStats[key];
+            // Başarı oranı %
+            let percentage = s.max > 0 ? (s.earned / s.max) * 100 : 0;
+            return { label: key, value: percentage };
+        });
+
+        // Başarı oranına göre artan sıralama (En düşük başarı en başta)
+        statsArray.sort((a, b) => a.value - b.value);
+
+        // Sadece en düşük 5 kriteri göster (Grafiği boğmamak için)
+        // İsterseniz .slice(0, 5) kısmını kaldırıp hepsini gösterebilirsiniz.
+        let topIssues = statsArray.slice(0, 6); 
+
+        chartLabels = topIssues.map(i => i.label);
+        chartData = topIssues.map(i => i.value.toFixed(1));
+    }
+
+    dashboardChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'Başarı Oranı (%)',
+                data: chartData,
+                backgroundColor: chartData.map(val => val < 70 ? 'rgba(211, 47, 47, 0.7)' : (val < 90 ? 'rgba(237, 108, 2, 0.7)' : 'rgba(46, 125, 50, 0.7)')),
+                borderColor: chartData.map(val => val < 70 ? '#b71c1c' : (val < 90 ? '#e65100' : '#1b5e20')),
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y', // Yatay çubuk grafik (isimler daha iyi okunur)
+            scales: {
+                x: { 
+                    beginAtZero: true, 
+                    max: 100,
+                    grid: { color: '#f0f0f0' }
+                },
+                y: {
+                    grid: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.x + '% Başarı';
+                        }
+                    }
+                }
+            }
+        }
     });
 }
 
@@ -1317,7 +1514,12 @@ async function assignTrainingPopup() {
 function loadFeedbackList() {
     const listEl = document.getElementById('feedback-list');
     listEl.innerHTML = '';
-    if(allEvaluationsData.length === 0) { listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Görüntülenecek geri bildirim yok.</div>'; return; }
+    
+    // allEvaluationsData zaten dashboardda dolmuştu, onu kullanabiliriz
+    if(allEvaluationsData.length === 0) {
+        listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Görüntülenecek geri bildirim yok.</div>';
+        return;
+    }
 
     allEvaluationsData.forEach(e => {
         if(e.feedback && e.feedback.length > 2) {
@@ -1633,290 +1835,4 @@ async function editEvaluation(targetCallId) {
             else { Swal.fire('Hata', d.message, 'error'); }
         });
     }
-}
-// ... (App.js devamı) ...
-
-// ==========================================================
-// --- YENİ KALİTE LMS MODÜLÜ (TAM EKRAN ENTEGRASYONU) ---
-// ==========================================================
-
-// Modülü Aç
-function openQualityArea() {
-    // Eski modalı kapat (eğer açıksa)
-    const oldModal = document.getElementById('quality-modal');
-    if(oldModal) oldModal.style.display = 'none';
-
-    // Tam ekranı aç
-    const fullScreen = document.getElementById('quality-fullscreen');
-    fullScreen.style.display = 'flex';
-
-    // Kullanıcı bilgisini güncelle
-    document.getElementById('q-side-name').innerText = currentUser;
-    document.getElementById('q-side-role').innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
-    document.getElementById('q-side-avatar').innerText = currentUser.charAt(0).toUpperCase();
-
-    // Dönem filtresini doldur
-    populateMonthFilterFull();
-
-    // Yetki kontrolü (Admin butonlarını göster/gizle)
-    const adminFilters = document.getElementById('admin-filters');
-    const assignBtn = document.getElementById('assign-training-btn');
-    if (isAdminMode) {
-        if(adminFilters) adminFilters.style.display = 'flex';
-        if(assignBtn) assignBtn.style.display = 'block';
-        fetchUserListForAdmin().then(users => {
-            const groupSelect = document.getElementById('q-admin-group');
-            if(groupSelect) {
-                const groups = [...new Set(users.map(u => u.group))].sort();
-                groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
-                updateAgentListBasedOnGroup();
-            }
-        });
-    } else {
-        if(adminFilters) adminFilters.style.display = 'none';
-        if(assignBtn) assignBtn.style.display = 'none';
-    }
-
-    // Varsayılan sekmeyi aç
-    switchQualityTab('dashboard');
-}
-
-// Modülü Kapat
-function closeFullQuality() {
-    document.getElementById('quality-fullscreen').style.display = 'none';
-    // Eğer qusers ise (sadece kalite yetkisi varsa) logout yapmalı veya uyarı vermeli
-    if(localStorage.getItem("sSportRole") === 'qusers') {
-        logout();
-    }
-}
-
-// Sekme Değiştirme
-function switchQualityTab(tabName) {
-    // Menu active class
-    document.querySelectorAll('.q-nav-item').forEach(item => item.classList.remove('active'));
-    event.currentTarget.classList.add('active'); // Tıklananı aktif yap
-
-    // View active class
-    document.querySelectorAll('.q-view-section').forEach(section => section.classList.remove('active'));
-    document.getElementById(`view-${tabName}`).classList.add('active');
-
-    // Veri Yükleme
-    if (tabName === 'dashboard') loadQualityDashboard();
-    else if (tabName === 'evaluations') fetchEvaluationsForAgent();
-    else if (tabName === 'feedback') loadFeedbackList();
-    else if (tabName === 'training') loadTrainingData();
-}
-
-// --- DASHBOARD FONKSİYONLARI ---
-function populateMonthFilterFull() {
-    const selectIds = ['q-dash-month']; // Sadece yeni filtre
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    selectIds.forEach(id => {
-        const el = document.getElementById(id);
-        if(!el) return;
-        el.innerHTML = '';
-        for (let i = 0; i < 6; i++) {
-            let month = (currentMonth - i + 12) % 12;
-            let year = currentYear - (currentMonth - i < 0 ? 1 : 0);
-            const value = `${String(month + 1).padStart(2, '0')}.${year}`;
-            const text = `${MONTH_NAMES[month]} ${year}`;
-            const opt = document.createElement('option');
-            opt.value = value; opt.textContent = text;
-            if(i===0) opt.selected = true;
-            el.appendChild(opt);
-        }
-    });
-}
-
-function refreshQualityData() {
-    loadQualityDashboard();
-}
-
-function loadQualityDashboard() {
-    // Verileri çek (silent mode)
-    fetchEvaluationsForAgent(null, true).then(() => {
-        // allEvaluationsData doldu. Şimdi hesaplama yapalım.
-        const selectedMonth = document.getElementById('q-dash-month').value;
-        
-        let filtered = allEvaluationsData.filter(e => {
-            const eDate = e.date.substring(3); // dd.MM.yyyy -> MM.yyyy
-            return eDate === selectedMonth;
-        });
-
-        const total = filtered.reduce((acc, curr) => acc + (parseInt(curr.score)||0), 0);
-        const count = filtered.length;
-        const avg = count > 0 ? (total / count).toFixed(1) : 0;
-        const targetHit = filtered.filter(e => e.score >= 90).length;
-        const rate = count > 0 ? Math.round((targetHit / count) * 100) : 0;
-
-        // UI Güncelle
-        document.getElementById('q-dash-score').innerText = avg;
-        document.getElementById('q-dash-count').innerText = count;
-        document.getElementById('q-dash-target').innerText = `%${rate}`;
-        
-        // Ring Chart Rengi
-        const ring = document.getElementById('q-dash-ring');
-        let color = '#2e7d32';
-        if(avg < 70) color = '#d32f2f'; else if(avg < 85) color = '#ed6c02';
-        const ratio = (avg / 100) * 100;
-        ring.style.background = `conic-gradient(${color} ${ratio}%, #eee ${ratio}%)`;
-        document.getElementById('q-dash-ring-text').innerText = Math.round(avg);
-
-        // Son Değerlendirmeler Listesi (Dashboard için)
-        const recentList = document.getElementById('q-dash-recent-list');
-        recentList.innerHTML = '';
-        filtered.slice(0, 5).forEach(e => {
-            let badgeColor = e.score >= 90 ? 'green' : (e.score >= 70 ? 'orange' : 'red');
-            recentList.innerHTML += `
-            <div class="simple-item">
-                <div>
-                    <div style="font-weight:bold;">${e.callDate}</div>
-                    <div style="font-size:0.8rem; color:#888;">${e.evaluator}</div>
-                </div>
-                <div style="color:${badgeColor === 'green' ? '#2e7d32' : (badgeColor==='orange'?'#ed6c02':'#d32f2f')}; font-weight:bold; font-size:1.2rem;">
-                    ${e.score}
-                </div>
-            </div>`;
-        });
-        if(filtered.length === 0) recentList.innerHTML = '<div style="padding:10px; color:#999;">Bu dönem veri yok.</div>';
-    });
-}
-
-// --- EĞİTİM MODÜLÜ (YENİ) ---
-function loadTrainingData() {
-    const listEl = document.getElementById('training-list');
-    listEl.innerHTML = '<div style="grid-column:1/-1; text-align:center;">Yükleniyor...</div>';
-    
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getTrainings", username: currentUser, token: getToken() })
-    }).then(r => r.json()).then(data => {
-        listEl.innerHTML = '';
-        if(data.result === 'success' && data.trainings.length > 0) {
-            data.trainings.forEach(t => {
-                let statusHtml = t.isCompleted 
-                    ? `<button class="t-btn t-btn-done"><i class="fas fa-check"></i> Tamamlandı</button>`
-                    : `<button class="t-btn t-btn-start" onclick="openTrainingLink('${t.id}', '${t.link}')">Eğitime Git</button>`;
-                
-                listEl.innerHTML += `
-                <div class="t-card">
-                    <div class="t-card-header">
-                        <span>${t.title}</span>
-                        <span class="t-status-badge">${t.date}</span>
-                    </div>
-                    <div class="t-card-body">
-                        ${t.desc}
-                        <div style="margin-top:10px; font-size:0.8rem; color:#999;">Atayan: ${t.creator}</div>
-                    </div>
-                    <div class="t-card-footer">
-                        ${statusHtml}
-                    </div>
-                </div>`;
-            });
-        } else {
-            listEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px; color:#888;">Atanmış eğitim bulunmuyor.</div>';
-        }
-    });
-}
-
-function openTrainingLink(id, link) {
-    window.open(link, '_blank');
-    // Linke tıkladıktan sonra onay sor
-    Swal.fire({
-        title: 'Eğitimi Tamamladın mı?',
-        text: "Eğitim içeriğini inceleyip anladıysan onayla.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Evet, Tamamladım',
-        cancelButtonText: 'Daha Sonra'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            completeTraining(id);
-        }
-    });
-}
-
-function completeTraining(id) {
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "completeTraining", trainingId: id, username: currentUser, token: getToken() })
-    }).then(r => r.json()).then(d => {
-        if(d.result === 'success') {
-            Swal.fire('Harika!', 'Eğitim tamamlandı olarak işaretlendi.', 'success');
-            loadTrainingData();
-        } else {
-            Swal.fire('Hata', d.message, 'error');
-        }
-    });
-}
-
-async function assignTrainingPopup() {
-    const { value: formValues } = await Swal.fire({
-        title: 'Yeni Eğitim Ata',
-        html: `
-            <input id="swal-t-title" class="swal2-input" placeholder="Eğitim Başlığı">
-            <textarea id="swal-t-desc" class="swal2-textarea" placeholder="Açıklama"></textarea>
-            <input id="swal-t-link" class="swal2-input" placeholder="Eğitim Linki / URL">
-            <select id="swal-t-target" class="swal2-input">
-                <option value="Genel">Herkese</option>
-                <option value="Telesatış">Telesatış Ekibi</option>
-                <option value="Chat">Chat Ekibi</option>
-            </select>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: 'Ata',
-        preConfirm: () => {
-            return {
-                title: document.getElementById('swal-t-title').value,
-                desc: document.getElementById('swal-t-desc').value,
-                link: document.getElementById('swal-t-link').value,
-                target: document.getElementById('swal-t-target').value,
-                creator: currentUser
-            }
-        }
-    });
-
-    if (formValues) {
-        Swal.fire({title:'Atanıyor...', didOpen:()=>Swal.showLoading()});
-        fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "assignTraining", username: currentUser, token: getToken(), ...formValues })
-        }).then(r=>r.json()).then(d=>{
-            Swal.fire('Başarılı', 'Eğitim atandı.', 'success');
-            loadTrainingData();
-        });
-    }
-}
-
-// --- FEEDBACK MODÜLÜ ---
-function loadFeedbackList() {
-    const listEl = document.getElementById('feedback-list');
-    listEl.innerHTML = '';
-    
-    // allEvaluationsData zaten dashboardda dolmuştu, onu kullanabiliriz
-    if(allEvaluationsData.length === 0) {
-        listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Görüntülenecek geri bildirim yok.</div>';
-        return;
-    }
-
-    allEvaluationsData.forEach(e => {
-        if(e.feedback && e.feedback.length > 2) {
-            listEl.innerHTML += `
-            <div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; border-left:4px solid #1976d2; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                    <span style="font-weight:bold; color:#0e1b42;">${e.callDate} - ${e.agent}</span>
-                    <span style="font-size:0.8rem; color:#888;">Değerleyen: ${e.evaluator}</span>
-                </div>
-                <div style="color:#555; line-height:1.5;">${e.feedback}</div>
-                ${e.feedbackType !== 'Yok' ? `<span style="display:inline-block; margin-top:10px; font-size:0.75rem; background:#eee; padding:3px 8px; border-radius:4px;">Tip: ${e.feedbackType}</span>` : ''}
-            </div>`;
-        }
-    });
 }
