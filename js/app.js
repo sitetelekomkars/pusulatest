@@ -44,7 +44,7 @@ function toggleFavorite(title) {
     if (currentCategory === 'fav') {
         filterCategory(document.querySelector('.btn-fav'), 'fav');
     } else {
-        renderCards(activeCards); // Favori ikonunu güncellemek için
+        renderCards(activeCards); // İkonu güncellemek için
     }
 }
 
@@ -144,7 +144,6 @@ function checkSession() {
             loadWizardData();
             loadTechWizardData();
             
-            // Eğer qusers rolündeyse, ana kartları gizle ve kalite panelini aç
             if (savedRole === 'qusers') {
                 const grid = document.getElementById('cardGrid');
                 if (grid) grid.style.display = 'none';
@@ -1711,7 +1710,29 @@ function twGoBack() { if(twState.history.length>0) { twState.currentStep = twSta
 function twResetWizard() { twState.currentStep = 'start'; twState.history = []; twRenderStep(); }
 
 function openNews() { document.getElementById('news-modal').style.display = 'flex'; const c = document.getElementById('news-container'); c.innerHTML=''; newsData.forEach((i,x)=>{ let eb=(isAdminMode&&isEditingActive)?`<i class="fas fa-pencil-alt edit-icon" onclick="editNews(${x})"></i>`:''; c.innerHTML+=`<div class="news-item">${eb}<span class="news-date">${i.date}</span><span class="news-title">${i.title}</span><div class="news-desc">${i.desc}</div></div>`; }); }
-function openGuide() { document.getElementById('guide-modal').style.display='flex'; const g=document.getElementById('guide-grid'); g.innerHTML=''; sportsData.forEach((s,x)=>{ let eb=(isAdminMode&&isEditingActive)?`<i class="fas fa-pencil-alt edit-icon" onclick="editSport('${escapeForJsString(s.title)}')"></i>`:''; g.innerHTML+=`<div class="guide-item" onclick="showSportDetail(${x})">${eb}<i class="fas ${s.icon} guide-icon"></i><span class="guide-title">${s.title}</span></div>`; }); }
+function openGuide() {
+    document.getElementById('guide-modal').style.display = 'flex';
+    const g = document.getElementById('guide-grid');
+    g.innerHTML = '';
+    sportsData.forEach((s, x) => {
+        let eb = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" style="position:absolute; top:5px; right:5px;" onclick="event.stopPropagation(); editSport('${escapeForJsString(s.title)}')"></i>` : '';
+        
+        let pronHtml = s.pronunciation ? `<div class="pronunciation-badge">🗣️ ${s.pronunciation}</div>` : '';
+        let descHtml = s.desc ? `<div class="guide-desc">${s.desc}</div>` : '';
+        let tipHtml = s.tip ? `<div class="guide-tip">💡 ${s.tip}</div>` : '';
+
+        g.innerHTML += `
+        <div class="guide-item" onclick="showSportDetail(${x})">
+            ${eb}
+            <i class="fas ${s.icon} guide-icon"></i>
+            <span class="guide-title">${s.title}</span>
+            ${pronHtml}
+            ${descHtml}
+            ${tipHtml}
+            <div style="font-size:0.75rem; color:#999; margin-top:8px;">(Detay için tıkla)</div>
+        </div>`;
+    });
+}
 function showSportDetail(x) { const s=sportsData[x]; Swal.fire({ title: s.title, html: s.detail, width:'600px' }); }
 function openSales() { document.getElementById('sales-modal').style.display='flex'; const c=document.getElementById('sales-grid'); c.innerHTML=''; salesScripts.forEach((s,x)=>{ let eb=(isAdminMode&&isEditingActive)?`<i class="fas fa-pencil-alt edit-icon" onclick="editSales('${escapeForJsString(s.title)}')"></i>`:''; c.innerHTML+=`<div class="sales-item" id="sales-${x}" onclick="toggleSales('${x}')">${eb}<div class="sales-header"><span class="sales-title">${s.title}</span></div><div class="sales-text">${s.text}</div></div>`; }); }
 function toggleSales(x) { document.getElementById(`sales-${x}`).classList.toggle('active'); }
