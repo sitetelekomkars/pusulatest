@@ -1,5 +1,5 @@
 const BAKIM_MODU = false;
-// Apps Script URL'si - GÜNCEL BACKEND URL'NİZ BURADA OLMALI
+// Apps Script URL'si
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby3kd04k2u9XdVDD1-vdbQQAsHNW6WLIn8bNYxTlVCL3U1a0WqZo6oPp9zfBWIpwJEinQ/exec";
 
 // ==========================================================
@@ -11,7 +11,7 @@ let firstAnswerIndex = -1;
 const VALID_CATEGORIES = ['Teknik', 'İkna', 'Kampanya', 'Bilgi'];
 
 let database = [], newsData = [], sportsData = [], salesScripts = [], quizQuestions = [];
-let techWizardData = {}; // Teknik Sihirbaz Verisi
+let techWizardData = {}; 
 let currentUser = "";
 let isAdminMode = false;    
 let isEditingActive = false;
@@ -44,7 +44,7 @@ function toggleFavorite(title) {
     if (currentCategory === 'fav') {
         filterCategory(document.querySelector('.btn-fav'), 'fav');
     } else {
-        renderCards(activeCards);
+        renderCards(activeCards); // Favori ikonunu güncellemek için
     }
 }
 
@@ -144,6 +144,7 @@ function checkSession() {
             loadWizardData();
             loadTechWizardData();
             
+            // Eğer qusers rolündeyse, ana kartları gizle ve kalite panelini aç
             if (savedRole === 'qusers') {
                 const grid = document.getElementById('cardGrid');
                 if (grid) grid.style.display = 'none';
@@ -497,7 +498,7 @@ function loadTechWizardData() {
 }
 
 // ==========================================================
-// --- 4. RENDER & FİLTRELEME (ANA EKRAN) ---
+// --- 4. RENDER & FİLTRELEME (ANA KARTLAR - ÖZELLİKLER KORUNDU) ---
 // ==========================================================
 function renderCards(data) {
     activeCards = data;
@@ -518,6 +519,7 @@ function renderCards(data) {
             : '';
         
         let rawText = item.text || "";
+        // Metin içindeki yıldızları bold yapma ve satır başlarını ayarlama
         let formattedText = rawText.replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<b>$1</b>');
         
         let html = `<div class="card ${item.category}">${newBadge}
