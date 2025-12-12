@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js Kütüphanesi Eklendi -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
@@ -242,11 +244,16 @@
 
         <div class="q-content">
             <div id="view-dashboard" class="q-view-section active">
-                <div class="q-view-header">
+                <!-- GÜNCELLENMİŞ HEADER: FİLTRELER EKLENDİ -->
+                <div class="q-view-header" style="flex-wrap: wrap; gap:10px;">
                     <h2>Genel Bakış</h2>
-                    <div class="q-period-selector">
-                        <span>Dönem:</span>
-                        <select id="q-dash-month" onchange="refreshQualityData()"></select>
+                    <div style="display:flex; gap:10px; margin-left: auto; align-items: center; flex-wrap: wrap;">
+                         <select id="q-dash-group" onchange="updateDashAgentList()" class="minimal-select" style="max-width: 120px;"><option value="all">Tüm Gruplar</option></select>
+                         <select id="q-dash-agent" onchange="refreshQualityData()" class="minimal-select" style="max-width: 130px;"><option value="all">Tüm Temsilciler</option></select>
+                         <div class="q-period-selector" style="margin-left:10px;">
+                            <span>Dönem:</span>
+                            <select id="q-dash-month" onchange="refreshQualityData()"></select>
+                        </div>
                     </div>
                 </div>
                 
@@ -281,9 +288,12 @@
                             <div class="score-circle-inner" id="q-dash-ring-text">-</div>
                         </div>
                     </div>
+                    <!-- GÜNCELLENMİŞ KART: GRAFİK ALANI -->
                     <div class="q-chart-card" style="flex:2;">
-                        <h3>Son Değerlendirmeler</h3>
-                        <div id="q-dash-recent-list" class="simple-list">Yükleniyor...</div>
+                        <h3>Puan Kırılımları</h3>
+                        <div style="position: relative; height: 220px; width: 100%;">
+                            <canvas id="q-breakdown-chart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -335,7 +345,7 @@
         }
         window.addEventListener('click', function(e) {
             if (!document.getElementById('adminBtn').contains(e.target)) {
-                const dropdown = documenAt.getElementById('userDropdown');
+                const dropdown = document.getElementById('userDropdown');
                 const arrow = document.getElementById('user-menu-arrow');
                 if (dropdown.classList.contains('show')) {
                     dropdown.classList.remove('show');
