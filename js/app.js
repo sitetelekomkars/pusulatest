@@ -22,6 +22,8 @@ let wizardStepsData = {};
 let trainingData = [];
 // YENİ: Chart instance'ı tutmak için
 let dashboardChart = null;
+// YENİ: Feedback Log Verisi (Manuel kayıt detayları için)
+let feedbackLogsData = [];
 // ==========================================================
 // --- KALİTE PUANLAMA LOGİĞİ: CHAT (BUTON TABANLI) ---
 // ==========================================================
@@ -261,7 +263,7 @@ function girisYap() {
             const savedRole = data.role;
             if (data.forceChange === true) {
                 Swal.fire({
-                    icon: 'warning', title: '⚠️ Güvenlik Uyarısı',
+                    icon: 'warning', title: ' ⚠️  Güvenlik Uyarısı',
                     text: 'İlk girişiniz. Lütfen şifrenizi değiştirin.',
                     allowOutsideClick: false, allowEscapeKey: false, confirmButtonText: 'Şifremi Değiştir'
                 }).then(() => { changePasswordPopup(true); });
@@ -556,11 +558,11 @@ async function addNewCardPopup() {
         <div style="margin-bottom:15px; text-align:left;">
             <label style="font-weight:bold; font-size:0.9rem;">Ne Ekleyeceksin?</label>
             <select id="swal-type-select" class="swal2-input" style="width:100%; margin-top:5px; height:35px; font-size:0.9rem;" onchange="toggleAddFields()">
-                <option value="card">📌 Bilgi Kartı</option>
-                <option value="news">📢 Duyuru</option>
-                <option value="sales">📞 Telesatış Scripti</option>
-                <option value="sport">🏆 Spor İçeriği</option>
-                <option value="quiz">❓ Quiz Sorusu</option>
+                <option value="card"> 📌  Bilgi Kartı</option>
+                <option value="news"> 📢  Duyuru</option>
+                <option value="sales"> 📞  Telesatış Scripti</option>
+                <option value="sport"> 🏆  Spor İçeriği</option>
+                <option value="quiz"> ❓  Quiz Sorusu</option>
             </select>
         </div>
         <div id="preview-card" class="card Bilgi" style="text-align:left; box-shadow:none; border:1px solid #e0e0e0; margin-top:10px;">
@@ -832,7 +834,7 @@ function openGuide() {
     const grid = document.getElementById('guide-grid');
     grid.innerHTML = '';
     sportsData.forEach((s, index) => {
-        let pronHtml = s.pronunciation ? `<div class="pronunciation-badge">🗣️ ${s.pronunciation}</div>` : '';
+        let pronHtml = s.pronunciation ? `<div class="pronunciation-badge"> 🗣️  ${s.pronunciation}</div>` : '';
         let editBtn = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" style="top:5px; right:5px; z-index:50;" onclick="event.stopPropagation(); editSport('${escapeForJsString(s.title)}')"></i>` : '';
         grid.innerHTML += `<div class="guide-item" onclick="showSportDetail(${index})">${editBtn}<i class="fas ${s.icon} guide-icon"></i><span class="guide-title">${s.title}</span>${pronHtml}<div class="guide-desc">${s.desc}</div><div class="guide-tip"><i class="fas fa-lightbulb"></i> ${s.tip}</div><div style="font-size:0.8rem; color:#999; margin-top:5px;">(Detay için tıkla)</div></div>`;
     });
@@ -840,7 +842,7 @@ function openGuide() {
 function showSportDetail(index) {
     const sport = sportsData[index];
     const detailText = sport.detail ? sport.detail.replace(/\n/g,'<br>') : "Bu içerik için henüz detay eklenmemiş.";
-    const pronDetail = sport.pronunciation ? `<div style="color:#e65100; font-weight:bold; margin-bottom:15px;">🗣️ Okunuşu: ${sport.pronunciation}</div>` : '';
+    const pronDetail = sport.pronunciation ? `<div style="color:#e65100; font-weight:bold; margin-bottom:15px;"> 🗣️  Okunuşu: ${sport.pronunciation}</div>` : '';
     Swal.fire({
         title: `<i class="fas ${sport.icon}" style="color:#0e1b42;"></i> ${sport.title}`,
         html: `${pronDetail}<div style="text-align:left; font-size:1rem; line-height:1.6;">${detailText}</div>`,
@@ -863,134 +865,414 @@ function toggleSales(index) {
     if(item.classList.contains('active')){ icon.classList.replace('fa-chevron-down', 'fa-chevron-up'); } 
     else { icon.classList.replace('fa-chevron-up', 'fa-chevron-down'); }
 }
+
 // --- PENALTY GAME ---
-let pScore=0, pBalls=10, pCurrentQ=null;
+// Tasarım/Güncelleme: Tekrarlayan soru engeli, akıllı 50:50, double rozet, daha net maç sonu ekranı
+
+let pScore = 0, pBalls = 10, pCurrentQ = null;
+let pQuestionQueue = [];        // oturum boyunca sorulacak soru indeksleri (karıştırılmış)
+let pAskedCount = 0;            // kaç soru soruldu
+let pCorrectCount = 0;          // kaç doğru
+let pWrongCount = 0;            // kaç yanlış
+
+function setDoubleIndicator(isActive) {
+    const el = document.getElementById('double-indicator');
+    if (!el) return;
+    el.style.display = isActive ? 'inline-flex' : 'none';
+}
+
 function updateJokerButtons() {
-    document.getElementById('joker-call').disabled = jokers.call === 0;
-    document.getElementById('joker-half').disabled = jokers.half === 0;
-    document.getElementById('joker-double').disabled = jokers.double === 0 || firstAnswerIndex !== -1;
+    const callBtn = document.getElementById('joker-call');
+    const halfBtn = document.getElementById('joker-half');
+    const doubleBtn = document.getElementById('joker-double');
+
+    if (callBtn) callBtn.disabled = jokers.call === 0;
+    if (halfBtn) halfBtn.disabled = jokers.half === 0;
+    if (doubleBtn) doubleBtn.disabled = jokers.double === 0 || firstAnswerIndex !== -1;
+
+    // Double aktifken diğerleri kilitlensin
     if (firstAnswerIndex !== -1) {
-        document.getElementById('joker-call').disabled = true;
-        document.getElementById('joker-half').disabled = true;
-        document.getElementById('joker-double').disabled = true;
+        if (callBtn) callBtn.disabled = true;
+        if (halfBtn) halfBtn.disabled = true;
+        if (doubleBtn) doubleBtn.disabled = true;
     }
 }
+
 function useJoker(type) {
-    if (jokers[type] === 0 || (firstAnswerIndex !== -1 && type !== 'double')) return;
-    jokers[type] = 0; updateJokerButtons();
-    const currentQ = pCurrentQ, correctAns = currentQ.a, btns = document.querySelectorAll('.penalty-btn');
-    
+    if (!pCurrentQ) return;
+    if (jokers[type] === 0) return;
+    if (firstAnswerIndex !== -1 && type !== 'double') return;
+
+    jokers[type] = 0;
+    updateJokerButtons();
+
+    const currentQ = pCurrentQ;
+    const correctAns = currentQ.a;
+    const btns = document.querySelectorAll('.penalty-btn');
+
     if (type === 'call') {
         const experts = ["Umut Bey", "Doğuş Bey", "Deniz Bey", "Esra Hanım"];
         const expert = experts[Math.floor(Math.random() * experts.length)];
+
         let guess = correctAns;
+        // %80 doğru, %20 yanlış tahmin
         if (Math.random() > 0.8 && currentQ.opts.length > 1) {
-            let incorrectOpts = currentQ.opts.map((_, i) => i).filter(i => i !== correctAns);
-            guess = incorrectOpts[Math.floor(Math.random() * incorrectOpts.length)] || correctAns;
+            const incorrect = currentQ.opts.map((_, i) => i).filter(i => i !== correctAns);
+            guess = incorrect[Math.floor(Math.random() * incorrect.length)] ?? correctAns;
         }
-        Swal.fire({ icon: 'info', title: '📞 Telefon Jokeri', html: `${expert} soruyu cevaplıyor...<br><br>"Benim tahminim kesinlikle **${String.fromCharCode(65 + guess)}** şıkkı. Bundan ${Math.random() < 0.8 ? "çok eminim" : "emin değilim"}."`, confirmButtonText: 'Kapat' });
+
+        Swal.fire({
+            icon: 'info',
+            title: ' 📞 Telefon Jokeri',
+            html: `${expert} soruyu cevaplıyor...<br><br>"Benim tahminim **${String.fromCharCode(65 + guess)}** şıkkı. Bundan ${Math.random() < 0.8 ? "çok eminim" : "emin değilim"}."`,
+            confirmButtonText: 'Kapat'
+        });
+
     } else if (type === 'half') {
-        let incorrectOpts = currentQ.opts.map((_, i) => i).filter(i => i !== correctAns).sort(() => Math.random() - 0.5).slice(0, 2);
-        incorrectOpts.forEach(idx => { btns[idx].disabled = true; btns[idx].style.textDecoration = 'line-through'; btns[idx].style.opacity = '0.4'; });
-        Swal.fire({ icon: 'success', title: '✂️ Yarı Yarıya', text: 'İki yanlış şık elendi!', toast: true, position: 'top', showConfirmButton: false, timer: 1500 });
+        const optLen = Array.isArray(currentQ.opts) ? currentQ.opts.length : 0;
+        if (optLen <= 2) {
+            Swal.fire({ icon:'info', title:'✂️ 50:50', text:'Bu soruda 50:50 uygulanamaz.', toast:true, position:'top', showConfirmButton:false, timer:1800 });
+            return;
+        }
+
+        // 4+ şıkta 2 yanlış, 3 şıkta 1 yanlış ele
+        const removeCount = optLen >= 4 ? 2 : 1;
+        const incorrect = currentQ.opts.map((_, i) => i).filter(i => i !== correctAns);
+        incorrect.sort(() => Math.random() - 0.5).slice(0, removeCount).forEach(idx => {
+            const b = btns[idx];
+            if (!b) return;
+            b.disabled = true;
+            b.style.textDecoration = 'line-through';
+            b.style.opacity = '0.4';
+        });
+
+        Swal.fire({
+            icon: 'success',
+            title: ' ✂️ 50:50',
+            text: removeCount === 2 ? 'İki yanlış şık elendi!' : 'Bir yanlış şık elendi!',
+            toast: true,
+            position: 'top',
+            showConfirmButton: false,
+            timer: 1400
+        });
+
     } else if (type === 'double') {
         doubleChanceUsed = true;
-        Swal.fire({ icon: 'warning', title: '2️⃣ Çift Cevap', text: 'Bir kez yanlış cevap hakkınız var.', toast: true, position: 'top', showConfirmButton: false, timer: 2500 });
+        setDoubleIndicator(true);
+        Swal.fire({
+            icon: 'warning',
+            title: '2️ ⃣ Çift Cevap',
+            text: 'Bir kez yanlış cevap hakkın var.',
+            toast: true,
+            position: 'top',
+            showConfirmButton: false,
+            timer: 2200
+        });
     }
 }
-function openPenaltyGame() { document.getElementById('penalty-modal').style.display = 'flex'; showLobby(); }
-function showLobby() { document.getElementById('penalty-lobby').style.display = 'flex'; document.getElementById('penalty-game-area').style.display = 'none'; fetchLeaderboard(); }
-function startGameFromLobby() { document.getElementById('penalty-lobby').style.display = 'none'; document.getElementById('penalty-game-area').style.display = 'block'; startPenaltySession(); }
+
+function openPenaltyGame() {
+    document.getElementById('penalty-modal').style.display = 'flex';
+    showLobby();
+}
+
+function showLobby() {
+    document.getElementById('penalty-lobby').style.display = 'flex';
+    document.getElementById('penalty-game-area').style.display = 'none';
+    fetchLeaderboard();
+}
+
+function startGameFromLobby() {
+    document.getElementById('penalty-lobby').style.display = 'none';
+    document.getElementById('penalty-game-area').style.display = 'block';
+    startPenaltySession();
+}
+
 function fetchLeaderboard() {
-    const tbody = document.getElementById('leaderboard-body'), loader = document.getElementById('leaderboard-loader'), table = document.getElementById('leaderboard-table');
-    tbody.innerHTML = ''; loader.style.display = 'block'; table.style.display = 'none';
-    fetch(SCRIPT_URL, { method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "getLeaderboard" }) })
-    .then(r => r.json()).then(data => {
+    const tbody = document.getElementById('leaderboard-body');
+    const loader = document.getElementById('leaderboard-loader');
+    const table = document.getElementById('leaderboard-table');
+
+    if (!tbody || !loader || !table) return;
+
+    tbody.innerHTML = '';
+    loader.style.display = 'block';
+    table.style.display = 'none';
+
+    fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getLeaderboard" })
+    })
+    .then(r => r.json())
+    .then(data => {
         loader.style.display = 'none';
-        if (data.result === "success") {
-            table.style.display = 'table';
-            let html = '';
-            if(data.leaderboard.length === 0) { html = '<tr><td colspan="4" style="text-align:center;">Henüz maç yapılmadı.</td></tr>'; } 
-            else {
-                data.leaderboard.forEach((u, i) => {
-                    let medal = i===0 ? '🥇' : (i===1 ? '🥈' : (i===2 ? '🥉' : `<span class="rank-badge">${i+1}</span>`));
-                    let bgStyle = (u.username === currentUser) ? 'background:rgba(250, 187, 0, 0.1);' : '';
-                    html += `<tr style="${bgStyle}"><td>${medal}</td><td>${u.username}</td><td>${u.games}</td><td>${u.average}</td></tr>`;
-                });
-            }
-            tbody.innerHTML = html;
-        } else { loader.innerText = "Yüklenemedi."; loader.style.display = 'block'; }
+        if (data.result !== "success") {
+            loader.innerText = "Yüklenemedi.";
+            loader.style.display = 'block';
+            return;
+        }
+
+        table.style.display = 'table';
+        let html = '';
+
+        if (!data.leaderboard || data.leaderboard.length === 0) {
+            html = '<tr><td colspan="4" style="text-align:center;">Henüz maç yapılmadı.</td></tr>';
+        } else {
+            data.leaderboard.forEach((u, i) => {
+                const medal = i===0 ? '🥇' : (i===1 ? '🥈' : (i===2 ? '🥉' : `<span class="rank-badge">${i+1}</span>`));
+                const bgStyle = (u.username === currentUser) ? 'background:rgba(250, 187, 0, 0.1);' : '';
+                html += `<tr style="${bgStyle}"><td>${medal}</td><td>${u.username}</td><td>${u.games}</td><td>${u.average}</td></tr>`;
+            });
+        }
+        tbody.innerHTML = html;
+    })
+    .catch(() => {
+        loader.style.display = 'none';
+        loader.innerText = "Bağlantı hatası.";
+        loader.style.display = 'block';
     });
 }
-function startPenaltySession() {
-    pScore = 0; pBalls = 10; jokers = { call: 1, half: 1, double: 1 }; doubleChanceUsed = false; firstAnswerIndex = -1;
-    updateJokerButtons(); document.getElementById('p-score').innerText = pScore; document.getElementById('p-balls').innerText = pBalls;
-    document.getElementById('p-restart-btn').style.display = 'none'; document.getElementById('p-options').style.display = 'grid';
-    resetField(); loadPenaltyQuestion();
+
+function buildQuestionQueue() {
+    const n = quizQuestions.length;
+    const idxs = Array.from({ length: n }, (_, i) => i);
+    idxs.sort(() => Math.random() - 0.5);
+
+    // 10 soru için yeter yoksa, yine de döngüye sokmayalım: kalan toplarda tekrar olabilir.
+    // ama önce tüm sorular bir kez gelsin.
+    return idxs;
 }
+
+function startPenaltySession() {
+    // Session reset
+    pScore = 0;
+    pBalls = 10;
+    pAskedCount = 0;
+    pCorrectCount = 0;
+    pWrongCount = 0;
+
+    jokers = { call: 1, half: 1, double: 1 };
+    doubleChanceUsed = false;
+    firstAnswerIndex = -1;
+    setDoubleIndicator(false);
+
+    // Soru kuyruğu
+    pQuestionQueue = buildQuestionQueue();
+
+    updateJokerButtons();
+    document.getElementById('p-score').innerText = pScore;
+    document.getElementById('p-balls').innerText = pBalls;
+
+    const restartBtn = document.getElementById('p-restart-btn');
+    const optionsEl = document.getElementById('p-options');
+    if (restartBtn) restartBtn.style.display = 'none';
+    if (optionsEl) optionsEl.style.display = 'grid';
+
+    resetField();
+    loadPenaltyQuestion();
+}
+
+function pickNextQuestion() {
+    if (quizQuestions.length === 0) return null;
+
+    // Önce kuyruktan tüket
+    if (pQuestionQueue.length > 0) {
+        const i = pQuestionQueue.shift();
+        return quizQuestions[i];
+    }
+
+    // Kuyruk bitti ama top devam ediyor: artık random (soru azsa)
+    return quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
+}
+
 function loadPenaltyQuestion() {
     if (pBalls <= 0) { finishPenaltyGame(); return; }
-    if (quizQuestions.length === 0) { Swal.fire('Hata', 'Soru yok!', 'warning'); return; }
-    pCurrentQ = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
-    document.getElementById('p-question-text').innerText = pCurrentQ.q;
-    doubleChanceUsed = false; firstAnswerIndex = -1; updateJokerButtons();
-    let html = '';
-    pCurrentQ.opts.forEach((opt, index) => { const letter = String.fromCharCode(65 + index); html += `<button class="penalty-btn" onclick="shootBall(${index})">${letter}: ${opt}</button>`; });
-    document.getElementById('p-options').innerHTML = html;
-}
-function shootBall(idx) {
-    const btns = document.querySelectorAll('.penalty-btn'), isCorrect = (idx === pCurrentQ.a);
-    if (!isCorrect && doubleChanceUsed && firstAnswerIndex === -1) {
-        firstAnswerIndex = idx; btns[idx].classList.add('wrong-first-try'); btns[idx].disabled = true;
-        Swal.fire({ toast: true, position: 'top', icon: 'info', title: 'İlk Hata! Kalan Hakkınız: 1', showConfirmButton: false, timer: 1500, background: '#ffc107' });
-        updateJokerButtons(); return;
+    if (!Array.isArray(quizQuestions) || quizQuestions.length === 0) {
+        Swal.fire('Hata', 'Soru yok!', 'warning');
+        return;
     }
-    btns.forEach(b => b.disabled = true);
-    const ballWrap = document.getElementById('ball-wrap'), keeperWrap = document.getElementById('keeper-wrap'), shooterWrap = document.getElementById('shooter-wrap'), goalMsg = document.getElementById('goal-msg');
-    const shotDir = Math.floor(Math.random() * 4);
-    shooterWrap.classList.add('shooter-run');
-    setTimeout(() => {
-        if(isCorrect) {
-            if(shotDir === 0 || shotDir === 2) keeperWrap.classList.add('keeper-dive-right'); else keeperWrap.classList.add('keeper-dive-left');
-        } else {
-            if(shotDir === 0 || shotDir === 2) keeperWrap.classList.add('keeper-dive-left'); else keeperWrap.classList.add('keeper-dive-right');
+
+    pCurrentQ = pickNextQuestion();
+    if (!pCurrentQ || !pCurrentQ.opts || pCurrentQ.opts.length < 2) {
+        Swal.fire('Hata', 'Bu soru hatalı formatta (şık yok).', 'error');
+        // bir sonraki soruyu dene
+        pCurrentQ = pickNextQuestion();
+        if (!pCurrentQ) return;
+    }
+
+    pAskedCount++;
+    doubleChanceUsed = false;
+    firstAnswerIndex = -1;
+    setDoubleIndicator(false);
+    updateJokerButtons();
+
+    const qEl = document.getElementById('p-question-text');
+    if (qEl) qEl.innerText = pCurrentQ.q || "Soru";
+
+    let html = '';
+    pCurrentQ.opts.forEach((opt, index) => {
+        const letter = String.fromCharCode(65 + index);
+        html += `<button class="penalty-btn" onclick="shootBall(${index})">${letter}: ${opt}</button>`;
+    });
+
+    const optionsEl = document.getElementById('p-options');
+    if (optionsEl) optionsEl.innerHTML = html;
+}
+
+function shootBall(idx) {
+    const btns = document.querySelectorAll('.penalty-btn');
+    const isCorrect = (idx === pCurrentQ.a);
+
+    // Double joker: ilk yanlışta bir hak daha
+    if (!isCorrect && doubleChanceUsed && firstAnswerIndex === -1) {
+        firstAnswerIndex = idx;
+        if (btns[idx]) {
+            btns[idx].classList.add('wrong-first-try');
+            btns[idx].disabled = true;
         }
-        if (isCorrect) {
-            if(shotDir === 0) ballWrap.classList.add('ball-shoot-left-top'); else if(shotDir === 1) ballWrap.classList.add('ball-shoot-right-top'); else if(shotDir === 2) ballWrap.classList.add('ball-shoot-left-low'); else ballWrap.classList.add('ball-shoot-right-low');
-            setTimeout(() => {
-                goalMsg.innerText = "GOL!!!"; goalMsg.style.color = "#fabb00"; goalMsg.classList.add('show'); pScore++; document.getElementById('p-score').innerText = pScore;
-                Swal.fire({ toast: true, position: 'top', icon: 'success', title: 'Mükemmel Şut!', showConfirmButton: false, timer: 1000, background: '#a5d6a7' });
-            }, 500);
-        } else {
-            if(Math.random() > 0.5) {
-                ballWrap.style.bottom = "160px"; ballWrap.style.left = (shotDir === 0 || shotDir === 2) ? "40%" : "60%"; ballWrap.style.transform = "scale(0.6)";
-                setTimeout(() => {
-                    goalMsg.innerText = "KURTARDI!"; goalMsg.style.color = "#ef5350"; goalMsg.classList.add('show');
-                    Swal.fire({ icon: 'error', title: 'Kaçırdın!', text: `Doğru: ${String.fromCharCode(65 + pCurrentQ.a)}`, showConfirmButton: true, timer: 2500, background: '#ef9a9a' });
-                }, 500);
+        Swal.fire({ toast: true, position: 'top', icon: 'info', title: 'İlk Hata! Kalan Hakkın: 1', showConfirmButton: false, timer: 1400, background: '#ffc107' });
+        updateJokerButtons();
+        return;
+    }
+
+    // Artık atış kesinleşti
+    btns.forEach(b => b.disabled = true);
+
+    const ballWrap = document.getElementById('ball-wrap');
+    const keeperWrap = document.getElementById('keeper-wrap');
+    const shooterWrap = document.getElementById('shooter-wrap');
+    const goalMsg = document.getElementById('goal-msg');
+
+    const shotDir = Math.floor(Math.random() * 4);
+    if (shooterWrap) shooterWrap.classList.add('shooter-run');
+
+    setTimeout(() => {
+        if (keeperWrap) {
+            if (isCorrect) {
+                if (shotDir === 0 || shotDir === 2) keeperWrap.classList.add('keeper-dive-right');
+                else keeperWrap.classList.add('keeper-dive-left');
             } else {
-                ballWrap.classList.add(Math.random() > 0.5 ? 'ball-miss-left' : 'ball-miss-right');
-                setTimeout(() => {
-                    goalMsg.innerText = "DIŞARI!"; goalMsg.style.color = "#ef5350"; goalMsg.classList.add('show');
-                    Swal.fire({ icon: 'error', title: 'Kaçırdın!', text: `Doğru: ${String.fromCharCode(65 + pCurrentQ.a)}`, showConfirmButton: true, timer: 2500, background: '#ef9a9a' });
-                }, 500);
+                if (shotDir === 0 || shotDir === 2) keeperWrap.classList.add('keeper-dive-left');
+                else keeperWrap.classList.add('keeper-dive-right');
+            }
+        }
+
+        if (isCorrect) {
+            if (ballWrap) {
+                if (shotDir === 0) ballWrap.classList.add('ball-shoot-left-top');
+                else if (shotDir === 1) ballWrap.classList.add('ball-shoot-right-top');
+                else if (shotDir === 2) ballWrap.classList.add('ball-shoot-left-low');
+                else ballWrap.classList.add('ball-shoot-right-low');
+            }
+
+            setTimeout(() => {
+                if (goalMsg) {
+                    goalMsg.innerText = "GOL!!!";
+                    goalMsg.style.color = "#fabb00";
+                    goalMsg.classList.add('show');
+                }
+                pScore++;
+                pCorrectCount++;
+                document.getElementById('p-score').innerText = pScore;
+
+                Swal.fire({ toast:true, position:'top', icon:'success', title:'Mükemmel Şut!', showConfirmButton:false, timer:900, background:'#a5d6a7' });
+            }, 450);
+
+        } else {
+            pWrongCount++;
+
+            const showWrong = () => {
+                if (goalMsg) {
+                    goalMsg.style.color = "#ef5350";
+                    goalMsg.classList.add('show');
+                }
+                Swal.fire({ icon:'error', title:'Kaçırdın!', text:`Doğru: ${String.fromCharCode(65 + pCurrentQ.a)}`, showConfirmButton:true, timer:2400, background:'#ef9a9a' });
+            };
+
+            if (Math.random() > 0.5) {
+                if (ballWrap) {
+                    ballWrap.style.bottom = "160px";
+                    ballWrap.style.left = (shotDir === 0 || shotDir === 2) ? "40%" : "60%";
+                    ballWrap.style.transform = "scale(0.6)";
+                }
+                setTimeout(() => { if (goalMsg) goalMsg.innerText = "KURTARDI!"; showWrong(); }, 450);
+            } else {
+                if (ballWrap) ballWrap.classList.add(Math.random() > 0.5 ? 'ball-miss-left' : 'ball-miss-right');
+                setTimeout(() => { if (goalMsg) goalMsg.innerText = "DIŞARI!"; showWrong(); }, 450);
             }
         }
     }, 300);
-    pBalls--; document.getElementById('p-balls').innerText = pBalls;
-    setTimeout(() => { resetField(); loadPenaltyQuestion(); }, 2500);
+
+    // top azalt
+    pBalls--;
+    document.getElementById('p-balls').innerText = pBalls;
+
+    setTimeout(() => { resetField(); loadPenaltyQuestion(); }, 2400);
 }
+
 function resetField() {
-    const ballWrap = document.getElementById('ball-wrap'), keeperWrap = document.getElementById('keeper-wrap'), shooterWrap = document.getElementById('shooter-wrap'), goalMsg = document.getElementById('goal-msg');
-    ballWrap.className = 'ball-wrapper'; ballWrap.style = ""; keeperWrap.className = 'keeper-wrapper'; shooterWrap.className = 'shooter-wrapper'; goalMsg.classList.remove('show');
-    document.querySelectorAll('.penalty-btn').forEach(b => { b.classList.remove('wrong-first-try'); b.style.textDecoration = ''; b.style.opacity = ''; b.style.background = '#fabb00'; b.style.color = '#0e1b42'; b.style.borderColor = '#f0b500'; b.disabled = false; });
+    const ballWrap = document.getElementById('ball-wrap');
+    const keeperWrap = document.getElementById('keeper-wrap');
+    const shooterWrap = document.getElementById('shooter-wrap');
+    const goalMsg = document.getElementById('goal-msg');
+
+    if (ballWrap) { ballWrap.className = 'ball-wrapper'; ballWrap.style = ""; }
+    if (keeperWrap) keeperWrap.className = 'keeper-wrapper';
+    if (shooterWrap) shooterWrap.className = 'shooter-wrapper';
+    if (goalMsg) goalMsg.classList.remove('show');
+
+    document.querySelectorAll('.penalty-btn').forEach(b => {
+        b.classList.remove('wrong-first-try');
+        b.style.textDecoration = '';
+        b.style.opacity = '';
+        b.style.background = '#fabb00';
+        b.style.color = '#0e1b42';
+        b.style.borderColor = '#f0b500';
+        b.disabled = false;
+    });
 }
+
 function finishPenaltyGame() {
-    let title = pScore >= 8 ? "EFSANE! 🏆" : (pScore >= 5 ? "İyi Maçtı! 👏" : "Antrenman Lazım 🤕");
-    document.getElementById('p-question-text').innerHTML = `<span style="font-size:1.5rem; color:#fabb00;">MAÇ BİTTİ!</span><br>${title}<br>Toplam Skor: ${pScore}/10`;
-    document.getElementById('p-options').style.display = 'none'; document.getElementById('p-restart-btn').style.display = 'block';
-    fetch(SCRIPT_URL, { method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "logQuiz", username: currentUser, token: getToken(), score: pScore * 10, total: 100 }) });
+    const totalShots = 10;
+    const title = pScore >= 8 ? "EFSANE! 🏆" : (pScore >= 5 ? "İyi Maçtı! 👏" : "Antrenman Lazım 🤕");
+    const acc = Math.round((pCorrectCount / Math.max(1, (pCorrectCount + pWrongCount))) * 100);
+
+    const qEl = document.getElementById('p-question-text');
+    if (qEl) {
+        qEl.innerHTML = `
+            <div style="font-size:1.5rem; color:#fabb00; font-weight:800;">MAÇ BİTTİ!</div>
+            <div style="margin-top:4px; font-size:1.1rem; color:#fff;">${title}</div>
+            <div style="margin-top:8px; font-size:1rem; color:#ddd;">
+                <b>Skor:</b> ${pScore}/${totalShots} &nbsp; • &nbsp;
+                <b>Doğruluk:</b> ${acc}%
+            </div>
+            <div style="margin-top:6px; font-size:0.9rem; color:#bbb;">
+                Doğru: ${pCorrectCount} &nbsp; | &nbsp; Yanlış: ${pWrongCount}
+            </div>
+            <div style="margin-top:10px; font-size:0.85rem; color:#aaa;">
+                Yeniden oynamak için aşağıdan başlatabilirsin.
+            </div>
+        `;
+    }
+
+    const optionsEl = document.getElementById('p-options');
+    const restartBtn = document.getElementById('p-restart-btn');
+    if (optionsEl) optionsEl.style.display = 'none';
+    if (restartBtn) restartBtn.style.display = 'block';
+
+    // Leaderboard log (mevcut backend uyumu)
+    fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "logQuiz", username: currentUser, token: getToken(), score: pScore * 10, total: 100 })
+    }).finally(() => {
+        // lobby tablosunu güncel tut
+        setTimeout(fetchLeaderboard, 600);
+    });
 }
+
+
 // --- WIZARD FUNCTIONS ---
 function openWizard(){
     document.getElementById('wizard-modal').style.display='flex';
@@ -1006,7 +1288,7 @@ function renderStep(k){
     const b = document.getElementById('wizard-body');
     let h = `<h2 style="color:var(--primary);">${s.title || ''}</h2>`;
     if(s.result) {
-        let i = s.result === 'red' ? '🛑' : (s.result === 'green' ? '✅' : '⚠️');
+        let i = s.result === 'red' ? ' 🛑 ' : (s.result === 'green' ? ' ✅ ' : ' ⚠️ ');
         let c = s.result === 'red' ? 'res-red' : (s.result === 'green' ? 'res-green' : 'res-yellow');
         h += `<div class="result-box ${c}"><div style="font-size:3rem;margin-bottom:10px;">${i}</div><h3>${s.title}</h3><p>${s.text}</p>${s.script ? `<div class="script-box">${s.script}</div>` : ''}</div><button class="restart-btn" onclick="renderStep('start')"><i class="fas fa-redo"></i> Başa Dön</button>`;
     } else {
@@ -1133,7 +1415,14 @@ function switchQualityTab(tabName, element) {
     // Veri Yükleme
     if (tabName === 'dashboard') loadQualityDashboard();
     else if (tabName === 'evaluations') fetchEvaluationsForAgent();
-    else if (tabName === 'feedback') openFeedbackTab();
+    // DÜZELTME: Feedback sekmesi açılırken önce Feedback_Logs çekilmeli
+    else if (tabName === 'feedback') {
+        fetchEvaluationsForAgent(null, true).then(() => {
+            fetchFeedbackLogs().then(() => {
+                loadFeedbackList();
+            });
+        });
+    }
     else if (tabName === 'training') loadTrainingData();
 }
 // --- DASHBOARD FONKSİYONLARI ---
@@ -1516,34 +1805,50 @@ async function assignTrainingPopup() {
     }
 }
 // --- FEEDBACK MODÜLÜ ---
-// Manuel geri bildirimlerde Dönem/Kanal bilgisi Feedback_Logs tablosunda tutuluyor.
-// Evaluations tablosundaki manuel kayıtlar "minimal" olduğu için burada map ile zenginleştiriyoruz.
-let feedbackLogsMap = {};
 
-async function loadFeedbackLogs() {
+// YENİ FONKSİYON: Feedback_Logs'u çekmek için
+async function fetchFeedbackLogs() {
     try {
-        const response = await fetch(SCRIPT_URL, {
+        const res = await fetch(SCRIPT_URL, {
             method: 'POST',
             headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({ action: "fetchFeedbackLogs", username: currentUser, token: getToken() })
         });
-        const data = await response.json();
+        const data = await res.json();
         if (data.result === "success") {
-            feedbackLogsMap = {};
-            (data.feedbackLogs || []).forEach(l => {
-                const key = String(l.callId || '').trim();
-                if (key) feedbackLogsMap[key] = l;
-            });
+            feedbackLogsData = data.feedbackLogs || [];
+        } else {
+            feedbackLogsData = [];
         }
-    } catch (e) {
-        // Sessiz geç: listede sadece "Yok" görünür ama sayfa çalışmaya devam eder.
-        console.warn("Feedback logs alınamadı:", e);
+    } catch (error) {
+        console.error("Feedback Logs çekilirken hata oluştu:", error);
+        feedbackLogsData = [];
     }
 }
 
-async function openFeedbackTab() {
-    await loadFeedbackLogs();
-    loadFeedbackList();
+// YARDIMCI FONKSİYON: Dönem bilgisini MM.YYYY formatında döndürür
+function formatPeriod(periodString) {
+    if (!periodString || periodString === 'N/A') return 'N/A';
+    
+    // Zaten MM.YYYY formatındaysa direkt döndür
+    if (periodString.match(/^\d{2}\.\d{4}$/)) {
+        return periodString;
+    }
+    
+    // Eğer uzun bir Date string'i ise (ör: Wed Oct 01 2025...) tarih nesnesine çevir
+    try {
+        const date = new Date(periodString);
+        if (!isNaN(date.getTime())) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${month}.${year}`;
+        }
+    } catch (e) {
+        // Hata oluşursa olduğu gibi bırak veya N/A döndür
+        console.error("Dönem formatlama hatası:", e);
+    }
+    
+    return periodString; // Başka formatta gelirse yine de olduğu gibi döndür
 }
 
 function loadFeedbackList() {
@@ -1580,12 +1885,23 @@ function loadFeedbackList() {
         const isEvaluationDetail = String(e.details).startsWith('[');
         const feedbackTopic = isEvaluationDetail ? 'Değerlendirme Konusu' : (e.details || 'Belirtilmemiş');
         
-        // Dönem, Kanal ve Tipi belirle (Manuel kayıtlarda bu bilgileri ekliyoruz)
+        // Dönem, Kanal ve Tipi belirle (Manuel kayıtlarda bu bilgileri Evaluations'tan değil, Feedback_Logs'tan çekiyoruz)
         const isManual = String(e.callId).toUpperCase().startsWith('MANUEL-');
-        // Backend'den gelen Dönem/Kanal bilgileri:
-        const period = e.period || e.date.substring(3); // Eğer period yoksa tarihten al (manuel kayıtlar için gelmesi beklenir)
-        const channel = e.channel || 'Yok'; // Eğer channel yoksa varsayılan 'Yok'
+        
+        let period = e.period || e.date.substring(3);
+        let channel = (e.channel && String(e.channel).trim()) ? String(e.channel).trim() : 'Yok';
         const infoType = e.feedbackType || 'Yok';
+
+        // DÜZELTME MANTIĞI: Eğer kayıt Manuel ise, detaylı bilgiyi feedbackLogsData'dan çek.
+        if (isManual) {
+            // CallId'deki MANUEL- ön ekini atarak Feedback_Logs'taki Call_ID ile eşleştirme
+            const logRow = feedbackLogsData.find(x => String(x.callId) === String(cleanCallId));
+            if (logRow) {
+                // Apps Script'ten gelen period değerini formatla (Tarih Nesnesi/String olma ihtimaline karşı)
+                period = formatPeriod(logRow.period) || period;
+                channel = logRow.channel && logRow.channel !== 'N/A' ? logRow.channel : 'Yok';
+            }
+        }
         
         listEl.innerHTML += `
             <div class="feedback-card" style="border-left-color: ${feedbackClass};">
@@ -1658,7 +1974,6 @@ async function addManualFeedbackPopup() {
                     <input type="date" id="manual-q-date" class="swal2-input" value="${new Date().toISOString().substring(0, 10)}">
                 </div>
             </div>
-
             <div class="grid-3-cols">
                 <div class="form-group">
                     <label for="manual-q-channel">Kanal</label>
@@ -1803,16 +2118,17 @@ async function addManualFeedbackPopup() {
         .then(r => r.json()).then(d => {
             if (d.result === "success") { 
                 Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false });
-                // Tüm değerlendirmeleri tekrar çek ki yeni feedback listeye eklensin
+                // DÜZELTME: Hem evaluations hem de feedback logs güncellenmeli
                 fetchEvaluationsForAgent(formValues.agentName);
-                loadFeedbackList(); // Feedback listesini yenile
+                fetchFeedbackLogs().then(() => {
+                    loadFeedbackList();
+                });
             } else { 
                 Swal.fire('Hata', d.message, 'error'); 
             }
         });
     }
 }
-// --- EVALUATION LOGIC ---
 async function fetchEvaluationsForAgent(forcedName, silent=false) {
     const listEl = document.getElementById('evaluations-list');
     if(!silent) listEl.innerHTML = 'Yükleniyor...';
@@ -2026,7 +2342,7 @@ async function logEvaluationPopup() {
         </div>`;
     
     const { value: formValues } = await Swal.fire({
-        html: contentHtml, width: '600px', showCancelButton: true, confirmButtonText: '💾 Kaydet',
+        html: contentHtml, width: '600px', showCancelButton: true, confirmButtonText: ' 💾  Kaydet',
         didOpen: () => { 
             if (isTelesatis) window.recalcTotalSliderScore(); 
             else if (isChat) window.recalcTotalScore(); 
@@ -2065,8 +2381,16 @@ async function logEvaluationPopup() {
             body: JSON.stringify({ action: "logEvaluation", username: currentUser, token: getToken(), ...formValues }) 
         })
         .then(r => r.json()).then(d => {
-            if (d.result === "success") { Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false }); fetchEvaluationsForAgent(formValues.agentName); } 
-            else { Swal.fire('Hata', d.message, 'error'); }
+            if (d.result === "success") { 
+                Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false });
+                // DÜZELTME: Hem evaluations hem de feedback logs güncellenmeli
+                fetchEvaluationsForAgent(formValues.agentName);
+                fetchFeedbackLogs().then(() => {
+                    loadFeedbackList();
+                });
+            } else { 
+                Swal.fire('Hata', d.message, 'error'); 
+            }
         });
     }
 }
@@ -2116,7 +2440,7 @@ async function editEvaluation(targetCallId) {
     contentHtml += `<div><label>Revize Feedback</label><textarea id="eval-feedback" class="swal2-textarea">${evalData.feedback||''}</textarea></div></div>`;
     
     const { value: formValues } = await Swal.fire({
-        html: contentHtml, width: '600px', showCancelButton: true, confirmButtonText: '💾 Güncelle',
+        html: contentHtml, width: '600px', showCancelButton: true, confirmButtonText: ' 💾  Güncelle',
         didOpen: () => { if (isTelesatis) window.recalcTotalSliderScore(); else if (isChat) window.recalcTotalScore(); },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value;
@@ -2145,7 +2469,14 @@ async function editEvaluation(targetCallId) {
             body: JSON.stringify({ action: "updateEvaluation", username: currentUser, token: getToken(), ...formValues }) 
         })
         .then(r => r.json()).then(d => {
-            if (d.result === "success") { Swal.fire({ icon: 'success', title: 'Güncellendi', timer: 1500, showConfirmButton: false }); fetchEvaluationsForAgent(agentName); } 
+            if (d.result === "success") { 
+                Swal.fire({ icon: 'success', title: 'Güncellendi', timer: 1500, showConfirmButton: false }); 
+                // DÜZELTME: Güncelleme sonrası hem evaluations hem de feedback logs güncellenmeli
+                fetchEvaluationsForAgent(agentName);
+                fetchFeedbackLogs().then(() => {
+                    loadFeedbackList();
+                });
+            } 
             else { Swal.fire('Hata', d.message, 'error'); }
         });
     }
