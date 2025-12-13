@@ -696,7 +696,7 @@ async function editContent(index) {
             <div class="script-box" style="padding:0; border:1px solid #f0e68c;">
                 <textarea id="swal-script" class="swal2-textarea" style="margin:0; width:100%; box-sizing:border-box; border:none; background:transparent; font-style:italic; min-height:80px; font-size:0.9rem;" placeholder="Script metni...">${(item.script || '').toString().replace(/<br>/g,'\n')}</textarea>
             </div>
-            <div id="extra-container" class="card-actions" style="margin-top:15px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <div class="card-actions" style="margin-top:15px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                 <div style="position:relative;"><i class="fas fa-code" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-code" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" value="${item.code || ''}" placeholder="Kod"></div>
                 <div style="position:relative;"><i class="fas fa-link" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-link" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" value="${item.link || ''}" placeholder="Link"></div>
             </div>
@@ -1058,8 +1058,7 @@ function openQualityArea() {
     if(oldModal) oldModal.style.display = 'none';
     // Tam ekranı aç
     const fullScreen = document.getElementById('quality-fullscreen');
-    // BURADAKİ HATA DÜZELTİLDİ: CSS'te #quality-fullscreen display:none olduğu için burayı flex yaptık
-    fullScreen.style.display = 'flex'; 
+    fullScreen.style.display = 'flex';
     // Kullanıcı bilgisini güncelle
     document.getElementById('q-side-name').innerText = currentUser;
     document.getElementById('q-side-role').innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
@@ -1396,7 +1395,7 @@ function loadTrainingData() {
                     <div class="t-card-body">
                         ${t.desc}
                         ${docHtml}
-                        <div class="training-meta-info">
+                        <div style="margin-top:10px; display:flex; justify-content:space-between; font-size:0.8rem; color:#666; padding-top:10px; border-top:1px dashed #eee;">
                             <div><strong>Süre:</strong> ${t.duration || 'Belirtilmedi'}</div>
                             <div><strong>Başlangıç:</strong> ${t.startDate || 'N/A'} - <strong>Bitiş:</strong> ${t.endDate || 'N/A'}</div>
                         </div>
@@ -1523,11 +1522,12 @@ function loadFeedbackList() {
     const manualBtn = document.getElementById('manual-feedback-admin-btn');
     if(manualBtn) manualBtn.style.display = isAdminMode ? 'flex' : 'none';
     
-    // YENİ FİLTRELEME MANTIĞI: Sadece feedbackType 'Mail' olanlar VEYA callId 'MANUEL' ile başlayanlar listelenir.
+    // YENİ FİLTRELEME MANTIĞI: Sadece feedbackType 'Mail' olanlar VEYA callId 'MANUEL' olanlar listelenir.
     const feedbackItems = allEvaluationsData.filter(e => {
-        // Not: Normal Call Center/Chat değerlendirmeleri puanlandığı için score:100 filtrelemesi yapılmaz.
+        // feedbackType kontrolü (Büyük/küçük harf duyarlılığını ortadan kaldırırız)
         const isMailFeedback = e.feedbackType && e.feedbackType.toLowerCase() === 'mail';
-        const isManualFeedback = e.callId && String(e.callId).toUpperCase().startsWith('MANUAL'); // MANUAL olarak loglanıyor
+        // Manuel kontrolü
+        const isManualFeedback = e.callId && String(e.callId).toUpperCase().startsWith('MANUEL');
         
         return isMailFeedback || isManualFeedback;
     });
@@ -1539,7 +1539,7 @@ function loadFeedbackList() {
     
     feedbackItems.forEach(e => {
         // Geliştirme: Çağrı Tarihi ve ID eklendi (Gelişmiş Kart Tasarımı)
-        const feedbackClass = e.feedbackType && e.feedbackType.toLowerCase() === 'mail' ? '#e65100' : (e.callId && String(e.callId).toUpperCase().startsWith('MANUAL') ? '#1976d2' : '#10b981');
+        const feedbackClass = e.feedbackType === 'Sözlü' ? '#2196f3' : (e.feedbackType === 'Mail' ? '#e65100' : '#10b981');
         
         listEl.innerHTML += `
             <div class="feedback-card" style="border-left-color: ${feedbackClass};">
@@ -1564,80 +1564,48 @@ function loadFeedbackList() {
 async function addManualFeedbackPopup() {
     if (!isAdminMode) return;
     
+    // Admin user listesi yoksa yükle
     if (adminUserList.length === 0) {
         Swal.fire({ title: 'Kullanıcı Listesi Yükleniyor...', didOpen: () => Swal.showLoading() });
         await fetchUserListForAdmin();
         Swal.close();
     }
     
-    // GÜNCELLENMİŞ MODAL TASARIMI (Tüm istenen alanlar eklendi)
+    // Modalı görüntüdeki gibi düzenledik (Agent Select ve sade alanlar)
     const { value: formValues } = await Swal.fire({
         title: 'Manuel Geri Bildirim Yaz',
         html: `
-            <div class="swal2-container-grid">
-                <select id="manual-q-agent" class="swal2-input swal2-select-full"></select>
-                <div class="swal2-input-row">
-                    <input id="manual-q-callid" class="swal2-input swal2-input-half" placeholder="Çağrı/Konuşma ID (Opsiyonel)">
-                    <input type="date" id="manual-q-date" class="swal2-input swal2-input-half" value="${new Date().toISOString().substring(0, 10)}">
-                </div>
-                <input id="manual-q-topic" class="swal2-input swal2-input-full" placeholder="Konu / Başlık">
-                <div class="swal2-input-row">
-                     <select id="manual-q-channel" class="swal2-input swal2-input-half">
-                        <option value="N/A">Çağrı Kanalı Seçiniz</option>
-                        <option value="Chat">Chat</option>
-                        <option value="Voice">Telefon</option>
-                        <option value="Mail">Mail</option>
-                        <option value="Social">Sosyal Medya</option>
-                    </select>
-                    <select id="manual-q-type" class="swal2-input swal2-input-half">
-                        <option value="Sözlü">Sözlü (Görüşme)</option>
-                        <option value="Mail" selected>Mail (Yazılı Bildirim)</option>
-                        <option value="Ozel">Özel Konu (Takip)</option>
-                    </select>
-                </div>
-                <textarea id="manual-q-feedback" class="swal2-textarea swal2-textarea-full" placeholder="Açıklama (Geri bildirim detayları)..."></textarea>
-            </div>
+            <select id="manual-q-agent" class="swal2-input" style="width:100%; margin-bottom:10px;"></select>
+            <input id="manual-q-topic" class="swal2-input" placeholder="Konu / Başlık" style="margin-bottom:10px;">
+            <textarea id="manual-q-feedback" class="swal2-textarea" placeholder="Geri bildirim detayları..." style="margin-bottom:10px;"></textarea>
+            <select id="manual-q-type" class="swal2-input" style="width:100%;"><option value="Sözlü">Sözlü</option><option value="Mail">Mail</option><option value="Özel">Özel Konu</option></select>
         `,
-        width: '550px',
+        width: '500px',
         showCancelButton: true,
         confirmButtonText: '  💾   Kaydet',
         didOpen: () => {
             const sel = document.getElementById('manual-q-agent');
             adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${u.name}</option>`);
-            // Swal2'nin düğme stillerini özelleştirme
-            const actions = Swal.getActions();
-            actions.querySelector('.swal2-confirm').style.background = '#6A5ACD'; 
-        },
-        customClass: {
-            title: 'swal2-title-custom'
         },
         preConfirm: () => {
             const agentName = document.getElementById('manual-q-agent').value;
-            const callId = document.getElementById('manual-q-callid').value.trim() || 'N/A';
-            const callDateRaw = document.getElementById('manual-q-date').value;
             const topic = document.getElementById('manual-q-topic').value;
             const feedback = document.getElementById('manual-q-feedback').value;
             const feedbackType = document.getElementById('manual-q-type').value;
-            const channel = document.getElementById('manual-q-channel').value;
-
             if (!agentName || !feedback) {
-                 Swal.showValidationMessage('Temsilci ve Açıklama alanı boş bırakılamaz.'); 
+                 Swal.showValidationMessage('Temsilci ve Geri Bildirim alanı boş bırakılamaz.'); 
                  return false;
             }
-            
-            // Call Date'i GG.AA.YYYY formatına çevirme (zorunlu alan)
-            const formattedDate = formatDateToDDMMYYYY(callDateRaw);
-
             return {
                 agentName,
-                // Eğer Call ID girilmediyse, Konu/Başlık kullanarak MANUAL bir ID oluştur.
-                callId: (callId === 'N/A' && topic) ? `MANUAL-${topic.substring(0, 5).toUpperCase()}` : (callId === 'N/A' ? 'MANUAL-GENEL' : callId),
-                callDate: formattedDate,
+                // MANUEL geri bildirimler için CallID ve CallDate özel değerler alır
+                callId: "MANUEL-" + Date.now().toString().substring(6), 
+                callDate: formatDateToDDMMYYYY(new Date()),
                 score: 100, // Manuel olduğu için tam puan
-                details: `${topic || 'Konu Yok'} | Kanal: ${channel}`,
+                details: "Manuel Geri Bildirim: " + (topic || "Genel"),
                 feedback,
                 feedbackType,
-                agentGroup: "Genel"
+                agentGroup: "Genel" // Manuel olduğu için Genel Grup olarak kaydedilir.
             };
         }
     });
@@ -1651,6 +1619,7 @@ async function addManualFeedbackPopup() {
         .then(r => r.json()).then(d => {
             if (d.result === "success") { 
                 Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false });
+                // Tüm değerlendirmeleri tekrar çek ki yeni feedback listeye eklensin
                 fetchEvaluationsForAgent(formValues.agentName);
             } else { 
                 Swal.fire('Hata', d.message, 'error'); 
@@ -1858,29 +1827,13 @@ async function logEvaluationPopup() {
         criteriaFieldsHtml += `</div>`;
     }
     
-    // GÜNCELLENMİŞ MODAL: Call ID zorunlu ve belirgin yapıldı
+    // GÜNCELLENMİŞ MODAL: Call ID zorunlu yapıldı
     const contentHtml = `
         <div class="eval-modal-wrapper">
             <div class="score-dashboard"><div><div style="font-size:0.9rem;">Değerlendirilen</div><div style="font-size:1.2rem; font-weight:bold; color:#fabb00;">${agentName}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${isCriteriaBased ? '100' : '100'}</div></div></div>
-            <div class="eval-header-card">
-                <div>
-                    <label style="font-weight:bold; color:var(--primary);">Çağrı ID <span style="color:var(--accent);">*</span></label>
-                    <input id="eval-callid" class="swal2-input eval-callid-input" placeholder="Call ID (Zorunlu)" required>
-                </div>
-                <div>
-                    <label style="font-weight:bold; color:var(--primary);">Tarih</label>
-                    <input type="date" id="eval-calldate" class="swal2-input" value="${new Date().toISOString().substring(0, 10)}">
-                </div>
-            </div>
+            <div class="eval-header-card"><div><label>Call ID <span style="color:red;">*</span></label><input id="eval-callid" class="swal2-input" style="height:35px; margin:0; width:100%;" placeholder="Call ID"></div><div><label>Tarih</label><input type="date" id="eval-calldate" class="swal2-input" style="height:35px; margin:0; width:100%;" value="${new Date().toISOString().substring(0, 10)}"></div></div>
             ${isCriteriaBased ? criteriaFieldsHtml : `<div style="padding:15px; border:1px dashed #ccc; text-align:center;"><label>Manuel Puan</label><br><input id="eval-manual-score" type="number" class="swal2-input" value="100" min="0" max="100" style="width:100px; text-align:center;"></div><textarea id="eval-details" class="swal2-textarea" placeholder="Detaylar..."></textarea>`}
-            <div style="margin-top:15px; padding:10px; background:#fafafa; border:1px solid #eee;">
-                <label>Geri Bildirim Tipi</label>
-                <select id="feedback-type" class="swal2-input" style="width:100%; height:40px; margin:0;">
-                    <option value="Yok">Yok</option>
-                    <option value="Sözlü">Sözlü</option>
-                    <option value="Mail" selected>Mail</option>
-                </select>
-            </div>
+            <div style="margin-top:15px; padding:10px; background:#fafafa; border:1px solid #eee;"><label>Geri Bildirim Tipi</label><select id="feedback-type" class="swal2-input" style="width:100%; height:40px; margin:0;"><option value="Yok">Yok</option><option value="Sözlü">Sözlü</option><option value="Mail" selected>Mail</option></select></div>
             <div style="margin-top:15px;"><label>Genel Geri Bildirim</label><textarea id="eval-feedback" class="swal2-textarea" style="margin-top:5px; height:80px;"></textarea></div>
         </div>`;
     
@@ -1889,13 +1842,6 @@ async function logEvaluationPopup() {
         didOpen: () => { 
             if (isTelesatis) window.recalcTotalSliderScore(); 
             else if (isChat) window.recalcTotalScore(); 
-            // Call ID inputunu seçip odaklanma ve stilini ayarlama
-            const callIdInput = document.getElementById('eval-callid');
-            if(callIdInput) {
-                callIdInput.focus();
-                callIdInput.style.border = '2px solid var(--accent)';
-                callIdInput.style.boxShadow = '0 0 0 3px rgba(211, 47, 47, 0.2)';
-            }
         },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value.trim();
@@ -1932,8 +1878,7 @@ async function logEvaluationPopup() {
         })
         .then(r => r.json()).then(d => {
             if (d.result === "success") { Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false }); fetchEvaluationsForAgent(formValues.agentName); } 
-            else { Swal.fire('Hata', d.message, 'error'); 
-            }
+            else { Swal.fire('Hata', d.message, 'error'); }
         });
     }
 }
