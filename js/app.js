@@ -829,6 +829,96 @@ function openNews() {
         c.innerHTML += `<div class="news-item" style="${passiveStyle}">${editBtn}<span class="news-date">${i.date}</span><span class="news-title">${i.title} ${passiveBadge}</span><div class="news-desc">${i.desc}</div><span class="news-tag ${cl}">${tx}</span></div>`;
     });
 }
+
+
+// =========================
+// ✅ Yayın Akışı (E-Tablo'dan)
+// =========================
+async function fetchBroadcastFlow() {
+    const r = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+            action: "getBroadcastFlow",
+            username: (typeof currentUser !== "undefined" ? currentUser : ""),
+            token: (typeof getToken === "function" ? getToken() : "")
+        })
+    });
+
+    const d = await r.json();
+    if (!d || d.result !== "success") {
+        throw new Error((d && d.message) ? d.message : "Yayın akışı alınamadı.");
+    }
+    return d.items || [];
+}
+
+async function openBroadcastFlow() {
+    Swal.fire({
+        title: "Yayın Akışı",
+        didOpen: () => Swal.showLoading(),
+        showConfirmButton: false
+    });
+
+    try {
+        const items = await fetchBroadcastFlow();
+
+        if (!items.length) {
+            Swal.fire("Yayın Akışı", "Kayıt bulunamadı.", "info");
+            return;
+        }
+
+        // Tarihe göre grupla
+        const byDate = {};
+        items.forEach(it => {
+            const k = it.date || "Tarih Yok";
+            if (!byDate[k]) byDate[k] = [];
+            byDate[k].push(it);
+        });
+
+        let html = `<div style="text-align:left; max-height:60vh; overflow:auto; padding-right:6px;">`;
+
+        Object.keys(byDate).forEach(day => {
+            html += `<div style="margin:12px 0 8px; font-weight:800; color:#0e1b42;">${escapeHtml(day)}</div>`;
+            html += `<div style="display:grid; gap:8px;">`;
+
+            byDate[day].forEach(it => {
+                html += `
+                    <div style="border:1px solid #eee; border-left:4px solid var(--secondary); border-radius:10px; padding:10px;">
+                        <div style="font-weight:800; color:#333;">${escapeHtml(it.event)}</div>
+                        <div style="margin-top:4px; font-size:0.85rem; color:#666; display:flex; gap:14px; flex-wrap:wrap;">
+                            <span><i class="far fa-clock"></i> ${escapeHtml(it.time)}</span>
+                            <span><i class="fas fa-microphone"></i> ${escapeHtml(it.announcer)}</span>
+                        </div>
+                    </div>`;
+            });
+
+            html += `</div>`;
+        });
+
+        html += `</div>`;
+
+        Swal.fire({
+            title: "Yayın Akışı",
+            html,
+            width: 900,
+            confirmButtonText: "Kapat"
+        });
+
+    } catch (err) {
+        Swal.fire("Hata", (err && err.message) ? err.message : "Yayın akışı alınamadı.", "error");
+    }
+}
+
+// XSS koruması
+function escapeHtml(str) {
+    return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
 function openGuide() {
     document.getElementById('guide-modal').style.display = 'flex';
     const grid = document.getElementById('guide-grid');
@@ -1357,7 +1447,7 @@ function openQualityArea() {
         if(assignBtn) assignBtn.style.display = 'block';
         if(manualFeedbackBtn) manualFeedbackBtn.style.display = 'flex';
         
-	        // Kullanıcı listesi boşsa çek, sonra filtreleri doldur
+        // Kullanıcı listesi boşsa çek, sonra filtreleri doldur
         if (adminUserList.length === 0) {
             fetchUserListForAdmin().then(users => {
                 const groupSelect = document.getElementById('q-admin-group');
@@ -1366,26 +1456,22 @@ function openQualityArea() {
                     groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
                     updateAgentListBasedOnGroup();
                 }
-	                populateDashboardFilters(); // Dashboard filtrelerini de doldur
-	                populateFeedbackFilters();  // Feedback filtrelerini de doldur
+                populateDashboardFilters(); // Dashboard filtrelerini de doldur
             });
         } else {
-	            populateDashboardFilters(); // Liste zaten varsa direkt doldur
-	            populateFeedbackFilters();  // Feedback filtrelerini de doldur
+            populateDashboardFilters(); // Liste zaten varsa direkt doldur
         }
     } else {
         if(adminFilters) adminFilters.style.display = 'none';
         if(assignBtn) assignBtn.style.display = 'none';
         if(manualFeedbackBtn) manualFeedbackBtn.style.display = 'none';
         
-	        // Admin değilse filtreleri gizle
+        // Admin değilse filtreleri gizle
         const dashFilterArea = document.querySelector('#view-dashboard .q-view-header > div');
         if(dashFilterArea && dashFilterArea.style.display !== 'none') {
              // Burada basitçe dashboard filtre fonksiyonu admin kontrolü yapıyor.
              populateDashboardFilters(); 
         }
-	        // Feedback filtreleri de admin kontrolü yapar
-	        populateFeedbackFilters();
     }
     // Varsayılan sekmeyi aç
     // Tıklanma simülasyonu ile ilk sekmeyi aktif et
@@ -1419,10 +1505,14 @@ function switchQualityTab(tabName, element) {
     // Veri Yükleme
     if (tabName === 'dashboard') loadQualityDashboard();
     else if (tabName === 'evaluations') fetchEvaluationsForAgent();
-	    // DÜZELTME: Feedback sekmesi açılırken filtreye göre Evaluations + Feedback_Logs çekilmeli
-	    else if (tabName === 'feedback') {
-	        refreshFeedbackData();
-	    }
+    // DÜZELTME: Feedback sekmesi açılırken önce Feedback_Logs çekilmeli
+    else if (tabName === 'feedback') {
+        fetchEvaluationsForDashboard().then(() => {
+            fetchFeedbackLogs().then(() => {
+                loadFeedbackList();
+            });
+        });
+    }
     else if (tabName === 'training') loadTrainingData();
 }
 // --- DASHBOARD FONKSİYONLARI ---
@@ -1472,100 +1562,6 @@ function populateDashboardFilters() {
     });
     // İlk yüklemede tüm agentları listele
     updateDashAgentList();
-}
-
-// YENİ: Feedback (Geri Bildirimler) Filtrelerini Doldurma
-function populateFeedbackFilters() {
-    const wrap = document.getElementById('feedback-filters');
-    const groupSelect = document.getElementById('q-feedback-group');
-    const agentSelect = document.getElementById('q-feedback-agent');
-
-    // Sadece admin görebilsin
-    if (!isAdminMode) {
-        if (wrap) wrap.style.display = 'none';
-        return;
-    }
-    if (wrap) wrap.style.display = 'flex';
-    if (!groupSelect || !agentSelect) return;
-
-    const groups = [...new Set(adminUserList.map(u => u.group).filter(g => g))].sort();
-    groupSelect.innerHTML = '<option value="all">Tüm Gruplar</option>';
-    groups.forEach(g => {
-        const opt = document.createElement('option');
-        opt.value = g; opt.innerText = g;
-        groupSelect.appendChild(opt);
-    });
-    // İlk yüklemede tüm agentları listele
-    updateFeedbackAgentList();
-}
-
-// YENİ: Feedback Agent Listesini Güncelleme
-function updateFeedbackAgentList() {
-    const groupSelect = document.getElementById('q-feedback-group');
-    const agentSelect = document.getElementById('q-feedback-agent');
-    if (!agentSelect) return;
-
-    const selectedGroup = groupSelect ? groupSelect.value : 'all';
-    agentSelect.innerHTML = '<option value="all">Tüm Temsilciler</option>';
-
-    let filteredUsers = adminUserList;
-    if (selectedGroup !== 'all') {
-        filteredUsers = adminUserList.filter(u => u.group === selectedGroup);
-    }
-    filteredUsers.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.name;
-        opt.innerText = u.name;
-        agentSelect.appendChild(opt);
-    });
-
-    refreshFeedbackData();
-}
-
-// YENİ: Feedback verisini, seçilen filtrelere göre yenile
-function refreshFeedbackData() {
-    fetchEvaluationsForFeedback().then(() => {
-        return fetchFeedbackLogs();
-    }).then(() => {
-        loadFeedbackList();
-    });
-}
-
-// YENİ: Feedback sekmesi için değerlendirmeleri (evaluations) filtrelere göre çek
-async function fetchEvaluationsForFeedback() {
-    const groupSelect = document.getElementById('q-feedback-group');
-    const agentSelect = document.getElementById('q-feedback-agent');
-
-    let targetAgent = currentUser;
-    let targetGroup = 'all';
-
-    if (isAdminMode) {
-        targetAgent = agentSelect ? agentSelect.value : 'all';
-        targetGroup = groupSelect ? groupSelect.value : 'all';
-    }
-
-    try {
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-                action: "fetchEvaluations",
-                targetAgent: targetAgent,
-                targetGroup: targetGroup,
-                username: currentUser,
-                token: getToken()
-            })
-        });
-        const data = await response.json();
-        if (data.result === 'success') {
-            allEvaluationsData = data.evaluations || [];
-        } else {
-            allEvaluationsData = [];
-        }
-    } catch (err) {
-        console.error('Feedback evaluations çekilirken hata:', err);
-        allEvaluationsData = [];
-    }
 }
 // YENİ: Dashboard Agent Listesini Güncelleme
 function updateDashAgentList() {
