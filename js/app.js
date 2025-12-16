@@ -1,6 +1,49 @@
 const BAKIM_MODU = false;
+
+function showGlobalError(msg){
+  try{
+    let box=document.getElementById('globalErrorBox');
+    if(!box){
+      box=document.createElement('div');
+      box.id='globalErrorBox';
+      box.style.position='fixed';
+      box.style.left='12px';
+      box.style.right='12px';
+      box.style.bottom='12px';
+      box.style.zIndex='99999';
+      box.style.background='rgba(211,47,47,0.95)';
+      box.style.color='white';
+      box.style.padding='12px 14px';
+      box.style.borderRadius='10px';
+      box.style.fontFamily='system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      box.style.fontSize='14px';
+      box.style.boxShadow='0 8px 20px rgba(0,0,0,0.25)';
+      box.innerHTML = '<b>Uyarı</b><div id="globalErrorMsg" style="margin-top:6px;opacity:.95"></div>'
+        + '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'
+        + '<button id="btnSetScriptUrl" style="border:0;padding:8px 10px;border-radius:8px;cursor:pointer">SCRIPT URL Ayarla</button>'
+        + '<button id="btnCloseErr" style="border:0;padding:8px 10px;border-radius:8px;cursor:pointer;opacity:.9">Kapat</button>'
+        + '</div>';
+      document.body.appendChild(box);
+      document.getElementById('btnCloseErr').onclick=()=>box.remove();
+      document.getElementById('btnSetScriptUrl').onclick=()=>{
+        const cur = localStorage.getItem("PUSULA_SCRIPT_URL") || "";
+        const u = prompt("Apps Script Web App URL (…/exec):", cur);
+        if(u && u.includes("/exec")){
+          localStorage.setItem("PUSULA_SCRIPT_URL", u.trim());
+          alert("Kaydedildi. Sayfayı yenileyin (Ctrl+F5).");
+        } else {
+          alert("URL /exec içermeli.");
+        }
+      };
+    }
+    const m=document.getElementById('globalErrorMsg');
+    if(m) m.textContent=msg;
+  }catch(e){ console.error(e); }
+}
+
 // Apps Script URL'si
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywdciHyiPCEWGu9hIyN05HkeBgwPlFgzrDZY16K08svQhTcvXhN8A_DyBrzO8SalDu/exec";
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || ""; // Apps Script Web App URL
+
 // Oyun Değişkenleri
 let jokers = { call: 1, half: 1, double: 1 };
 let doubleChanceUsed = false;
@@ -3783,4 +3826,171 @@ const _orig_afterDataLoaded = window.afterDataLoaded;
 window.afterDataLoaded = function(){
     try{ if(typeof _orig_afterDataLoaded==='function') _orig_afterDataLoaded(); }catch(e){}
     try{ applySportsRights(); }catch(e){}
+};
+
+
+// ======================
+// TECH DOCS - SHEET BIND
+// ======================
+let __techDocsCache = null;
+let __techDocsLoadedAt = 0;
+
+function __normalizeTechTab(tab){
+  // tab ids: broadcast, access, app, activation
+  return tab;
+}
+function __normalizeTechCategory(cat){
+  const c = (cat||"").toString().trim().toLowerCase();
+  if(c.startsWith("yay")) return "broadcast";
+  if(c.startsWith("eri")) return "access";
+  if(c.startsWith("app")) return "app";
+  if(c.startsWith("akt")) return "activation";
+  if(c.startsWith("bil")) return "info";
+  return "";
+}
+
+async function __fetchTechDocs(){
+  if(!SCRIPT_URL){
+    if(typeof showGlobalError === "function") showGlobalError("SCRIPT_URL ayarlı değil. Sağ alttan ayarlayabilirsin.");
+    throw new Error("SCRIPT_URL missing");
+  }
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action: "getTechDocs" })
+  });
+  const data = await res.json();
+  if(data.result !== "success") throw new Error(data.message || "getTechDocs failed");
+  const rows = Array.isArray(data.data) ? data.data : [];
+  return rows
+    .filter(r => (r.Durum||"").toString().trim().toLowerCase() !== "pasif")
+    .map(r => ({
+      categoryKey: __normalizeTechCategory(r.Kategori),
+      kategori: (r.Kategori||"").trim(),
+      baslik: (r.Başlık || r.Baslik || r.Title || r["Başlık"] || "").toString().trim(),
+      icerik: (r.İçerik || r.Icerik || r.Content || r["İçerik"] || "").toString(),
+      adim: (r.Adım || r.Adim || r.Step || r["Adım"] || "").toString(),
+      not: (r.Not || "").toString(),
+      link: (r.Link || "").toString(),
+      durum: (r.Durum || "").toString()
+    }))
+    .filter(x => x.categoryKey && x.baslik);
+}
+
+function __escapeHtml(s){
+  return (s||"").toString().replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  }[m]));
+}
+
+function __renderTechList(tabKey, items){
+  const listEl = document.getElementById(
+    tabKey==="broadcast" ? "x-broadcast-list" :
+    tabKey==="access" ? "x-access-list" :
+    tabKey==="app" ? "x-app-list" :
+    tabKey==="activation" ? "x-activation-list" : ""
+  );
+  const docsEl = document.getElementById(
+    tabKey==="broadcast" ? "x-broadcast-docs" :
+    tabKey==="access" ? "x-access-docs" :
+    tabKey==="app" ? "x-app-docs" :
+    tabKey==="activation" ? "x-activation-docs" : ""
+  );
+  if(!listEl) return;
+
+  if(!items || items.length===0){
+    listEl.innerHTML = `<div style="padding:16px;opacity:.75">Bu başlık altında henüz içerik yok. (Sheet: Teknik_Dokumanlar)</div>`;
+    if(docsEl) docsEl.innerHTML = "";
+    return;
+  }
+
+  // Search box
+  const searchId = `x-tech-search-${tabKey}`;
+  let searchBox = document.getElementById(searchId);
+  if(!searchBox){
+    searchBox = document.createElement("div");
+    searchBox.id = searchId;
+    searchBox.style.padding = "12px 0 0 0";
+    searchBox.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;padding:0 4px 12px 4px">
+        <input id="${searchId}-inp" placeholder="Sorunlarda ara..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.12)">
+        <span style="font-size:12px;opacity:.7" id="${searchId}-cnt"></span>
+      </div>
+    `;
+    listEl.parentElement.insertBefore(searchBox, listEl);
+  }
+
+  function render(filtered){
+    document.getElementById(`${searchId}-cnt`).textContent = `${filtered.length} kayıt`;
+    listEl.innerHTML = filtered.map((it, idx) => {
+      const body = [
+        it.icerik ? `<div class="q-doc-body">${it.icerik}</div>` : "",
+        it.adim ? `<div class="q-doc-meta"><b>Adım:</b> ${__escapeHtml(it.adim)}</div>` : "",
+        it.not ? `<div class="q-doc-meta"><b>Not:</b> ${__escapeHtml(it.not)}</div>` : "",
+        it.link ? `<div class="q-doc-meta"><b>Link:</b> <a href="${__escapeHtml(it.link)}" target="_blank">${__escapeHtml(it.link)}</a></div>` : ""
+      ].join("");
+      return `
+        <details class="q-accordion" style="margin-bottom:10px;background:#fff;border-radius:12px;border:1px solid rgba(0,0,0,.08);padding:10px 12px">
+          <summary style="cursor:pointer;font-weight:800">${__escapeHtml(it.baslik)}</summary>
+          <div style="padding:10px 2px 2px 2px">${body}</div>
+        </details>
+      `;
+    }).join("");
+  }
+
+  const inp = document.getElementById(`${searchId}-inp`);
+  inp.oninput = () => {
+    const q = inp.value.toLowerCase().trim();
+    const filtered = !q ? items : items.filter(x =>
+      (x.baslik||"").toLowerCase().includes(q) ||
+      (x.icerik||"").toLowerCase().includes(q) ||
+      (x.adim||"").toLowerCase().includes(q) ||
+      (x.not||"").toLowerCase().includes(q)
+    );
+    render(filtered);
+  };
+
+  render(items);
+  if(docsEl) docsEl.innerHTML = ""; // docs stack reserved if later needed
+}
+
+async function loadTechDocsIfNeeded(force=false){
+  const now = Date.now();
+  if(!force && __techDocsCache && (now-__techDocsLoadedAt)<120000) return __techDocsCache; // 2dk cache
+  try{
+    const rows = await __fetchTechDocs();
+    __techDocsCache = rows;
+    __techDocsLoadedAt = now;
+    return rows;
+  }catch(e){
+    console.error("[TECH DOCS]", e);
+    if(typeof showGlobalError === "function") showGlobalError("Teknik döküman verisi çekilemedi. SCRIPT_URL ve Web App yetkilerini kontrol et.");
+    return [];
+  }
+}
+
+// override / extend existing switchTechTab
+window.switchTechTab = async function(tab){
+  try{
+    // existing visual tab switch
+    document.querySelectorAll('#tech-fullscreen .q-nav-item').forEach(li => li.classList.remove('active'));
+    const tabMap = {broadcast:'x-view-broadcast',access:'x-view-access',app:'x-view-app',activation:'x-view-activation',wizard:'x-view-wizard',cards:'x-view-cards'};
+    const viewId = tabMap[tab];
+    // activate clicked item
+    const items = Array.from(document.querySelectorAll('#tech-fullscreen .q-nav-menu .q-nav-item'));
+    const idx = ['broadcast','access','app','activation','wizard','cards'].indexOf(tab);
+    if(idx>=0 && items[idx]) items[idx].classList.add('active');
+
+    document.querySelectorAll('#tech-fullscreen .q-view-section').forEach(v => v.classList.remove('active'));
+    const viewEl = document.getElementById(viewId);
+    if(viewEl) viewEl.classList.add('active');
+
+    if(['broadcast','access','app','activation'].includes(tab)){
+      const all = await loadTechDocsIfNeeded(false);
+      const filtered = all.filter(x => x.categoryKey === tab);
+      __renderTechList(tab, filtered);
+    }
+  }catch(e){
+    console.error(e);
+  }
 };
