@@ -80,9 +80,12 @@ function getMyRole(){ return normalizeRole(localStorage.getItem("sSportRole")||"
 
 function isAllowedByPerm(perm){
   if(!perm) return true;
+  if(perm.enabled === false) return false;
   const role=getMyRole(), grp=getMyGroup();
   const roles=perm.allowedRoles||[];
-  const groups=perm.allowedGroups||[];
+  let groups=perm.allowedGroups||[];
+  // "ALL" varsa herkese açık kabul et
+  if(groups.indexOf("ALL")>-1) groups=[];
   if(roles.length && roles.indexOf(role)===-1) return false;
   if(groups.length && groups.indexOf(grp)===-1) return false;
   return true;
@@ -111,7 +114,8 @@ function loadMenuPermissions(){
       (res.items||[]).forEach(it=>{
         menuPermissions[it.key] = {
           allowedGroups: normalizeList(it.allowedGroups),
-          allowedRoles: normalizeList(it.allowedRoles)
+          enabled: (it.enabled === false || String(it.enabled).toUpperCase()==="FALSE") ? false : true,
+          allowedRoles: normalizeList(it.allowedRoles) // backward-compat if still present
         };
       });
       applyMenuPermissions();
@@ -122,63 +126,106 @@ function loadMenuPermissions(){
 // LocAdmin panel
 function openMenuPermissions(){
   const role=getMyRole();
-  if(role!=="locadmin" && role!=="admin"){ return; }
+  if(role!=="locadmin" && role!=="admin"){
+    Swal.fire("Yetkisiz", "Bu ekrana erişimin yok.", "warning");
+    return;
+  }
   apiCall("getMenuPermissions",{}).then(res=>{
-    if(!res || res.result!=="success"){ Swal.fire("Hata","Yetkiler okunamadı","error"); return; }
-    const groups = ["Chat","Telesatış","Teknik"];
+    if(!res || res.result!=="success"){
+      Swal.fire("Hata","Yetkiler okunamadı","error");
+      return;
+    }
+
+    // Grupları backend'den al, yoksa items içinden türet
+    let groups = (res.groups||[]).map(g=>String(g||"").trim()).filter(Boolean);
+    if(!groups.length){
+      const set=new Set();
+      (res.items||[]).forEach(it=>{
+        normalizeList(it.allowedGroups).forEach(g=>{
+          const gg=String(g||"").trim();
+          if(gg && gg.toUpperCase()!=="ALL") set.add(gg);
+        });
+      });
+      groups=[...set];
+    }
+    // Hepsini baş harf büyüt, yaygın isimleri normalize et
+    const normMap={"chat":"Chat","telesatış":"Telesatış","telesatis":"Telesatış","yönetim":"Yönetim","yonetim":"Yönetim","teknik":"Teknik"};
+    groups = groups.map(g=>{
+      const k=g.toLowerCase();
+      return normMap[k] || (g.charAt(0).toUpperCase()+g.slice(1));
+    });
+
     const menus = (res.items||[]);
 
-    const rows = menus.map(m=>{
+    const rowsHtml = menus.map(m=>{
       const allowed = normalizeList(m.allowedGroups);
+      const enabled = !(m.enabled === false || String(m.enabled).toUpperCase()==="FALSE");
       const cells = groups.map(g=>{
-        const checked = allowed.length===0 || allowed.indexOf(g)>-1;
-        return `<label style="display:flex;gap:6px;align-items:center;justify-content:center">
+        const checked = (allowed.length===0 || allowed.indexOf("ALL")>-1) ? true : (allowed.indexOf(g)>-1);
+        return `<td style="text-align:center">
           <input type="checkbox" data-mk="${m.key}" data-g="${g}" ${checked?'checked':''}/>
-        </label>`;
+        </td>`;
       }).join('');
       return `<tr>
-        <td style="text-align:left;font-weight:800;padding:8px 10px">${m.title}</td>
+        <td style="font-weight:600">${escapeHtml(m.title||m.label||m.key)}</td>
+        <td style="text-align:center"><input type="checkbox" data-enabled="${m.key}" ${enabled?'checked':''}/></td>
         ${cells}
       </tr>`;
     }).join('');
 
-    const html = `
-      <div style="text-align:left">
-        <p style="margin:0 0 10px;color:#666">Menü/sekme bazlı “hangi grup görsün” ayarı. İşaretli olmayan gruplar menüyü görmez.</p>
-        <div style="max-height:55vh;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:12px">
-          <table style="width:100%;border-collapse:collapse">
-            <thead>
-              <tr style="position:sticky;top:0;background:#f7f7f7">
-                <th style="text-align:left;padding:10px">Menü</th>
-                ${groups.map(g=>`<th style="padding:10px;text-align:center">${g}</th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
+    const tableHtml = `
+      <div style="text-align:left;margin-bottom:10px;color:#444">
+        Menü/sekme bazlı “hangi grup görsün” ayarı. İşaretli olmayan gruplar menüyü görmez.
+      </div>
+      <div style="max-height:420px;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="position:sticky;top:0;background:#f7f7f7;z-index:1">
+            <tr>
+              <th style="text-align:left;padding:12px">Menü</th>
+              <th style="text-align:center;padding:12px;width:90px">Aktif</th>
+              ${groups.map(g=>`<th style="text-align:center;padding:12px">${escapeHtml(g)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
       </div>`;
+
     Swal.fire({
-      title:"Yetki Yönetimi",
-      html,
-      width: 820,
-      confirmButtonText:"Kaydet",
-      showCancelButton:true,
-      cancelButtonText:"Vazgeç",
+      title: "Yetki Yönetimi",
+      html: tableHtml,
+      width: 980,
+      showCancelButton: true,
+      confirmButtonText: "Kaydet",
+      cancelButtonText: "Vazgeç",
       preConfirm: ()=>{
-        const map={};
-        menus.forEach(m=>{ map[m.key]=[]; });
+        const out = {};
+        menus.forEach(m=>{ out[m.key] = { allowedGroups: [], enabled: true }; });
+        // enabled
+        document.querySelectorAll('input[type="checkbox"][data-enabled]').forEach(cb=>{
+          const k=cb.getAttribute('data-enabled');
+          if(out[k]) out[k].enabled = !!cb.checked;
+        });
+        // groups
         document.querySelectorAll('input[type="checkbox"][data-mk]').forEach(cb=>{
           const k=cb.getAttribute('data-mk');
           const g=cb.getAttribute('data-g');
-          if(cb.checked) map[k].push(g);
+          if(cb.checked && out[k]) out[k].allowedGroups.push(g);
         });
-        // boş dizi => kimse görmesin değil; burada "hepsi işaretliyse" zaten 3 grup döner.
-        return map;
+        // Hepsi seçiliyse "ALL" olarak yaz (daha temiz)
+        Object.keys(out).forEach(k=>{
+          const arr = out[k].allowedGroups||[];
+          if(arr.length===groups.length){
+            out[k].allowedGroups = ["ALL"];
+          }
+        });
+        return out;
       }
     }).then(r=>{
       if(!r.isConfirmed) return;
-      const payload = r.value||{};
-      apiCall("setMenuPermissions",{ permissions: payload }).then(sv=>{
+      const payload = r.value || {};
+      apiCall("setMenuPermissions",{ items: payload }).then(sv=>{
         if(sv && sv.result==="success"){
           Swal.fire("Kaydedildi","Yetkiler güncellendi.","success");
           loadMenuPermissions();
