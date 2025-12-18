@@ -13,7 +13,7 @@ function showGlobalError(message){
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbz6dDFHv-49h-13EwNPVCqpj-H4xjRqNpkz1JPvkixDkOkM_AUyN2cgYpH7-j9a5Tg/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbywdciHyiPCEWGu9hIyN05HkeBgwPlFgzrDZY16K08svQhTcvXhN8A_DyBrzO8SalDu/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -3702,6 +3702,15 @@ async function fetchSheetObjects(actionName){
 }
 
 async function openTelesalesArea(){
+    // Menü yetkisi: telesales (TeleSatış) - yetkisiz kullanıcı fullscreen'e giremesin
+    try{
+        const perm = (typeof menuPermissions!=="undefined" && menuPermissions) ? menuPermissions["telesales"] : null;
+        if(perm && !isAllowedByPerm(perm)){
+            Swal.fire("Yetkisiz", "TeleSatış ekranına erişimin yok.", "warning");
+            return;
+        }
+    }catch(e){}
+
     const wrap = document.getElementById('telesales-fullscreen');
     if(!wrap) return;
     wrap.style.display = 'flex';
