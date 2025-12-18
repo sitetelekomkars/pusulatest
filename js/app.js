@@ -28,12 +28,32 @@ let currentUser = "";
 
 // -------------------- Menu Permissions (LocAdmin) --------------------
 let menuPermissions = null; // { key: {allowedGroups:[], allowedRoles:[]} }
+
+function normalizeRole(v){
+  return String(v||'').trim().toLowerCase();
+}
+function normalizeGroup(v){
+  // normalize Turkish chars & case so comparisons work
+  const s = String(v||'').trim().toLowerCase();
+  const tr = s.replaceAll('ş','s').replaceAll('Ş','s')
+              .replaceAll('ı','i').replaceAll('İ','i')
+              .replaceAll('ğ','g').replaceAll('Ğ','g')
+              .replaceAll('ü','u').replaceAll('Ü','u')
+              .replaceAll('ö','o').replaceAll('Ö','o')
+              .replaceAll('ç','c').replaceAll('Ç','c');
+  // map common variants to display names used in permissions table
+  if(tr.includes('telesat')) return 'Telesatış';
+  if(tr.includes('teknik')) return 'Teknik';
+  if(tr.includes('chat')) return 'Chat';
+  return String(v||'').trim();
+}
+
 function normalizeList(v){
   if(!v) return [];
   return String(v).split(',').map(s=>s.trim()).filter(Boolean);
 }
-function getMyGroup(){ return (localStorage.getItem("sSportGroup")||"").trim(); }
-function getMyRole(){ return (localStorage.getItem("sSportRole")||"").trim(); }
+function getMyGroup(){ return normalizeGroup(localStorage.getItem("sSportGroup")||""); }
+function getMyRole(){ return normalizeRole(localStorage.getItem("sSportRole")||""); }
 
 function isAllowedByPerm(perm){
   if(!perm) return true;
@@ -707,6 +727,23 @@ function filterCategory(btn, cat) {
         return;
     }
 
+
+    // Tam ekran modüller
+    const catNorm = String(cat||'').toLowerCase();
+    if (catNorm.includes('teknik')) {
+        hideHomeScreen();
+        openTechArea('broadcast');
+        return;
+    }
+    if (catNorm.includes('telesat')) {
+        hideHomeScreen();
+        openTelesalesArea();
+        return;
+    }
+    if (catNorm.includes('kalite')) {
+        hideHomeScreen();
+        // kalite için mevcut davranış: card list (varsa) - burada özel modül yoksa devam
+    }
     currentCategory = cat;
     hideHomeScreen();
 
