@@ -13,7 +13,7 @@ function showGlobalError(message){
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbz6dDFHv-49h-13EwNPVCqpj-H4xjRqNpkz1JPvkixDkOkM_AUyN2cgYpH7-j9a5Tg/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbywdciHyiPCEWGu9hIyN05HkeBgwPlFgzrDZY16K08svQhTcvXhN8A_DyBrzO8SalDu/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -81,17 +81,11 @@ function getMyRole(){ return normalizeRole(localStorage.getItem("sSportRole")||"
 function isAllowedByPerm(perm){
   if(!perm) return true;
   if(perm.enabled === false) return false;
-
   const role=getMyRole(), grp=getMyGroup();
   const roles=perm.allowedRoles||[];
   let groups=perm.allowedGroups||[];
-
-  // NONE varsa kimse görmesin
-  if(groups.some(g => String(g||"").trim().toUpperCase() === "NONE")) return false;
-
-  // ALL varsa grup filtresi yok
-  if(groups.some(g => String(g||"").trim().toUpperCase() === "ALL")) groups = [];
-
+  // "ALL" varsa herkese açık kabul et
+  if(groups.indexOf("ALL")>-1) groups=[];
   if(roles.length && roles.indexOf(role)===-1) return false;
   if(groups.length && groups.indexOf(grp)===-1) return false;
   return true;
@@ -118,13 +112,10 @@ function loadMenuPermissions(){
     if(res && res.result==="success"){
       menuPermissions = {};
       (res.items||[]).forEach(it=>{
-        const key = it.key || it.MenuKey || it.menuKey;
-        const allowedGroupsRaw = (it.allowedGroups ?? it.AllowedGroups ?? it.allowed_groups ?? it.allowedGroup ?? it.groups ?? "");
-        const enabledRaw = (it.enabled ?? it.Enabled ?? it.isEnabled ?? "TRUE");
-        menuPermissions[key] = {
-          allowedGroups: normalizeList(allowedGroupsRaw).map(x=>String(x).trim()),
-          enabled: (enabledRaw === false || String(enabledRaw).toUpperCase()==="FALSE") ? false : true,
-          allowedRoles: normalizeList(it.allowedRoles ?? it.AllowedRoles ?? it.allowed_roles ?? "")
+        menuPermissions[it.key] = {
+          allowedGroups: normalizeList(it.allowedGroups),
+          enabled: (it.enabled === false || String(it.enabled).toUpperCase()==="FALSE") ? false : true,
+          allowedRoles: normalizeList(it.allowedRoles) // backward-compat if still present
         };
       });
       applyMenuPermissions();
@@ -170,9 +161,7 @@ function openMenuPermissions(){
       const allowed = normalizeList(m.allowedGroups);
       const enabled = !(m.enabled === false || String(m.enabled).toUpperCase()==="FALSE");
       const cells = groups.map(g=>{
-        const hasNone = allowed.some(x=>String(x||"").trim().toUpperCase()==="NONE");
-        const hasAll = allowed.some(x=>String(x||"").trim().toUpperCase()==="ALL");
-        const checked = hasNone ? false : (hasAll ? true : (allowed.indexOf(g)>-1));
+        const checked = (allowed.length===0 || allowed.indexOf("ALL")>-1) ? true : (allowed.indexOf(g)>-1);
         return `<td style="text-align:center">
           <input type="checkbox" data-mk="${m.key}" data-g="${g}" ${checked?'checked':''}/>
         </td>`;
@@ -224,13 +213,11 @@ function openMenuPermissions(){
           const g=cb.getAttribute('data-g');
           if(cb.checked && out[k]) out[k].allowedGroups.push(g);
         });
-        // Hepsi seçiliyse "ALL", hiçbiri seçili değilse "NONE" olarak yaz
+        // Hepsi seçiliyse "ALL" olarak yaz (daha temiz)
         Object.keys(out).forEach(k=>{
           const arr = out[k].allowedGroups||[];
           if(arr.length===groups.length){
             out[k].allowedGroups = ["ALL"];
-          } else if(arr.length===0){
-            out[k].allowedGroups = ["NONE"];
           }
         });
         return out;
@@ -3715,6 +3702,15 @@ async function fetchSheetObjects(actionName){
 }
 
 async function openTelesalesArea(){
+    // Menü yetkisi: telesales (TeleSatış) - yetkisiz kullanıcı fullscreen'e giremesin
+    try{
+        const perm = (typeof menuPermissions!=="undefined" && menuPermissions) ? menuPermissions["telesales"] : null;
+        if(perm && !isAllowedByPerm(perm)){
+            Swal.fire("Yetkisiz", "TeleSatış ekranına erişimin yok.", "warning");
+            return;
+        }
+    }catch(e){}
+
     const wrap = document.getElementById('telesales-fullscreen');
     if(!wrap) return;
     wrap.style.display = 'flex';
