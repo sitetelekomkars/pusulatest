@@ -51,7 +51,7 @@ let firstAnswerIndex = -1;
 const VALID_CATEGORIES = ['Teknik', 'İkna', 'Kampanya', 'Bilgi'];
 const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 // --- GLOBAL DEĞİŞKENLER ---
-let database = [], cardsData = [], newsData = [], sportsData = [], salesScripts = [], quizQuestions = [], quickDecisionQuestions = [];
+let database = [], newsData = [], sportsData = [], salesScripts = [], quizQuestions = [], quickDecisionQuestions = [];
 let techWizardData = {}; // Teknik Sihirbaz Verisi
 let currentUser = "";
 let isAdminMode = false;    
@@ -182,6 +182,117 @@ function toggleFavorite(title) {
         Swal.fire({toast:true, position:'top-end', icon: added ? 'success' : 'info', title: added ? 'Favorilere eklendi' : 'Favorilerden kaldırıldı', showConfirmButton:false, timer:1200});
     } catch(e) {}
 
+// === Grup Bazlı Menü Yetkilendirme (Admin yönetir) ===
+function getUserGroup() { return localStorage.getItem("sSportGroup") || ""; }
+
+function getAccessConfig() {
+    try { return JSON.parse(localStorage.getItem("ACCESS_CFG") || "{}"); }
+    catch (e) { return {}; }
+}
+function setAccessConfig(cfg) {
+    localStorage.setItem("ACCESS_CFG", JSON.stringify(cfg || {}));
+}
+
+function canSee(featureKey) {
+    // Admin (admin/locadmin) her şeyi görsün
+    if (isAdminMode) return true;
+
+    const cfg = getAccessConfig();
+    const g = (getUserGroup() || "").toString().toLocaleLowerCase('tr-TR');
+    const rule = (cfg.features && cfg.features[featureKey]) ? cfg.features[featureKey] : null;
+    if (!rule) return true;
+
+    const deny = (rule.denyGroups || []).map(x => (x || "").toString().toLocaleLowerCase('tr-TR'));
+    const allow = (rule.allowGroups || []).map(x => (x || "").toString().toLocaleLowerCase('tr-TR'));
+
+    if (deny.includes(g)) return false;
+    if (allow.length > 0 && !allow.includes(g)) return false;
+    return true;
+}
+
+function applyFeatureVisibility() {
+    const map = {
+        tech: ['btn-top-tech', 'btn-home-tech'],
+        telesales: ['btn-top-telesales', 'btn-home-telesales'],
+        guide: ['btn-top-guide', 'btn-home-guide'],
+        broadcast: ['btn-top-broadcast', 'btn-home-broadcast'],
+        game: ['btn-top-game', 'btn-home-game'],
+        quality: ['btn-top-quality', 'btn-home-quality']
+    };
+
+    Object.keys(map).forEach(key => {
+        const ok = canSee(key);
+        map[key].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = ok ? '' : 'none';
+        });
+    });
+}
+
+function enforceFeatureAccess(featureKey) {
+    if (canSee(featureKey)) return true;
+    if (typeof Swal !== 'undefined') {
+        Swal.fire('Yetki yok', 'Bu alana erişimin yok.', 'warning');
+    } else {
+        alert('Bu alana erişimin yok.');
+    }
+    return false;
+}
+
+// Admin için hızlı erişim: kapalı grupları ayarla
+async function openAccessManager() {
+    if (!isAdminMode || typeof Swal === 'undefined') return;
+
+    const cfg = getAccessConfig();
+    cfg.features = cfg.features || {};
+    const feats = [
+        { key: 'telesales', label: 'TeleSatış' },
+        { key: 'tech', label: 'Teknik' },
+        { key: 'guide', label: 'Spor Rehberi' },
+        { key: 'broadcast', label: 'Yayın Akışı' },
+        { key: 'game', label: 'Oyun' },
+        { key: 'quality', label: 'Kalite' },
+    ];
+
+    const rows = feats.map(f => {
+        const cur = ((cfg.features[f.key] && cfg.features[f.key].denyGroups) || []).join(', ');
+        return `<div style="text-align:left;margin:10px 0">
+            <b>${f.label} kapalı gruplar</b>
+            <input id="deny-${f.key}" class="swal2-input" placeholder="örn: chat, telesatis-chat" value="${cur}">
+            <div style="opacity:.7;font-size:.85rem;margin-top:6px">Virgülle ayır. Boş bırakırsan herkese açık.</div>
+        </div>`;
+    }).join('');
+
+    const { value: v } = await Swal.fire({
+        title: 'Erişim Yönetimi',
+        html: rows,
+        width: 700,
+        showCancelButton: true,
+        confirmButtonText: 'Kaydet',
+        cancelButtonText: 'Vazgeç',
+        preConfirm: () => {
+            const out = {};
+            feats.forEach(f => {
+                const val = (document.getElementById(`deny-${f.key}`).value || '');
+                out[f.key] = val.split(',').map(x => x.trim()).filter(Boolean);
+            });
+            return out;
+        }
+    });
+
+    if (!v) return;
+
+    feats.forEach(f => {
+        cfg.features[f.key] = cfg.features[f.key] || {};
+        cfg.features[f.key].denyGroups = v[f.key] || [];
+    });
+
+    setAccessConfig(cfg);
+    applyFeatureVisibility();
+}
+
+
+
     if (currentCategory === 'fav') { filterCategory(document.querySelector('.btn-fav'), 'fav'); } 
     else { renderCards(activeCards); }
     try { updateSearchResultCount(activeCards.length || 0, database.length); } catch(e) {}
@@ -279,7 +390,8 @@ function checkSession() {
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
         checkAdmin(savedRole);
-        startSessionTimer();
+    applyFeatureVisibility();
+startSessionTimer();
         
         if (BAKIM_MODU) {
             document.getElementById("maintenance-screen").style.display = "flex";
@@ -328,8 +440,8 @@ function girisYap() {
             localStorage.setItem("sSportUser", currentUser);
             localStorage.setItem("sSportToken", data.token);
             localStorage.setItem("sSportRole", data.role);
-            
-            const savedRole = data.role;
+            localStorage.setItem("sSportGroup", data.group || "");
+const savedRole = data.role;
             if (data.forceChange === true) {
                 Swal.fire({
                     icon: 'warning', title: ' ⚠️  Güvenlik Uyarısı',
@@ -373,8 +485,11 @@ function checkAdmin(role) {
     const addCardDropdown = document.getElementById('dropdownAddCard');
     const quickEditDropdown = document.getElementById('dropdownQuickEdit');
     
-    isAdminMode = (role === "admin");
-    isEditingActive = false;
+        const accessDropdown = document.getElementById('dropdownAccess');
+isAdminMode = (role === "admin" || role === "locadmin");
+    const accessLink = document.getElementById("access-manager-link");
+    if (accessLink) accessLink.style.display = isAdminMode ? "block" : "none";
+isEditingActive = false;
     document.body.classList.remove('editing');
     
     const isQualityUser = (role === 'qusers');
@@ -402,6 +517,7 @@ function checkAdmin(role) {
     
     if(isAdminMode) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
+        if(accessDropdown) accessDropdown.style.display = 'flex';
         if(quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
@@ -410,6 +526,7 @@ function checkAdmin(role) {
     } else {
         if(addCardDropdown) addCardDropdown.style.display = 'none';
         if(quickEditDropdown) quickEditDropdown.style.display = 'none';
+        if(accessDropdown) accessDropdown.style.display = 'none';
     }
 }
 function logout() {
@@ -517,8 +634,6 @@ function loadContentData() {
             try { updateSearchResultCount(activeCards.length || database.length, database.length); } catch(e) {}
         } else { document.getElementById('loading').innerHTML = `Veriler alınamadı: ${data.message || 'Bilinmeyen Hata'}`; }
     }).catch(error => { document.getElementById('loading').innerHTML = 'Bağlantı Hatası! Sunucuya ulaşılamıyor.'; });
-            cardsData = database; // geriye dönük uyumluluk
-
 }
 function loadWizardData() {
     return new Promise((resolve, reject) => {
@@ -611,51 +726,43 @@ function filterCategory(btn, cat) {
 }
 function filterContent() {
     const search = document.getElementById('searchInput').value.toLocaleLowerCase('tr-TR').trim();
-    let filtered = database;
-    if (currentCategory === 'fav') { filtered = filtered.filter(i => isFav(i.title)); } 
-    else if (currentCategory !== 'all') { filtered = filtered.filter(i => i.category === currentCategory); }
-    
+    let filtered;
+
+    // Favoriler sekmesindeysek sadece favorilerde ara
+    if (currentCategory === 'fav') {
+        filtered = (database || []).filter(i => isFav(i.title));
+    } else if (search) {
+        // Arama varsa ALL (tüm içerikler) içinde ara
+        filtered = (database || []);
+    } else {
+        // Arama yoksa mevcut kategori filtresi
+        filtered = (database || []);
+        if (currentCategory !== 'all') {
+            filtered = filtered.filter(i => i.category === currentCategory);
+        }
+    }
+
     if (search) {
         filtered = filtered.filter(item => {
             const title = (item.title || "").toString().toLocaleLowerCase('tr-TR');
             const text = (item.text || "").toString().toLocaleLowerCase('tr-TR');
             const script = (item.script || "").toString().toLocaleLowerCase('tr-TR');
             const code = (item.code || "").toString().toLocaleLowerCase('tr-TR');
-            return title.includes(search) || text.includes(search) || script.includes(search) || code.includes(search);
+            const cat = (item.category || "").toString().toLocaleLowerCase('tr-TR');
+            return title.includes(search) || text.includes(search) || script.includes(search) || code.includes(search) || cat.includes(search);
         });
     }
+
     activeCards = filtered;
-    updateSearchResultCount(filtered.length, database.length);
+    updateSearchResultCount(filtered.length, (database || []).length);
     renderCards(filtered);
 }
 function showCardDetail(title, text) {
-    // Geriye dönük uyumluluk: showCardDetail(cardObj) çağrısını da destekle
-    if (title && typeof title === 'object') {
-        const c = title;
-        const t = c.title || c.name || 'Detay';
-        const body = (c.text || c.desc || '').toString();
-        const script = (c.script || '').toString();
-        const alertTxt = (c.alert || '').toString();
-        const html = `
-          <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
-            ${escapeHtml(body).replace(/\n/g,'<br>')}
-            ${script ? `<div class="tech-script-box" style="margin-top:12px">
-                <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g,'<br>')}
-              </div>` : ''}
-            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${escapeHtml(alertTxt).replace(/\n/g,'<br>')}</div>` : ''}
-          </div>`;
-        Swal.fire({ title: t, html, showCloseButton: true, showConfirmButton: false, width: '820px', background: '#f8f9fa' });
-        return;
-    }
-
-    const safeText = (text ?? '').toString();
     Swal.fire({
-        title: title,
-        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${escapeHtml(safeText).replace(/\n/g,'<br>')}</div>`,
+        title: title, html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${text.replace(/\\n/g,'<br>')}</div>`,
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
 }
-
 function toggleEditMode() {
     if (!isAdminMode) return;
     isEditingActive = !isEditingActive;
@@ -3689,7 +3796,7 @@ const TECH_DOC_CONTENT = {"broadcast": [{"title": "Smart TV – Canlı Yayında 
 
 function renderTechSections(){
     // Teknik kartları çek
-    const techCards = (database||[]).filter(c=>String(c.category||'').toLowerCase()==='teknik');
+    const techCards = (cardsData||[]).filter(c=>String(c.category||'').toLowerCase()==='teknik');
 
     // Heuristik sınıflandırma
     const buckets = {broadcast:[], access:[], app:[], activation:[]};
@@ -3791,86 +3898,44 @@ function renderTechWizardInto(targetId){
     const box = document.getElementById(targetId);
     if(!box) return;
 
-    // Ayrı state: fullscreen içindeki gömülü sihirbaz
-    window.embeddedTwState = window.embeddedTwState || { currentStep: 'start', history: [] };
-
-    // Veri yoksa yükle
-    if(!techWizardData || Object.keys(techWizardData).length === 0){
-        box.innerHTML = '<div style="padding:16px;opacity:.7">Sihirbaz yükleniyor...</div>';
-        loadTechWizardData().then(()=>renderTechWizardInto(targetId));
+    // Mevcut openTechWizard içeriğini burada üret
+    if(!Array.isArray(techWizardSteps) || techWizardSteps.length===0){
+        box.innerHTML = '<div style="padding:16px;opacity:.7">Sihirbaz içeriği bulunamadı.</div>';
         return;
     }
 
-    embeddedTwRender(targetId);
-}
-
-function embeddedTwRender(targetId){
-    const box = document.getElementById(targetId);
-    if(!box) return;
-
-    const st = window.embeddedTwState || { currentStep:'start', history:[] };
-    const stepData = techWizardData[st.currentStep];
-
-    if(!stepData){
-        box.innerHTML = `<div class="tech-alert">Hata: Adım bulunamadı (${escapeHtml(String(st.currentStep))}).</div>`;
-        return;
-    }
-
-    const backVisible = st.history && st.history.length>0;
-
-    let html = `
-      <div style="display:flex; gap:8px; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap">
-        <div style="display:flex; gap:8px; align-items:center">
-          ${backVisible ? `<button type="button" class="tech-btn tech-btn-option" onclick="embeddedTwBack('${targetId}')">⬅ Geri</button>` : ''}
-          <button type="button" class="tech-btn tech-btn-option" onclick="embeddedTwReset('${targetId}')">↻ Sıfırla</button>
-        </div>
-        <div style="opacity:.7; font-size:.9rem">Adım: ${escapeHtml(stepData.title || '')}</div>
+    // Basit bir liste: adım kartları
+    box.innerHTML = `
+      <div style="padding:12px">
+        <div class="tech-alert"><b>İpucu:</b> Soruna en yakın başlığa tıkla. Adım adım yönergeler açılacak.</div>
+        ${techWizardSteps.map((s, idx)=>`
+          <div class="news-item" style="cursor:pointer" onclick="showTechWizardStep(${idx})">
+            <span class="news-title">${escapeHtml(s.title||('Adım '+(idx+1)))}</span>
+            <div class="news-desc">${escapeHtml((s.desc||'').slice(0,160))}${(s.desc||'').length>160?'...':''}</div>
+            <div class="news-tag" style="background:rgba(14,27,66,.08);color:#0e1b42;border:1px solid rgba(14,27,66,.15)">Detay</div>
+          </div>
+        `).join('')}
       </div>
-
-      <div class="tech-step-title">${escapeHtml(stepData.title || '')}</div>
     `;
-
-    if(stepData.text){
-        html += `<div style="font-size:1rem; margin:10px 0; white-space:pre-line">${escapeHtml(stepData.text)}</div>`;
-    }
-    if(stepData.script){
-        html += `<div class="tech-script-box"><span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(stepData.script)}</div>`;
-    }
-    if(stepData.alert){
-        html += `<div class="tech-alert">${escapeHtml(stepData.alert)}</div>`;
-    }
-
-    if(Array.isArray(stepData.buttons) && stepData.buttons.length){
-        html += `<div class="tech-buttons-area">`;
-        stepData.buttons.forEach(btn=>{
-            const cls = btn.style === 'option' ? 'tech-btn-option' : 'tech-btn-primary';
-            html += `<button type="button" class="tech-btn ${cls}" onclick="embeddedTwChangeStep('${targetId}','${escapeForJsString(btn.next||'start')}')">${escapeHtml(btn.text||'')}</button>`;
-        });
-        html += `</div>`;
-    }
-
-    box.innerHTML = html;
 }
 
-function embeddedTwChangeStep(targetId, newStep){
-    window.embeddedTwState = window.embeddedTwState || { currentStep:'start', history:[] };
-    window.embeddedTwState.history.push(window.embeddedTwState.currentStep);
-    window.embeddedTwState.currentStep = newStep;
-    embeddedTwRender(targetId);
-}
-function embeddedTwBack(targetId){
-    window.embeddedTwState = window.embeddedTwState || { currentStep:'start', history:[] };
-    if(window.embeddedTwState.history.length){
-        window.embeddedTwState.currentStep = window.embeddedTwState.history.pop();
-        embeddedTwRender(targetId);
-    }
-}
-function embeddedTwReset(targetId){
-    window.embeddedTwState = { currentStep:'start', history:[] };
-    embeddedTwRender(targetId);
+function showTechWizardStep(idx){
+    const s = techWizardSteps[idx];
+    if(!s) return;
+    Swal.fire({
+        title: `<i class="fas fa-magic" style="color:#0e1b42"></i> ${escapeHtml(s.title||'Teknik Sihirbaz')}`,
+        html: `<div style="text-align:left;line-height:1.65">
+                ${(s.desc||'').replace(/\n/g,'<br>')}
+                ${s.code ? `<div class="tech-code-block" style="margin-top:12px">${escapeHtml(s.code)}</div>`:''}
+                ${s.btns && s.btns.length ? `<div class="tech-buttons-area">${s.btns.map(b=>`<button class="tech-btn tech-btn-option" onclick="window.open('${escapeHtml(b.url||'#')}', '_blank')">${escapeHtml(b.label||'Aç')}</button>`).join('')}</div>`:''}
+              </div>`,
+        showCloseButton:true, showConfirmButton:false, width:'820px', background:'#f8f9fa'
+    });
 }
 
-
+/* -------------------------
+   Spor Rehberi: Yayın hakkı bitiş bilgisi
+--------------------------*/
 function applySportsRights(){
     if(!Array.isArray(sportsData) || sportsData.length===0) return;
     const rights = (window.sportRightsFromSheet && window.sportRightsFromSheet.length) ? window.sportRightsFromSheet : SPORTS_RIGHTS_FALLBACK;
@@ -4060,3 +4125,24 @@ window.switchTechTab = async function(tab){
     console.error(e);
   }
 };
+
+// === Feature Guards (buton saklansa bile erişim engeli) ===
+function wrapFeatureGuards(){
+    const wrap = (fnName, key) => {
+        const orig = window[fnName];
+        if (typeof orig !== 'function') return;
+        window[fnName] = function(...args){
+            if(!enforceFeatureAccess(key)) return;
+            return orig.apply(this, args);
+        }
+    };
+    wrap('openTechArea', 'tech');
+    wrap('openTelesalesArea', 'telesales');
+    wrap('openGuide', 'guide');
+    wrap('openBroadcastFlow', 'broadcast');
+    wrap('openGameHub', 'game');
+    wrap('openQualityArea', 'quality');
+}
+document.addEventListener('DOMContentLoaded', ()=>{ 
+    try{ wrapFeatureGuards(); }catch(e){}
+});
