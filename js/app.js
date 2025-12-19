@@ -2415,8 +2415,10 @@ function updateDashAgentList() {
     }
     filteredUsers.forEach(u => {
         const opt = document.createElement('option');
-        opt.value = u.name; 
-        opt.innerText = u.name;
+        const dn = (u && (u.name || u.username || u.user || u.email)) || '';
+        if(!dn) return;
+        opt.value = dn;
+        opt.innerText = dn;
         agentSelect.appendChild(opt);
     });
     
@@ -3520,7 +3522,7 @@ function updateAgentListBasedOnGroup() {
     } else {
         agentSelect.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>`;
     }
-    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${u.name}</option>`; });
+    filteredUsers.forEach(u => { const dn = (u && (u.name || u.username || u.user || u.email)) || ''; if(!dn) return; agentSelect.innerHTML += `<option value="${dn}">${dn}</option>`; });
     fetchEvaluationsForAgent();
 }
 function fetchUserListForAdmin() {
@@ -4207,7 +4209,7 @@ function openTechArea(tab){
     if(rl) rl.innerText = isAdminMode ? 'Admin' : 'Temsilci';
 
     renderTechSections();
-    switchTechTab(tab || 'broadcast');
+    if (window.switchTechTab) { try { window.switchTechTab(tab || 'broadcast'); } catch(e) { switchTechTab(tab || 'broadcast'); } } else { switchTechTab(tab || 'broadcast'); }
 }
 
 function closeFullTech(){
