@@ -864,11 +864,11 @@ function showCardDetail(title, text) {
         const alertTxt = (c.alert || '').toString();
         const html = `
           <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
-            ${escapeHtml(body).replace(/\n/g,'<br>')}
+            ${renderRichText(body)}
             ${script ? `<div class="tech-script-box" style="margin-top:12px">
                 <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g,'<br>')}
               </div>` : ''}
-            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${escapeHtml(alertTxt).replace(/\n/g,'<br>')}</div>` : ''}
+            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${renderRichText(alertTxt)}</div>` : ''}
           </div>`;
         Swal.fire({ title: t, html, showCloseButton: true, showConfirmButton: false, width: '820px', background: '#f8f9fa' });
         return;
@@ -877,7 +877,7 @@ function showCardDetail(title, text) {
     const safeText = (text ?? '').toString();
     Swal.fire({
         title: title,
-        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${escapeHtml(safeText).replace(/\n/g,'<br>')}</div>`,
+        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${renderRichText(safeText)}</div>`,
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
 }
@@ -1404,6 +1404,23 @@ function escapeHtml(str) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+// Kampanya / Bilgi içeriklerinde sınırlı HTML (örn. <b>) kullanılabiliyor.
+// Güvenli render: Her şeyi escape eder, sonra sadece izinli etiketleri geri açar.
+function renderRichText(input) {
+    let out = escapeHtml(input ?? "").replace(/\n/g, '<br>');
+    const allow = ['b','strong','i','em','u','br','p','ul','ol','li'];
+    allow.forEach(tag => {
+        out = out
+            .replaceAll(`&lt;${tag}&gt;`, `<${tag}>`)
+            .replaceAll(`&lt;/${tag}&gt;`, `</${tag}>`);
+    });
+    // <br/> varyasyonları
+    out = out
+        .replaceAll('&lt;br/&gt;', '<br/>')
+        .replaceAll('&lt;br /&gt;', '<br />');
+    return out;
 }
 
 function openGuide() {
