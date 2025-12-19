@@ -3974,9 +3974,9 @@ async function renderHomePanels(){
         // Admin notu (opsiyonel)
         const custom = (homeBlocks && homeBlocks.today && (homeBlocks.today.content || "").trim()) ? homeBlocks.today.content.trim() : "";
         if(custom){
-            html += `<div class="home-item" style="padding:12px;border:1px solid rgba(0,0,0,06);border-radius:12px;background:#fff">
-                ${escapeHtml(custom).replace(/\n/g,'<br>')}
-
+            html += `<div class="home-item" style="padding:12px;border:1px solid rgba(0,0,0,0.06);border-radius:12px;background:#fff">
+                        ${escapeHtml(custom).replace(/
+/g,'<br>')}
                      </div>
                      <div style="height:10px"></div>`;
         }
@@ -3991,7 +3991,7 @@ async function renderHomePanels(){
                 const date = it.date||it.day||"";
                 const time = _timeToHM_TR(it.time||it.startTime||it.start||"");
                 return `
-                  <div class="home-item" style="padding:10px;border:1px solid rgba(0,0,0,06);border-radius:10px;margin-bottom:10px;background:#fff;cursor:pointer" onclick="openBroadcastFlow()">
+                  <div class="home-item" style="padding:10px;border:1px solid rgba(0,0,0,0.06);border-radius:10px;margin-bottom:10px;background:#fff;cursor:pointer" onclick="openBroadcastFlow()">
                     <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
                       <div style="font-size:.78rem;color:#8a8a8a;font-weight:800">${escapeHtml(date)}</div>
                       <div style="font-size:.85rem;color:#0e1b42;font-weight:900">${escapeHtml(time)}</div>
