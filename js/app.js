@@ -493,7 +493,9 @@ function checkSession() {
             if (savedRole === 'qusers') {
                 const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
                 const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
-                const ticker = document.querySelector('.news-ticker-box'); openQualityArea(); // Yeni Full Screen Modül
+                const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
+
+                openQualityArea(); // Yeni Full Screen Modül
             }
         }
     }
@@ -556,7 +558,8 @@ function girisYap() {
                     if (savedRole === 'qusers') { 
                         const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
                         const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
-                        const ticker = document.querySelector('.news-ticker-box'); openQualityArea();
+                        const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
+                        openQualityArea();
                     }
                 }
             }
@@ -4295,3 +4298,21 @@ window.switchTechTab = async function(tab){
 
 // expose for onclick
 try{ window.openMenuPermissions = openMenuPermissions; }catch(e){}
+
+/* === KALİTE VERİ FIX === */
+function openQualityArea() {
+  document.getElementById('quality-fullscreen').style.display = 'flex';
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action: "getQualityData", token: getToken() })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.result !== "success") return;
+    allEvaluationsData = res.data || [];
+    populateQualityAgentFilter(allEvaluationsData);
+    populateQualityGroupFilter(allEvaluationsData);
+    renderQualityTable(allEvaluationsData);
+  });
+}
