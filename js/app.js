@@ -3975,8 +3975,8 @@ async function renderHomePanels(){
         const custom = (homeBlocks && homeBlocks.today && (homeBlocks.today.content || "").trim()) ? homeBlocks.today.content.trim() : "";
         if(custom){
             html += `<div class="home-item" style="padding:12px;border:1px solid rgba(0,0,0,06);border-radius:12px;background:#fff">
-                        ${escapeHtml(custom).replace(/
-/g,'<br>')}
+                ${escapeHtml(custom).replace(/\n/g,'<br>')}
+
                      </div>
                      <div style="height:10px"></div>`;
         }
