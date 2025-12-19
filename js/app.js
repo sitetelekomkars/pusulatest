@@ -3868,21 +3868,13 @@ function applyHomeBlocksToUI(){
         }
     }
 
-    // Bugün paneli: custom varsa onu göster, yoksa renderHomePanels içindeki varsayılan akış
-    // renderHomePanels zaten çağrılıyor; burada custom yoksa "günün önemli karşılaşmaları" otomatik basılır.
-    const todayEl = document.getElementById('home-today');
-    if(todayEl){
-        const custom = (homeBlocks.today && (homeBlocks.today.content || "").trim()) ? homeBlocks.today.content : "";
-        if(custom){
-            todayEl.innerHTML = `<div style="padding:12px;border:1px solid #eef2f7;border-radius:12px;background:#fff;cursor:pointer" onclick="openNews()">
-                ${escapeHtml(custom).replace(/\n/g,'<br>')}
-            </div>`;
-        }else{
-            // Varsayılan: Yayın Akışı'ndan "Önem Durumu = önemli" olan ve BUGÜN'e ait maçları getir
-            // (HomeBlocks'ta içerik boş bırakılırsa otomatik akar)
-            renderHomeTodayImportantMatches();
-        }
-    }
+    
+    // Bugün paneli (Bugün Neler Var?): her zaman Yayın Akışı'ndan BUGÜN + "Önem Durumu = önemli" maçları gösterir.
+    // Admin, isterse üstte kısa bir not bırakabilir (homeBlocks.today.content). Bu not tıklanınca duyurulara değil, sadece metin olarak görünür.
+    try{
+        // renderHomePanels() içindeki ekranı yenile (custom+maçlar)
+        renderHomePanels();
+    }catch(e){}
 }
 
 // Ana ekran: "Bugün Neler Var?" => Yayın Akışı'ndaki ÖNEMLİ karşılaşmalar (BUGÜN)
@@ -3972,36 +3964,34 @@ async function editHomeBlock(key){
 }
 
 
+
 async function renderHomePanels(){
-    // Bugün kutusu: en güncel 3 duyuru + (Yayın Akışı) önemli maçlar
+    // Bugün Neler Var?: BUGÜN + Önem Durumu=önemli karşılaşmalar (Yayın Akışı)
     const todayEl = document.getElementById('home-today');
     if(todayEl){
-        const latest = (newsData || []).slice(0,3);
         let html = "";
-        if(latest.length===0){
-            html += '<div style="color:#777">Henüz duyuru yok.</div>';
-        }else{
-            html += latest.map(n=>`
-                <div class="home-item" style="padding:10px;border:1px solid rgba(0,0,0,.06);border-radius:10px;margin-bottom:10px;background:#fff;cursor:pointer" onclick="openNews()">
-                  <div style="font-size:.78rem;color:#8a8a8a;font-weight:800">${escapeHtml(n.date||'')}</div>
-                  <div style="font-weight:900;color:#0e1b42;margin-top:2px">${escapeHtml(n.title||'')}</div>
-                  <div style="color:#555;margin-top:6px;line-height:1.35">${escapeHtml(String((n.desc||'')).slice(0,160))}${(n.desc||'').length>160?'...':''}</div>
-                </div>
-            `).join('');
+
+        // Admin notu (opsiyonel)
+        const custom = (homeBlocks && homeBlocks.today && (homeBlocks.today.content || "").trim()) ? homeBlocks.today.content.trim() : "";
+        if(custom){
+            html += `<div class="home-item" style="padding:12px;border:1px solid rgba(0,0,0,06);border-radius:12px;background:#fff">
+                        ${escapeHtml(custom).replace(/
+/g,'<br>')}
+                     </div>
+                     <div style="height:10px"></div>`;
         }
 
-        // Önemli maçlar
-        const matches = await _getTodayImportantMatches(6);
+        const matches = await _getTodayImportantMatches(8);
         if(matches.length){
-            html += `<div style="margin:14px 0 8px;font-weight:900;color:#0e1b42;display:flex;align-items:center;gap:8px">
-                        <i class="fas fa-calendar-alt" style="color:#fabb00"></i> 🎯 Bugün Önemli Maçlar
+            html += `<div style="margin:0 0 8px;font-weight:900;color:#0e1b42;display:flex;align-items:center;gap:8px">
+                        <i class="fas fa-calendar-alt" style="color:#fabb00"></i> Bugün Önemli Karşılaşmalar
                      </div>`;
             html += matches.map(it=>{
                 const title = it.title||it.program||it.name||"";
                 const date = it.date||it.day||"";
                 const time = _timeToHM_TR(it.time||it.startTime||it.start||"");
                 return `
-                  <div class="home-item" style="padding:10px;border:1px solid rgba(0,0,0,.06);border-radius:10px;margin-bottom:10px;background:#fff;cursor:pointer" onclick="openBroadcastFlow()">
+                  <div class="home-item" style="padding:10px;border:1px solid rgba(0,0,0,06);border-radius:10px;margin-bottom:10px;background:#fff;cursor:pointer" onclick="openBroadcastFlow()">
                     <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
                       <div style="font-size:.78rem;color:#8a8a8a;font-weight:800">${escapeHtml(date)}</div>
                       <div style="font-size:.85rem;color:#0e1b42;font-weight:900">${escapeHtml(time)}</div>
@@ -4009,9 +3999,30 @@ async function renderHomePanels(){
                     <div style="font-weight:900;color:#0e1b42;margin-top:2px">${escapeHtml(title)}</div>
                   </div>`;
             }).join('');
+        }else{
+            html += `<div style="color:#777">Bugün için "Önemli" işaretli karşılaşma bulunamadı.</div>`;
         }
+
         todayEl.innerHTML = html;
     }
+
+    // Favoriler kutusu: favori kartların ilk 6'sı
+    const favEl = document.getElementById('home-favs');
+    if(favEl){
+        const favs = (cardsData||[]).filter(c=>isFavorite(c.id)).slice(0,6);
+        if(favs.length===0){
+            favEl.innerHTML = 'Henüz favori eklemedin. Kartlarda ⭐ simgesine basarak ekleyebilirsin.';
+        }else{
+            favEl.innerHTML = favs.map(c=>`
+                <div class="home-item" style="cursor:pointer" onclick="openCardById('${c.id}')">
+                    <div style="font-weight:900;color:#0e1b42">${escapeHtml(c.title||'')}</div>
+                    <div style="color:#6b7280;margin-top:4px;font-size:.88rem">${escapeHtml(String(c.text||'').slice(0,85))}${(c.text||'').length>85?'...':''}</div>
+                </div>
+            `).join('');
+        }
+    }
+}
+
 
 // Favoriler kutusu: favori kartların ilk 6'sı
     const favEl = document.getElementById('home-favs');
