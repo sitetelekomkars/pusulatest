@@ -56,6 +56,25 @@ let currentUser = "";
 // -------------------- Menu Permissions (LocAdmin) --------------------
 let menuPermissions = null; // { key: {allowedGroups:[], allowedRoles:[]} }
 
+// -------------------- Home Blocks (Today / Ann / Quote) --------------------
+let homeBlocksCache = null; // { today:{...}, ann:{...}, quote:{...} }
+
+async function loadHomeBlocks(){
+  try{
+    // login olmadan da çağrılabiliyor; apiCall username/token ile çalışır
+    const res = await apiCall('getHomeBlocks', {});
+    homeBlocksCache = (res && res.blocks) ? res.blocks : {};
+    // quote'u localStorage'a da yaz ki offline durumda da görünsün
+    try{
+      const q = (homeBlocksCache.quote && (homeBlocksCache.quote.content||'')) ? String(homeBlocksCache.quote.content) : '';
+      if(typeof q === 'string') localStorage.setItem('homeQuote', q);
+    }catch(e){}
+    try{ if(typeof currentCategory !== 'undefined' && currentCategory==='home') renderHomePanels(); }catch(e){}
+  }catch(e){
+    // sessiz kal, gerekirse localStorage üzerinden gösterilir
+  }
+}
+
 function normalizeRole(v){
   return String(v||'').trim().toLowerCase();
 }
@@ -130,7 +149,7 @@ function loadMenuPermissions(){
 // LocAdmin panel
 function openMenuPermissions(){
   const role=getMyRole();
-  if(role!=="locadmin" && role!=="admin"){
+  if(role!=="locadmin"){
     Swal.fire("Yetkisiz", "Bu ekrana erişimin yok.", "warning");
     return;
   }
@@ -358,6 +377,13 @@ window.recalcTotalSliderScore = function() {
 };
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
+function setHomeWelcomeUser(name){
+  try{
+    const el = document.getElementById("home-welcome-user");
+    if(el) el.textContent = (name||"Misafir");
+  }catch(e){}
+}
+
 function getFavs() { return JSON.parse(localStorage.getItem('sSportFavs') || '[]'); }
 function toggleFavorite(title) {
     event.stopPropagation();
@@ -468,6 +494,7 @@ function checkSession() {
         currentUser = savedUser;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
+        setHomeWelcomeUser(currentUser);
 
         checkAdmin(savedRole);
 
@@ -544,6 +571,7 @@ function girisYap() {
             } else {
                 document.getElementById("login-screen").style.display = "none";
                 document.getElementById("user-display").innerText = currentUser;
+                setHomeWelcomeUser(currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -614,21 +642,22 @@ function checkAdmin(role) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
         if(quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
-
-            // Yetki Yönetimi sadece locadmin'e görünsün
             const perms = document.getElementById('dropdownPerms');
-            if(perms) perms.style.display = (String(localStorage.getItem('sSportRole')||'').toLowerCase()==='locadmin') ? 'flex' : 'none';
-
+            if(perms) perms.style.display = (role === 'locadmin') ? 'flex' : 'none';
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
     } else {
         if(addCardDropdown) addCardDropdown.style.display = 'none';
         if(quickEditDropdown) quickEditDropdown.style.display = 'none';
+        const perms = document.getElementById('dropdownPerms');
+        if(perms) perms.style.display = 'none';
     }
 }
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
+    try{ document.getElementById("user-display").innerText = "Misafir"; }catch(e){}
+    setHomeWelcomeUser("Misafir");
     document.body.classList.remove('editing');
     localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole");
     if (sessionTimeout) clearTimeout(sessionTimeout);
@@ -876,51 +905,6 @@ function filterContent() {
     renderCards(filtered);
 }
 function showCardDetail(title, text) {
-    // Sheet kaynaklı içeriklerde "<br>", "\\u003cbr>" gibi kaçışlar olabiliyor.
-    // Güvenli şekilde (kısıtlı tag seti) HTML render etmek için normalize eder.
-    const normalizeRichTextToHtml = (raw)=>{
-        let s = (raw ?? '').toString();
-
-        // Bazı hücrelerde HTML entity olarak (&lt;br&gt; gibi) gelebiliyor. Önce çöz.
-        s = s
-          .replace(/&amp;/gi,'&')
-          .replace(/&lt;/gi,'<')
-          .replace(/&gt;/gi,'>');
-
-        // Sık görülen kaçışlar
-        s = s
-          // "\u003cbr>" gibi literal kaçışları gerçek tag'e çevir
-          .replace(/\\u003cbr\\u003e/gi, '<br>')
-          .replace(/\\u003cbr\s*\\/\\u003e/gi, '<br>')
-          .replace(/\\u003c\s*br\s*\\u003e/gi, '<br>')
-          .replace(/\\u003c\s*br\s*\\/\\u003e/gi, '<br>')
-          .replace(/\\u003c/gi,'<')
-          .replace(/\\u003e/gi,'>')
-          // literal \n -> gerçek newline
-          .replace(/\\n/g, '\n');
-
-        // HTML br taglerini newline'a çevirip güvenli escape uygula
-        const toNewline = s.replace(/<\s*br\s*\/?\s*>/gi, '\n');
-        let escaped = escapeHtml(toNewline);
-
-        // Sadece güvenli birkaç tag'i geri aç (atribütsüz)
-        escaped = escaped
-          .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
-          .replace(/&lt;\s*b\s*&gt;/gi, '<b>')
-          .replace(/&lt;\s*\/\s*b\s*&gt;/gi, '</b>')
-          .replace(/&lt;\s*strong\s*&gt;/gi, '<strong>')
-          .replace(/&lt;\s*\/\s*strong\s*&gt;/gi, '</strong>')
-          .replace(/&lt;\s*i\s*&gt;/gi, '<i>')
-          .replace(/&lt;\s*\/\s*i\s*&gt;/gi, '</i>')
-          .replace(/&lt;\s*em\s*&gt;/gi, '<em>')
-          .replace(/&lt;\s*\/\s*em\s*&gt;/gi, '</em>')
-          .replace(/&lt;\s*u\s*&gt;/gi, '<u>')
-          .replace(/&lt;\s*\/\s*u\s*&gt;/gi, '</u>');
-
-        // newline'ları br'e çevir
-        return escaped.replace(/\n/g,'<br>');
-    };
-
     // Geriye dönük uyumluluk: showCardDetail(cardObj) çağrısını da destekle
     if (title && typeof title === 'object') {
         const c = title;
@@ -931,12 +915,12 @@ function showCardDetail(title, text) {
         const link = (c.link || '').toString();
         const html = `
           <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
-            ${normalizeRichTextToHtml(body)}
+             ${sanitizeLimitedHtml(body).replace(/\n/g,'<br>')}
             ${link ? `<div style="margin-top:12px"><a href="${escapeHtml(link)}" target="_blank" rel="noreferrer" style="font-weight:800;color:var(--info);text-decoration:none"><i class=\"fas fa-link\"></i> Link</a></div>` : ''}
             ${script ? `<div class="tech-script-box" style="margin-top:12px">
-                <span class="tech-script-label">Müşteriye iletilecek:</span>${normalizeRichTextToHtml(script)}
+                 <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g,'<br>')}
               </div>` : ''}
-            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${normalizeRichTextToHtml(alertTxt)}</div>` : ''}
+             ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${sanitizeLimitedHtml(alertTxt).replace(/\n/g,'<br>')}</div>` : ''}
           </div>`;
         Swal.fire({ title: t, html, showCloseButton: true, showConfirmButton: false, width: '820px', background: '#f8f9fa' });
         return;
@@ -945,7 +929,7 @@ function showCardDetail(title, text) {
     const safeText = (text ?? '').toString();
     Swal.fire({
         title: title,
-        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${normalizeRichTextToHtml(safeText)}</div>`,
+        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${sanitizeLimitedHtml(safeText).replace(/\n/g,'<br>')}</div>`,
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
 }
@@ -965,6 +949,7 @@ function toggleEditMode() {
         btn.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
     }
     filterContent();
+    try{ if(currentCategory==='home') renderHomePanels(); }catch(e){}
     if(document.getElementById('guide-modal').style.display === 'flex') openGuide();
     if(document.getElementById('sales-modal').style.display === 'flex') openSales();
     if(document.getElementById('news-modal').style.display === 'flex') openNews();
@@ -1465,26 +1450,6 @@ function _formatBroadcastDateTr(it) {
     return s; // en kötü haliyle göster
 }
 
-
-function sanitizeAllowBasicTags(str){
-    // İçerikler Google Sheet'ten geldiği için bazen \u003cbr\u003e gibi double-escape olur.
-    let s = String(str ?? "");
-    // unicode escape'leri çöz
-    s = s.replace(/\\u003c/g, "<").replace(/\\u003e/g, ">").replace(/\\n/g, "\n");
-    // önce komple escape et
-    s = escapeHtml(s);
-    // izin verilen basit tag'leri geri aç
-    s = s.replaceAll("&lt;br&gt;", "<br>")
-         .replaceAll("&lt;br/&gt;", "<br>")
-         .replaceAll("&lt;br /&gt;", "<br>")
-         .replaceAll("&lt;b&gt;", "<b>")
-         .replaceAll("&lt;/b&gt;", "</b>");
-    // newline'ları br yap
-    s = s.replace(/\n/g, "<br>");
-    return s;
-}
-
-
 function escapeHtml(str) {
     return String(str ?? "")
         .replaceAll("&", "&amp;")
@@ -1492,6 +1457,27 @@ function escapeHtml(str) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+// İçeriklerde bazen <b>...</b> gibi basit HTML formatı kullanılıyor.
+// Modal içinde kod gibi görünmesin diye çok sınırlı bir allowlist ile geri açıyoruz.
+// Not: Link/attribute desteklemiyoruz (güvenlik için).
+function sanitizeLimitedHtml(raw){
+    const escaped = escapeHtml(raw ?? "");
+    let out = escaped;
+    const tags = [
+      "b","strong","i","em","u","br","p","ul","ol","li","blockquote"
+    ];
+    tags.forEach(t=>{
+      // <tag> ve </tag>
+      out = out.replaceAll(`&lt;${t}&gt;`, `<${t}>`).replaceAll(`&lt;/${t}&gt;`, `</${t}>`);
+      // <br/> / <br />
+      if(t==="br"){
+        out = out.replaceAll(`&lt;br/&gt;`, `<br/>`).replaceAll(`&lt;br /&gt;`, `<br />`);
+      }
+    });
+    // script/style gibi tehlikeli şeyleri zaten escape ettik; burada ekstra olarak görünür hale gelme ihtimali yok.
+    return out;
 }
 
 function openGuide() {
@@ -3739,17 +3725,6 @@ function hideHomeScreen(){
 }
 
 function renderHomePanels(){
-    // HomeBlocks (quote vb.) sheet'ten çekilip localStorage'a yazılır
-    // Render sırasında gecikme olmasın diye async çağırıp geldiğinde tekrar boyarız.
-    loadHomeBlocks().then(()=>{
-        try{
-            const quoteEl2 = document.getElementById('home-quote');
-            if(quoteEl2){
-                const q2 = (localStorage.getItem('homeQuote') || '').trim();
-                quoteEl2.innerHTML = q2 ? escapeHtml(q2) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
-            }
-        }catch(e){}
-    });
     // --- BUGÜN NELER VAR? (Yayın Akışı / bugünün maçları) ---
     const todayEl = document.getElementById('home-today');
     if(todayEl){
@@ -3806,30 +3781,7 @@ function renderHomePanels(){
                     }).join('') + (todays.length>shown.length ? `<div style="color:#666;font-size:.9rem;margin-top:6px">+${todays.length-shown.length} maç daha…</div>` : '');
                 }
 
-async function loadHomeBlocks(){
-    if(!SCRIPT_URL) return {};
-    try{
-        const res = await fetch(SCRIPT_URL, {
-            method:'POST',
-            headers:{"Content-Type":"text/plain;charset=utf-8"},
-            body: JSON.stringify({ action:'getHomeBlocks', username: currentUser, token: getToken() })
-        });
-        const data = await res.json();
-        if(data.result !== 'success') throw new Error(data.message||'getHomeBlocks failed');
-        const blocks = data.blocks || {};
-
-        // local cache
-        if(blocks.quote && typeof blocks.quote.content !== 'undefined'){
-            localStorage.setItem('homeQuote', String(blocks.quote.content||''));
-        }
-        return blocks;
-    }catch(e){
-        console.warn('[HOME BLOCKS]', e);
-        return {};
-    }
-}
-
-async function editHomeBlock(kind){
+function editHomeBlock(kind){
     if(!isAdminMode){
         Swal.fire("Yetkisiz", "Bu işlem için admin yetkisi gerekli.", "warning");
         return;
@@ -3838,10 +3790,12 @@ async function editHomeBlock(kind){
         Swal.fire("Bilgi", "Bu alan artık otomatik güncelleniyor.", "info");
         return;
     }
-    // önce sheet'ten çek (varsa)
-    await loadHomeBlocks();
-    const cur = (localStorage.getItem('homeQuote') || '').trim();
-    const res = await Swal.fire({
+    const cur = (
+      (homeBlocksCache && homeBlocksCache.quote && homeBlocksCache.quote.content != null)
+        ? String(homeBlocksCache.quote.content)
+        : (localStorage.getItem('homeQuote') || '')
+    ).trim();
+    Swal.fire({
         title: "Günün Sözü",
         input: "textarea",
         inputValue: cur,
@@ -3850,24 +3804,26 @@ async function editHomeBlock(kind){
         confirmButtonText: "Kaydet",
         cancelButtonText: "Vazgeç",
         preConfirm: (val)=> (val||'').trim()
+    }).then(res=>{
+        if(!res.isConfirmed) return;
+        const value = (res.value || '').trim();
+        // Sheet'e yaz
+        Swal.fire({title:'Kaydediliyor...', didOpen:()=>Swal.showLoading(), allowOutsideClick:false, allowEscapeKey:false});
+        apiCall('updateHomeBlock', { key:'quote', title:'Günün Sözü', content:value, visibleGroups:'' })
+          .then(()=>{
+            localStorage.setItem('homeQuote', value);
+            homeBlocksCache = homeBlocksCache || {};
+            homeBlocksCache.quote = { key:'quote', title:'Günün Sözü', content:value, visibleGroups:'' };
+            renderHomePanels();
+            Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
+          })
+          .catch(err=>{
+            // en azından local'e yazıp kaybetmeyelim
+            localStorage.setItem('homeQuote', value);
+            renderHomePanels();
+            Swal.fire('Uyarı', 'Sözü kaydettim ama sunucuya yazarken hata oluştu. (Localde duruyor)\n' + String(err.message||err), 'warning');
+          });
     });
-    if(!res.isConfirmed) return;
-    const newVal = (res.value||'').trim();
-    Swal.fire({ title:'Kaydediliyor...', didOpen:()=>Swal.showLoading(), showConfirmButton:false });
-    try{
-        const r = await fetch(SCRIPT_URL, {
-            method:'POST',
-            headers:{"Content-Type":"text/plain;charset=utf-8"},
-            body: JSON.stringify({ action:'updateHomeBlock', username: currentUser, token: getToken(), key:'quote', title:'Günün Sözü', content: newVal, visibleGroups:'' })
-        });
-        const d = await r.json();
-        if(d.result !== 'success') throw new Error(d.message||'updateHomeBlock failed');
-        localStorage.setItem('homeQuote', newVal);
-        renderHomePanels();
-        Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
-    }catch(e){
-        Swal.fire('Hata', 'Kaydedilemedi: ' + (e.message||'Sunucu hatası'), 'error');
-    }
 }
 
                 // kartı tıklayınca yayın akışına git
@@ -3907,7 +3863,11 @@ async function editHomeBlock(kind){
     // --- GÜNÜN SÖZÜ ---
     const quoteEl = document.getElementById('home-quote');
     if(quoteEl){
-        const q = (localStorage.getItem('homeQuote') || '').trim();
+        const q = (
+          (homeBlocksCache && homeBlocksCache.quote && homeBlocksCache.quote.content != null)
+            ? String(homeBlocksCache.quote.content)
+            : (localStorage.getItem('homeQuote') || '')
+        ).trim();
         quoteEl.innerHTML = q ? escapeHtml(q) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
     }
 
@@ -3918,10 +3878,7 @@ async function editHomeBlock(kind){
         const b3 = document.getElementById('home-edit-quote');
         if(b1) b1.style.display = 'none'; // artık dinamik
         if(b2) b2.style.display = 'none'; // duyuru dinamik
-        if(b3){
-            b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
-            b3.onclick = (e)=>{ try{ e.stopPropagation(); }catch(_){ } editHomeBlock('quote'); };
-        }
+        if(b3) b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
     }catch(e){}
 }
 
@@ -4228,7 +4185,7 @@ function renderTelesalesScripts(){
         if(Array.isArray(ov) && ov.length) list = ov;
     }catch(e){}
 
-    const bar = ((isAdminMode && isEditingActive) ? `
+    const bar = (isAdminMode ? `
         <div style="display:flex;gap:10px;align-items:center;margin:6px 0 12px;">
           <button class="x-btn x-btn-admin" onclick="toggleTelesalesEdit()"><i class="fas fa-pen"></i> ${window.telesalesEditMode ? 'Düzenlemeyi Kapat' : 'Düzenlemeyi Aç'}</button>
           ${window.telesalesEditMode ? `<button class="x-btn x-btn-admin" onclick="addTelesalesScript()"><i class="fas fa-plus"></i> Script Ekle</button>` : ``}
@@ -4255,20 +4212,6 @@ function renderTelesalesScripts(){
         </div>
       </div>
     `).join('');
-}
-
-// TeleSatış script düzenleme modu (global "Düzenlemeyi Aç" açıkken çalışır)
-function toggleTelesalesEdit(){
-    if(!isAdminMode){
-        Swal.fire('Yetkisiz', 'Bu işlem için admin yetkisi gerekli.', 'warning');
-        return;
-    }
-    if(!isEditingActive){
-        Swal.fire('Düzenleme kapalı', 'Önce üst menüden "Düzenlemeyi Aç" seçeneğini aç.', 'info');
-        return;
-    }
-    window.telesalesEditMode = !window.telesalesEditMode;
-    renderTelesalesScripts();
 }
 
 function getTelesalesScriptsStore(){
@@ -4852,14 +4795,18 @@ async function addTechCardSheet(){
       preConfirm: ()=>{
         const title = (document.getElementById('tc-title').value||'').trim();
         if(!title) return Swal.showValidationMessage('Başlık zorunlu');
+        const today = new Date();
+        const dateStr = today.getDate() + "." + (today.getMonth()+1) + "." + today.getFullYear();
         return {
-          type: 'card',
+          cardType: 'card',
           category: 'Teknik',
           title,
           text: (document.getElementById('tc-text').value||'').trim(),
           script: (document.getElementById('tc-script').value||'').trim(),
+          code: '',
           link: (document.getElementById('tc-link').value||'').trim(),
-          status: 'Aktif'
+          status: 'Aktif',
+          date: dateStr
         };
       }
     });
@@ -5019,25 +4966,12 @@ function __normalizeTechTab(tab){
 }
 function __normalizeTechCategory(cat){
   const c = (cat||"").toString().trim().toLowerCase();
-  // Yeni eklemelerde yanlışlıkla internal key yazılmışsa da tolere et
-  if(c === 'broadcast' || c === 'access' || c === 'app' || c === 'activation' || c === 'info') return c;
   if(c.startsWith("yay")) return "broadcast";
   if(c.startsWith("eri")) return "access";
   if(c.startsWith("app")) return "app";
   if(c.startsWith("akt")) return "activation";
   if(c.startsWith("bil")) return "info";
   return "";
-}
-
-function __techTabToSheetKategori(tabKey){
-  switch(String(tabKey||'').toLowerCase()){
-    case 'broadcast': return 'Yayın';
-    case 'access': return 'Erişim';
-    case 'app': return 'App Hataları';
-    case 'activation': return 'Aktivasyon';
-    case 'info': return 'Bilgi';
-    default: return String(tabKey||'');
-  }
 }
 
 async function __fetchTechDocs(){
@@ -5053,45 +4987,16 @@ async function __fetchTechDocs(){
   const data = await res.json();
   if(data.result !== "success") throw new Error(data.message || "getTechDocs failed");
   const rows = Array.isArray(data.data) ? data.data : [];
-  const decodeRich = (v)=>{
-    const s = (v||"").toString();
-    return s
-      .replace(/\\u003c/g,'<')
-      .replace(/\\u003e/g,'>')
-      .replace(/\\n/g,'\n');
-  };
-  const tryParseJsonBody = (v)=>{
-    const raw = (v||"").toString().trim();
-    if(!raw) return { text:"", extra:{} };
-    if(raw.startsWith('{') && raw.endsWith('}')){
-      try{
-        const obj = JSON.parse(raw);
-        const text = obj.text || obj.icerik || obj.content || obj.description || "";
-        return { text: text.toString(), extra: obj };
-      }catch(e){}
-    }
-    return { text: raw, extra:{} };
-  };
-
   return rows
     .filter(r => (r.Durum||"").toString().trim().toLowerCase() !== "pasif")
     .map(r => ({
       categoryKey: __normalizeTechCategory(r.Kategori),
       kategori: (r.Kategori||"").trim(),
       baslik: (r.Başlık || r.Baslik || r.Title || r["Başlık"] || "").toString().trim(),
-      ...(function(){
-        const bodyRaw = (r.İçerik || r.Icerik || r.Content || r["İçerik"] || "");
-        const parsed = tryParseJsonBody(bodyRaw);
-        const text = decodeRich(parsed.text);
-        const ex = parsed.extra || {};
-        const adim = decodeRich((r.Adım || r.Adim || r.Step || r["Adım"] || ex.step || ex.adim || ex.Adım || ""));
-        const not = decodeRich((r.Not || ex.note || ex.not || ""));
-        const link = decodeRich((r.Link || ex.link || ""));
-        return {
-          icerik: text,
-          adim, not, link
-        };
-      })(),
+      icerik: (r.İçerik || r.Icerik || r.Content || r["İçerik"] || "").toString(),
+      adim: (r.Adım || r.Adim || r.Step || r["Adım"] || "").toString(),
+      not: (r.Not || "").toString(),
+      link: (r.Link || "").toString(),
       durum: (r.Durum || "").toString()
     }))
     .filter(x => x.categoryKey && x.baslik);
@@ -5188,14 +5093,6 @@ async function filterTechDocList(tabKey){
 // ---------------------------
 async function addTechDoc(tabKey){
   if(!isAdminMode) return;
-  const tabToSheet = (k)=>{
-    if(k==='broadcast') return 'Yayın';
-    if(k==='access') return 'Erişim';
-    if(k==='app') return 'App Hataları';
-    if(k==='activation') return 'Aktivasyon';
-    if(k==='info') return 'Bilgi';
-    return k;
-  };
   const { value: v } = await Swal.fire({
     title: 'Teknik Konu Ekle',
     html: `
@@ -5212,8 +5109,7 @@ async function addTechDoc(tabKey){
       const title = (document.getElementById('td-title').value||'').trim();
       if(!title) return Swal.showValidationMessage('Başlık zorunlu');
       return {
-        // Sheet tarafında Kategori TR isimlerle tutuluyor
-        kategori: tabToSheet(tabKey),
+        kategori: tabKey,
         baslik: title,
         icerik: (document.getElementById('td-content').value||'').trim(),
         adim: (document.getElementById('td-step').value||'').trim(),
@@ -5247,14 +5143,6 @@ async function addTechDoc(tabKey){
 
 async function editTechDoc(tabKey, baslik){
   if(!isAdminMode) return;
-  const tabToSheet = (k)=>{
-    if(k==='broadcast') return 'Yayın';
-    if(k==='access') return 'Erişim';
-    if(k==='app') return 'App Hataları';
-    if(k==='activation') return 'Aktivasyon';
-    if(k==='info') return 'Bilgi';
-    return k;
-  };
   const all = await loadTechDocsIfNeeded(false);
   const it = all.find(x=>x.categoryKey===tabKey && (x.baslik||'')===baslik);
   if(!it) return;
@@ -5274,7 +5162,7 @@ async function editTechDoc(tabKey, baslik){
       const title = (document.getElementById('td-title').value||'').trim();
       if(!title) return Swal.showValidationMessage('Başlık zorunlu');
       return {
-        kategori: tabToSheet(tabKey),
+        kategori: tabKey,
         baslik: title,
         icerik: (document.getElementById('td-content').value||'').trim(),
         adim: (document.getElementById('td-step').value||'').trim(),
@@ -5291,8 +5179,7 @@ async function editTechDoc(tabKey, baslik){
     const r = await fetch(SCRIPT_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      // Anahtarlar sheet değerleriyle eşleşmeli
-      body: JSON.stringify({ action:'upsertTechDoc', username: currentUser, token: getToken(), keyKategori: tabToSheet(tabKey), keyBaslik: baslik, ...v })
+      body: JSON.stringify({ action:'upsertTechDoc', username: currentUser, token: getToken(), keyKategori: tabKey, keyBaslik: baslik, ...v })
     });
     const d = await r.json();
     if(d.result==='success'){
@@ -5309,14 +5196,6 @@ async function editTechDoc(tabKey, baslik){
 
 function deleteTechDoc(tabKey, baslik){
   if(!isAdminMode) return;
-  const tabToSheet = (k)=>{
-    if(k==='broadcast') return 'Yayın';
-    if(k==='access') return 'Erişim';
-    if(k==='app') return 'App Hataları';
-    if(k==='activation') return 'Aktivasyon';
-    if(k==='info') return 'Bilgi';
-    return k;
-  };
   Swal.fire({
     title:'Silinsin mi?',
     text:'Konu pasife alınacak.',
@@ -5330,7 +5209,7 @@ function deleteTechDoc(tabKey, baslik){
       const r = await fetch(SCRIPT_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'deleteTechDoc', username: currentUser, token: getToken(), keyKategori: tabToSheet(tabKey), keyBaslik: baslik })
+        body: JSON.stringify({ action:'deleteTechDoc', username: currentUser, token: getToken(), keyKategori: tabKey, keyBaslik: baslik })
       });
       const d = await r.json();
       if(d.result==='success'){
