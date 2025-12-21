@@ -130,7 +130,8 @@ function loadMenuPermissions(){
 // LocAdmin panel
 function openMenuPermissions(){
   const role=getMyRole();
-  if(role!=="locadmin" && role!=="admin"){
+  // Sadece locadmin erişebilsin
+  if(role!=="locadmin"){
     Swal.fire("Yetkisiz", "Bu ekrana erişimin yok.", "warning");
     return;
   }
@@ -358,13 +359,6 @@ window.recalcTotalSliderScore = function() {
 };
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
-function setHomeWelcomeUser(name){
-  try{
-    const el = document.getElementById("home-welcome-user");
-    if(el) el.textContent = (name||"Misafir");
-  }catch(e){}
-}
-
 function getFavs() { return JSON.parse(localStorage.getItem('sSportFavs') || '[]'); }
 function toggleFavorite(title) {
     event.stopPropagation();
@@ -475,7 +469,6 @@ function checkSession() {
         currentUser = savedUser;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
-        setHomeWelcomeUser(currentUser);
 
         checkAdmin(savedRole);
 
@@ -552,7 +545,6 @@ function girisYap() {
             } else {
                 document.getElementById("login-screen").style.display = "none";
                 document.getElementById("user-display").innerText = currentUser;
-                setHomeWelcomeUser(currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -619,23 +611,25 @@ function checkAdmin(role) {
         if (searchInput) { searchInput.disabled = false; searchInput.placeholder = "İçeriklerde hızlı ara..."; searchInput.style.opacity = '1'; }
     }
     
+    const perms = document.getElementById('dropdownPerms');
+
     if(isAdminMode) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
         if(quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
-        const perms = document.getElementById('dropdownPerms'); if(perms) perms.style.display = 'flex';
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
+        // Yetki Yönetimi sadece locadmin'e görünsün
+        if(perms) perms.style.display = isLocAdmin ? 'flex' : 'none';
     } else {
         if(addCardDropdown) addCardDropdown.style.display = 'none';
         if(quickEditDropdown) quickEditDropdown.style.display = 'none';
+        if(perms) perms.style.display = 'none';
     }
 }
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
-    try{ document.getElementById("user-display").innerText = "Misafir"; }catch(e){}
-    setHomeWelcomeUser("Misafir");
     document.body.classList.remove('editing');
     localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole");
     if (sessionTimeout) clearTimeout(sessionTimeout);
@@ -927,7 +921,6 @@ function toggleEditMode() {
         btn.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
     }
     filterContent();
-    try{ if(currentCategory==='home') renderHomePanels(); }catch(e){}
     if(document.getElementById('guide-modal').style.display === 'flex') openGuide();
     if(document.getElementById('sales-modal').style.display === 'flex') openSales();
     if(document.getElementById('news-modal').style.display === 'flex') openNews();
@@ -3813,7 +3806,7 @@ function editHomeBlock(kind){
         const b3 = document.getElementById('home-edit-quote');
         if(b1) b1.style.display = 'none'; // artık dinamik
         if(b2) b2.style.display = 'none'; // duyuru dinamik
-        if(b3) b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
+        if(b3) b3.style.display = (isAdminMode ? 'inline-flex' : 'none');
     }catch(e){}
 }
 
@@ -4730,18 +4723,14 @@ async function addTechCardSheet(){
       preConfirm: ()=>{
         const title = (document.getElementById('tc-title').value||'').trim();
         if(!title) return Swal.showValidationMessage('Başlık zorunlu');
-        const today = new Date();
-        const dateStr = today.getDate() + "." + (today.getMonth()+1) + "." + today.getFullYear();
         return {
-          cardType: 'card',
+          type: 'card',
           category: 'Teknik',
           title,
           text: (document.getElementById('tc-text').value||'').trim(),
           script: (document.getElementById('tc-script').value||'').trim(),
-          code: '',
           link: (document.getElementById('tc-link').value||'').trim(),
-          status: 'Aktif',
-          date: dateStr
+          status: 'Aktif'
         };
       }
     });
@@ -4895,6 +4884,45 @@ window.afterDataLoaded = function(){
 let __techDocsCache = null;
 let __techDocsLoadedAt = 0;
 
+// Sheet'ten gelen teknik içerikleri temizle/normalize et
+function __parseTechDocContent(raw){
+  let s = (raw==null ? '' : String(raw));
+
+  // JSON payload olarak kaydedilmişse (eski/yanlış kayıtlar)
+  const t = s.trim();
+  if((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('"{') && t.endsWith('}"'))){
+    try{
+      const obj = JSON.parse(t.startsWith('"{') ? JSON.parse(t) : t);
+      if(obj && typeof obj === 'object'){
+        const text = (obj.text || obj.icerik || obj.content || '').toString();
+        const script = (obj.script || '').toString();
+        const link = (obj.link || '').toString();
+        return { html: __normalizeTechHtml(text), script, link };
+      }
+    }catch(e){}
+  }
+
+  // Bazı kayıtlarda içerik sonuna ,"script":... gibi JSON artığı eklenmiş olabiliyor
+  const cutIdx = s.indexOf(',"script":');
+  if(cutIdx > -1) s = s.slice(0, cutIdx);
+
+  return { html: __normalizeTechHtml(s), script: '', link: '' };
+}
+
+function __normalizeTechHtml(s){
+  let out = (s==null ? '' : String(s));
+  // \u003cbr> (ve benzeri) kaçışlarını <br> yap
+  out = out
+    .replace(/\\u003cbr\\s*\\/?\\u003e/gi,'<br>')
+    .replace(/\\u003cbr\\s*\\/?/gi,'<br>')
+    .replace(/\\u003cbr>/gi,'<br>')
+    .replace(/\u003cbr\s*\/?\u003e/gi,'<br>')
+    .replace(/\u003cbr>/gi,'<br>');
+  // \n yeni satırları br'e çevir (textarea kayıtları)
+  out = out.replace(/\\n/g,'<br>').replace(/\n/g,'<br>');
+  return out;
+}
+
 function __normalizeTechTab(tab){
   // tab ids: broadcast, access, app, activation
   return tab;
@@ -4907,6 +4935,17 @@ function __normalizeTechCategory(cat){
   if(c.startsWith("akt")) return "activation";
   if(c.startsWith("bil")) return "info";
   return "";
+}
+
+function __techTabLabel(tabKey){
+  const map = {
+    broadcast: 'Yayın',
+    access: 'Erişim',
+    app: 'App Hataları',
+    activation: 'Aktivasyon',
+    info: 'Bilgi'
+  };
+  return map[tabKey] || tabKey;
 }
 
 async function __fetchTechDocs(){
@@ -4924,16 +4963,21 @@ async function __fetchTechDocs(){
   const rows = Array.isArray(data.data) ? data.data : [];
   return rows
     .filter(r => (r.Durum||"").toString().trim().toLowerCase() !== "pasif")
-    .map(r => ({
-      categoryKey: __normalizeTechCategory(r.Kategori),
-      kategori: (r.Kategori||"").trim(),
-      baslik: (r.Başlık || r.Baslik || r.Title || r["Başlık"] || "").toString().trim(),
-      icerik: (r.İçerik || r.Icerik || r.Content || r["İçerik"] || "").toString(),
-      adim: (r.Adım || r.Adim || r.Step || r["Adım"] || "").toString(),
-      not: (r.Not || "").toString(),
-      link: (r.Link || "").toString(),
-      durum: (r.Durum || "").toString()
-    }))
+    .map(r => {
+      const rawContent = (r.İçerik || r.Icerik || r.Content || r["İçerik"] || "").toString();
+      const parsed = __parseTechDocContent(rawContent);
+      return {
+        categoryKey: __normalizeTechCategory(r.Kategori),
+        kategori: (r.Kategori||"").trim(),
+        baslik: (r.Başlık || r.Baslik || r.Title || r["Başlık"] || "").toString().trim(),
+        icerik: parsed.html,
+        script: parsed.script,
+        adim: (r.Adım || r.Adim || r.Step || r["Adım"] || "").toString(),
+        not: (r.Not || "").toString(),
+        link: (parsed.link || (r.Link || "").toString()),
+        durum: (r.Durum || "").toString()
+      };
+    })
     .filter(x => x.categoryKey && x.baslik);
 }
 
@@ -4966,8 +5010,17 @@ function __renderTechList(tabKey, items){
 
   function render(filtered){
     listEl.innerHTML = adminBar + filtered.map((it, idx) => {
+      const scriptHtml = it.script ? `
+        <div class="q-doc-meta" style="margin-top:10px">
+          <b>Script:</b>
+          <div style="margin-top:6px;background:#fff8e1;border:1px solid #ffe0b2;border-radius:10px;padding:10px">
+            <div style="white-space:pre-line;font-style:italic">${__escapeHtml(it.script)}</div>
+            <button class="x-btn x-btn-copy" style="margin-top:10px" onclick="copyText(${JSON.stringify(it.script)})"><i class=\"fas fa-copy\"></i> Kopyala</button>
+          </div>
+        </div>` : "";
       const body = [
         it.icerik ? `<div class="q-doc-body">${it.icerik}</div>` : "",
+        scriptHtml,
         it.adim ? `<div class="q-doc-meta"><b>Adım:</b> ${__escapeHtml(it.adim)}</div>` : "",
         it.not ? `<div class="q-doc-meta"><b>Not:</b> ${__escapeHtml(it.not)}</div>` : "",
         it.link ? `<div class="q-doc-meta"><b>Link:</b> <a href="${__escapeHtml(it.link)}" target="_blank">${__escapeHtml(it.link)}</a></div>` : ""
@@ -5044,7 +5097,7 @@ async function addTechDoc(tabKey){
       const title = (document.getElementById('td-title').value||'').trim();
       if(!title) return Swal.showValidationMessage('Başlık zorunlu');
       return {
-        kategori: tabKey,
+        kategori: __techTabLabel(tabKey),
         baslik: title,
         icerik: (document.getElementById('td-content').value||'').trim(),
         adim: (document.getElementById('td-step').value||'').trim(),
@@ -5097,7 +5150,7 @@ async function editTechDoc(tabKey, baslik){
       const title = (document.getElementById('td-title').value||'').trim();
       if(!title) return Swal.showValidationMessage('Başlık zorunlu');
       return {
-        kategori: tabKey,
+        kategori: __techTabLabel(tabKey),
         baslik: title,
         icerik: (document.getElementById('td-content').value||'').trim(),
         adim: (document.getElementById('td-step').value||'').trim(),
