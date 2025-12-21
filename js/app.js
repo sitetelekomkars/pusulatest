@@ -130,7 +130,7 @@ function loadMenuPermissions(){
 // LocAdmin panel
 function openMenuPermissions(){
   const role=getMyRole();
-  if(role!=="locadmin"){
+  if(role!=="locadmin" && role!=="admin"){
     Swal.fire("Yetkisiz", "Bu ekrana erişimin yok.", "warning");
     return;
   }
@@ -595,12 +595,6 @@ function checkAdmin(role) {
     isLocAdmin = (role === "locadmin");
     isEditingActive = false;
     document.body.classList.remove('editing');
-
-    // Yetki Yönetimi menüsü sadece locadmin görsün
-    try{
-      const mp = document.getElementById('dropdownPerms');
-      if(mp) mp.style.display = (isLocAdmin ? '' : 'none');
-    }catch(e){}
     
     const isQualityUser = (role === 'qusers');
     const filterButtons = document.querySelectorAll('.filter-btn:not(.btn-fav)'); 
@@ -629,7 +623,7 @@ function checkAdmin(role) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
         if(quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
-        const perms = document.getElementById('dropdownPerms'); if(perms) perms.style.display = (isLocAdmin ? 'flex' : 'none');
+        const perms = document.getElementById('dropdownPerms'); if(perms) perms.style.display = 'flex';
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
@@ -899,7 +893,7 @@ function showCardDetail(title, text) {
         const link = (c.link || '').toString();
         const html = `
           <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
-            ${sanitizeAllowedHTML(body)}
+            ${escapeHtml(body).replace(/\n/g,'<br>')}
             ${link ? `<div style="margin-top:12px"><a href="${escapeHtml(link)}" target="_blank" rel="noreferrer" style="font-weight:800;color:var(--info);text-decoration:none"><i class=\"fas fa-link\"></i> Link</a></div>` : ''}
             ${script ? `<div class="tech-script-box" style="margin-top:12px">
                 <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g,'<br>')}
@@ -1442,58 +1436,6 @@ function escapeHtml(str) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 }
-
-/**
- * Very small HTML sanitizer to render rich text coming from sheets.
- * Allows only a safe subset of tags, strips attributes except <a href>.
- */
-function sanitizeAllowedHTML(input){
-  const raw = String(input ?? "");
-  // Fast path: plain text -> escape then newline->br
-  const looksLikeHtml = /<\s*\/?\s*[a-z][^>]*>/i.test(raw);
-  if(!looksLikeHtml){
-    return escapeHtml(raw).replace(/\n/g, '<br>');
-  }
-  try{
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(raw, "text/html");
-    const allowedTags = new Set(["B","STRONG","I","EM","U","BR","P","UL","OL","LI","DIV","SPAN","A"]);
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT, null);
-    const toRemove = [];
-    while(walker.nextNode()){
-      const el = walker.currentNode;
-      const tag = el.tagName;
-      if(!allowedTags.has(tag)){
-        // Replace element with its textContent (keep children text)
-        const txt = doc.createTextNode(el.textContent || "");
-        el.parentNode && el.parentNode.replaceChild(txt, el);
-        continue;
-      }
-      // Strip attributes
-      [...el.attributes].forEach(a=>{
-        const name = a.name.toLowerCase();
-        if(tag === "A" && name === "href") return;
-        el.removeAttribute(a.name);
-      });
-      // Harden links
-      if(tag === "A"){
-        const href = el.getAttribute("href") || "";
-        if(!/^https?:\/\//i.test(href) && !href.startsWith("/")){
-          el.removeAttribute("href");
-        }else{
-          el.setAttribute("target","_blank");
-          el.setAttribute("rel","noopener noreferrer");
-        }
-      }
-    }
-    // Convert remaining newlines in text nodes by replacing with <br>
-    return doc.body.innerHTML.replace(/\n/g,'<br>');
-  }catch(e){
-    // fallback to escaped text
-    return escapeHtml(raw).replace(/\n/g,'<br>');
-  }
-}
-
 
 function openGuide() {
     document.getElementById('guide-modal').style.display = 'flex';
@@ -3739,28 +3681,7 @@ function hideHomeScreen(){
     if (grid) grid.style.display = 'grid';
 }
 
-
-// -------------------- Home Blocks (Günün Sözü vb.) --------------------
-let homeBlocksCache = null;
-let homeBlocksLoaded = false;
-
-async function ensureHomeBlocks(){
-  if(homeBlocksLoaded && homeBlocksCache) return homeBlocksCache;
-  try{
-    const d = await apiCall("getHomeBlocks", {});
-    if(d && d.result==="success"){
-      homeBlocksCache = d.blocks || {};
-      homeBlocksLoaded = true;
-      return homeBlocksCache;
-    }
-  }catch(e){}
-  homeBlocksCache = homeBlocksCache || {};
-  homeBlocksLoaded = true;
-  return homeBlocksCache;
-}
-
-async function renderHomePanels(){
-    await ensureHomeBlocks();
+function renderHomePanels(){
     // --- BUGÜN NELER VAR? (Yayın Akışı / bugünün maçları) ---
     const todayEl = document.getElementById('home-today');
     if(todayEl){
@@ -3817,24 +3738,16 @@ async function renderHomePanels(){
                     }).join('') + (todays.length>shown.length ? `<div style="color:#666;font-size:.9rem;margin-top:6px">+${todays.length-shown.length} maç daha…</div>` : '');
                 }
 
-async function editHomeBlock(kind) {
-    const role = getMyRole();
-    const canEdit = (role === "admin" || role === "locadmin");
-    
-    if (!canEdit) {
+function editHomeBlock(kind){
+    if(!isAdminMode){
         Swal.fire("Yetkisiz", "Bu işlem için admin yetkisi gerekli.", "warning");
         return;
     }
-
-    if (kind !== 'quote') {
+    if(kind !== 'quote'){
         Swal.fire("Bilgi", "Bu alan artık otomatik güncelleniyor.", "info");
         return;
     }
-
-    const cur = (homeBlocksCache && homeBlocksCache['quote'] && homeBlocksCache['quote'].content != null)
-        ? String(homeBlocksCache['quote'].content).trim()
-        : (localStorage.getItem('homeQuote') || '').trim();
-
+    const cur = (localStorage.getItem('homeQuote') || '').trim();
     Swal.fire({
         title: "Günün Sözü",
         input: "textarea",
@@ -3843,101 +3756,71 @@ async function editHomeBlock(kind) {
         showCancelButton: true,
         confirmButtonText: "Kaydet",
         cancelButtonText: "Vazgeç",
-        preConfirm: (val) => (val || '').trim()
-    }).then(async (res) => {
-        if (!res.isConfirmed) return;
-        const val = res.value || '';
-        
-        try {
-            const r = await apiCall("updateHomeBlock", { key: "quote", title: "Günün Sözü", content: val, visibleGroups: "" });
-            if (r && r.result === "success") {
-                homeBlocksCache = homeBlocksCache || {};
-                homeBlocksCache['quote'] = { key: "quote", title: "Günün Sözü", content: val, visibleGroups: "" };
-                localStorage.setItem('homeQuote', val);
-                await renderHomePanels();
-                Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
-                return;
-            }
-            throw new Error((r && r.message) ? r.message : "Kaydedilemedi");
-        } catch (e) {
-            // offline fallback
-            localStorage.setItem('homeQuote', val);
-            await renderHomePanels();
-            Swal.fire(
-                "Kaydedildi",
-                "Günün sözü yerel olarak güncellendi. (Sunucuya yazılamadı)",
-                "info"
-            );
-        }
+        preConfirm: (val)=> (val||'').trim()
+    }).then(res=>{
+        if(!res.isConfirmed) return;
+        localStorage.setItem('homeQuote', res.value || '');
+        renderHomePanels();
+        Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
     });
 }
 
-// Panelleri render eden ve tıklama özelliklerini ekleyen ana fonksiyon
-async function renderHomePanels() {
-    // --- YAYIN AKIŞI (BUGÜN) ---
-    const todayEl = document.getElementById('home-today');
-    if (todayEl) {
-        try {
-            // Kartı tıklayınca yayın akışına gitme özelliği ekle
-            const card = todayEl.closest('.home-card');
-            if (card) {
-                card.classList.add('clickable');
-                card.onclick = () => openBroadcastFlow();
+                // kartı tıklayınca yayın akışına git
+                const card = todayEl.closest('.home-card');
+                if(card){
+                    card.classList.add('clickable');
+                    card.onclick = ()=>openBroadcastFlow();
+                }
+            }catch(e){
+                todayEl.innerHTML = '<div class="home-mini-item">Yayın akışı alınamadı.</div>';
             }
-        } catch (e) {
-            console.error("Yayın akışı hatası:", e);
-            todayEl.innerHTML = '<div class="home-mini-item">Yayın akışı alınamadı.</div>';
-        }
+        })();
     }
 
     // --- DUYURULAR (son 3 duyuru) ---
     const annEl = document.getElementById('home-ann');
-    if (annEl) {
-        const latest = (newsData || []).slice(0, 3);
-        if (latest.length === 0) {
+    if(annEl){
+        const latest = (newsData || []).slice(0,3);
+        if(latest.length===0){
             annEl.innerHTML = '<div class="home-mini-item">Henüz duyuru yok.</div>';
-        } else {
-            annEl.innerHTML = latest.map(n => `
+        }else{
+            annEl.innerHTML = latest.map(n=>`
                 <div class="home-mini-item">
-                  <div class="home-mini-date">${escapeHtml(n.date || '')}</div>
-                  <div class="home-mini-title">${escapeHtml(n.title || '')}</div>
-                  <div class="home-mini-desc">${escapeHtml(String(n.desc || '')).slice(0, 160)}${(n.desc || '').length > 160 ? '...' : ''}</div>
+                  <div class="home-mini-date">${escapeHtml(n.date||'')}</div>
+                  <div class="home-mini-title">${escapeHtml(n.title||'')}</div>
+                  <div class="home-mini-desc">${escapeHtml(String(n.desc||'')).slice(0,160)}${(n.desc||'').length>160?'...':''}</div>
                 </div>
             `).join('');
         }
         const card = annEl.closest('.home-card');
-        if (card) {
+        if(card){
             card.classList.add('clickable');
-            card.onclick = () => openNews();
+            card.onclick = ()=>openNews();
         }
     }
 
     // --- GÜNÜN SÖZÜ ---
     const quoteEl = document.getElementById('home-quote');
-    if (quoteEl) {
-        const q = (homeBlocksCache && homeBlocksCache['quote'] && homeBlocksCache['quote'].content != null) 
-            ? String(homeBlocksCache['quote'].content).trim() 
-            : (localStorage.getItem('homeQuote') || '').trim();
+    if(quoteEl){
+        const q = (localStorage.getItem('homeQuote') || '').trim();
         quoteEl.innerHTML = q ? escapeHtml(q) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
     }
 
-    // Admin edit butonlarının görünürlüğü
-    try {
+    // Admin: edit butonlarını aç
+    try{
         const b1 = document.getElementById('home-edit-today');
         const b2 = document.getElementById('home-edit-ann');
         const b3 = document.getElementById('home-edit-quote');
-        const isAdmin = (getMyRole() === 'admin' || getMyRole() === 'locadmin');
-        
-        if (b1) b1.style.display = 'none'; 
-        if (b2) b2.style.display = 'none'; 
-        if (b3) b3.style.display = isAdmin ? 'inline-flex' : 'none';
-    } catch (e) {}
+        if(b1) b1.style.display = 'none'; // artık dinamik
+        if(b2) b2.style.display = 'none'; // duyuru dinamik
+        if(b3) b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
+    }catch(e){}
 }
 
-// Kart detayını doğrudan açmak için yardımcı
-function openCardDetail(cardId) {
-    const card = (cardsData || []).find(x => String(x.id) === String(cardId));
-    if (!card) { Swal.fire('Hata', 'Kart bulunamadı.', 'error'); return; }
+// Kart detayını doğrudan açmak için küçük bir yardımcı
+function openCardDetail(cardId){
+    const card = (cardsData||[]).find(x=>String(x.id)===String(cardId));
+    if(!card){Swal.fire('Hata','Kart bulunamadı.','error');return;}
     showCardDetail(card);
 }
 
@@ -3945,20 +3828,8 @@ function openCardDetail(cardId) {
    TELE SATIŞ FULLSCREEN
 --------------------------*/
 let telesalesOffers = [];
-function safeGetToken() {
-    try { return (typeof getToken === 'function') ? getToken() : ''; } catch (e) { return ''; }
-}
-
-async function fetchSheetObjects(actionName) {
-    const payload = { action: actionName, username: (typeof currentUser !== 'undefined' ? currentUser : ''), token: safeGetToken() };
-    const r = await fetch(SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload)
-    });
-    const d = await r.json();
-    if (!d || d.result !== "success") throw new Error((d && d.message) ? d.message : "Veri alınamadı.");
-    return d.data || d.items || [];
+function safeGetToken(){
+    try{ return (typeof getToken === 'function') ? getToken() : ''; }catch(e){ return ''; }
 }
 async function fetchSheetObjects(actionName){
     const payload = { action: actionName, username: (currentUser||''), token: safeGetToken() };
