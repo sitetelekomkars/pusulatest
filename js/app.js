@@ -3738,32 +3738,6 @@ function renderHomePanels(){
                     }).join('') + (todays.length>shown.length ? `<div style="color:#666;font-size:.9rem;margin-top:6px">+${todays.length-shown.length} maç daha…</div>` : '');
                 }
 
-function editHomeBlock(kind){
-    if(!isAdminMode){
-        Swal.fire("Yetkisiz", "Bu işlem için admin yetkisi gerekli.", "warning");
-        return;
-    }
-    if(kind !== 'quote'){
-        Swal.fire("Bilgi", "Bu alan artık otomatik güncelleniyor.", "info");
-        return;
-    }
-    const cur = (localStorage.getItem('homeQuote') || '').trim();
-    Swal.fire({
-        title: "Günün Sözü",
-        input: "textarea",
-        inputValue: cur,
-        inputPlaceholder: "Bugünün sözünü yaz…",
-        showCancelButton: true,
-        confirmButtonText: "Kaydet",
-        cancelButtonText: "Vazgeç",
-        preConfirm: (val)=> (val||'').trim()
-    }).then(res=>{
-        if(!res.isConfirmed) return;
-        localStorage.setItem('homeQuote', res.value || '');
-        renderHomePanels();
-        Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
-    });
-}
 
                 // kartı tıklayınca yayın akışına git
                 const card = todayEl.closest('.home-card');
@@ -3815,6 +3789,40 @@ function editHomeBlock(kind){
         if(b2) b2.style.display = 'none'; // duyuru dinamik
         if(b3) b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
     }catch(e){}
+}
+
+
+
+// Ana Sayfa - Günün Sözü düzenleme (sadece admin mod + düzenleme açıkken)
+function editHomeBlock(kind){
+    if(!isAdminMode){
+        Swal.fire("Yetkisiz", "Bu işlem için admin yetkisi gerekli.", "warning");
+        return;
+    }
+    if(!isEditingActive){
+        Swal.fire("Kapalı", "Düzenleme modu kapalı. Önce 'Düzenlemeyi Aç' demelisin.", "info");
+        return;
+    }
+    if(kind !== 'quote'){
+        Swal.fire("Bilgi", "Bu alan artık otomatik güncelleniyor.", "info");
+        return;
+    }
+    const cur = (localStorage.getItem('homeQuote') || '').trim();
+    Swal.fire({
+        title: "Günün Sözü",
+        input: "textarea",
+        inputValue: cur,
+        inputPlaceholder: "Bugünün sözünü yaz…",
+        showCancelButton: true,
+        confirmButtonText: "Kaydet",
+        cancelButtonText: "Vazgeç",
+        preConfirm: (val)=> (val||'').trim()
+    }).then(res=>{
+        if(!res.isConfirmed) return;
+        localStorage.setItem('homeQuote', res.value || '');
+        renderHomePanels();
+        Swal.fire("Kaydedildi", "Günün sözü güncellendi.", "success");
+    });
 }
 
 // Kart detayını doğrudan açmak için küçük bir yardımcı
