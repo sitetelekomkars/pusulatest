@@ -51,7 +51,6 @@ let database = [], cardsData = [], newsData = [], sportsData = [], salesScripts 
 let __dataLoadedResolve;
 window.__dataLoadedPromise = new Promise(r=>{ __dataLoadedResolve = r; });
 let techWizardData = {}; // Teknik Sihirbaz Verisi
-let homeBlocks = { quote: '' };
 let currentUser = "";
 
 // -------------------- Menu Permissions (LocAdmin) --------------------
@@ -127,49 +126,6 @@ function loadMenuPermissions(){
     }
   }).catch(()=>{});
 }
-
-async function loadHomeBlocks(){
-  try{
-    const payload = { action: "getHomeBlocks", username: (currentUser||''), token: safeGetToken() };
-    const r = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
-    const d = await r.json();
-    if(d && d.result==="success"){
-      homeBlocks = d.blocks || {};
-    }
-  }catch(e){}
-  try{ renderHomePanels(); }catch(e){}
-}
-
-async function editHomeBlock(key){
-  if(!(isAdminMode && isEditingActive)) return;
-  const current = String((homeBlocks && homeBlocks[key]) || '');
-  const res = await Swal.fire({
-    title: "Günün Sözü",
-    input: "textarea",
-    inputValue: current,
-    inputPlaceholder: "Bugün için söz...",
-    showCancelButton: true,
-    confirmButtonText: "Kaydet",
-    cancelButtonText: "Vazgeç",
-    customClass: { popup: 'modal-wide' }
-  });
-  if(!res.isConfirmed) return;
-  const newVal = String(res.value || '');
-  try{
-    const payload = { action:"updateHomeBlock", username:(currentUser||''), token: safeGetToken(), key:key, value:newVal };
-    const r = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
-    const d = await r.json();
-    if(d && d.result==="success"){
-      await loadHomeBlocks();
-      Swal.fire({icon:'success', title:'Kaydedildi', toast:true, position:'top-end', showConfirmButton:false, timer:1200});
-    }else{
-      Swal.fire('Hata', (d && d.message) ? d.message : 'Kaydedilemedi', 'error');
-    }
-  }catch(e){
-    Swal.fire('Hata','Kaydedilemedi','error');
-  }
-}
-
 
 // LocAdmin panel
 function openMenuPermissions(){
@@ -402,6 +358,13 @@ window.recalcTotalSliderScore = function() {
 };
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
+function setHomeWelcomeUser(name){
+  try{
+    const el = document.getElementById("home-welcome-user");
+    if(el) el.textContent = (name||"Misafir");
+  }catch(e){}
+}
+
 function getFavs() { return JSON.parse(localStorage.getItem('sSportFavs') || '[]'); }
 function toggleFavorite(title) {
     event.stopPropagation();
@@ -480,6 +443,26 @@ function escapeForJsString(text) {
     if (!text) return "";
     return text.toString().replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '');
 }
+
+// --- Rich text helpers (Sheet text may contain literal \\u003cbr\\u003e etc.) ---
+function unescapeUnicodeTags(s){
+    try{
+        return String(s||'')
+            .replace(/\\u003c/gi,'<')
+            .replace(/\\u003e/gi,'>')
+            .replace(/\\u0026/gi,'&');
+    }catch(e){
+        return String(s||'');
+    }
+}
+
+// Convert to safe HTML with line breaks. Allows only <br> (everything else is escaped)
+function toRichHtml(s){
+    const raw = unescapeUnicodeTags(String(s||''));
+    // normalize literal <br> to \n first
+    const withNewlines = raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g,'\n');
+    return escapeHtml(withNewlines).replace(/\n/g,'<br>');
+}
 function copyScriptContent(encodedText) {
     const text = decodeURIComponent(encodedText);
     copyText(text);
@@ -500,12 +483,7 @@ function copyText(t) {
 }
 document.addEventListener('contextmenu', event => event.preventDefault());
 document.onkeydown = function(e) { if(e.keyCode == 123) return false; }
-document.addEventListener('DOMContentLoaded', () => {
-  checkSession();
-  // Ana sayfa Günün Sözü kalem butonu
-  const qb = document.getElementById('home-edit-quote');
-  if(qb){ qb.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); editHomeBlock('quote'); }); }
-});
+document.addEventListener('DOMContentLoaded', () => { checkSession(); });
 // --- SESSION & LOGIN ---
 function checkSession() {
     const savedUser = localStorage.getItem("sSportUser");
@@ -517,6 +495,7 @@ function checkSession() {
         currentUser = savedUser;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
+        setHomeWelcomeUser(currentUser);
 
         checkAdmin(savedRole);
 
@@ -593,6 +572,7 @@ function girisYap() {
             } else {
                 document.getElementById("login-screen").style.display = "none";
                 document.getElementById("user-display").innerText = currentUser;
+                setHomeWelcomeUser(currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -663,7 +643,7 @@ function checkAdmin(role) {
         if(addCardDropdown) addCardDropdown.style.display = 'flex';
         if(quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
-        const perms = document.getElementById('dropdownPerms'); if(perms) perms.style.display = (isLocAdmin ? 'flex' : 'none');
+        const perms = document.getElementById('dropdownPerms'); if(perms) perms.style.display = 'flex';
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
@@ -674,6 +654,8 @@ function checkAdmin(role) {
 }
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
+    try{ document.getElementById("user-display").innerText = "Misafir"; }catch(e){}
+    setHomeWelcomeUser("Misafir");
     document.body.classList.remove('editing');
     localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole");
     if (sessionTimeout) clearTimeout(sessionTimeout);
@@ -886,9 +868,6 @@ function filterCategory(btn, cat) {
 
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    // Açık fullscreen alanları yenile
-    try{ if(document.getElementById('tech-fullscreen')?.style?.display==='flex') renderTechFullscreen(); }catch(e){}
-    try{ if(document.getElementById('telesales-fullscreen')?.style?.display==='flex') renderTelesalesFullscreen(); }catch(e){}
     filterContent();
 }
 function filterContent() {
@@ -923,40 +902,32 @@ function filterContent() {
     updateSearchResultCount(filtered.length, database.length);
     renderCards(filtered);
 }
-function normalizeRichText(v){
-  const s = (v ?? '').toString();
-  return s
-    .replace(/\\u003cbr\s*\/?\\u003e/gi, '\n')
-    .replace(/<br\s*\/?>(\r?\n)?/gi, '\n')
-    .replace(/\\n/g, '\n');
-}
-
 function showCardDetail(title, text) {
     // Geriye dönük uyumluluk: showCardDetail(cardObj) çağrısını da destekle
     if (title && typeof title === 'object') {
         const c = title;
         const t = c.title || c.name || 'Detay';
-        const body = normalizeRichText(c.text || c.desc || '');
-        const script = normalizeRichText(c.script || '');
-        const alertTxt = normalizeRichText(c.alert || '');
+        const body = (c.text || c.desc || '').toString();
+        const script = (c.script || '').toString();
+        const alertTxt = (c.alert || '').toString();
         const link = (c.link || '').toString();
         const html = `
           <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
-            ${escapeHtml(body).replace(/\n/g,'<br>')}
+            ${toRichHtml(body)}
             ${link ? `<div style="margin-top:12px"><a href="${escapeHtml(link)}" target="_blank" rel="noreferrer" style="font-weight:800;color:var(--info);text-decoration:none"><i class=\"fas fa-link\"></i> Link</a></div>` : ''}
             ${script ? `<div class="tech-script-box" style="margin-top:12px">
-                <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g,'<br>')}
+                <span class="tech-script-label">Müşteriye iletilecek:</span>${toRichHtml(script)}
               </div>` : ''}
-            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${escapeHtml(alertTxt).replace(/\n/g,'<br>')}</div>` : ''}
+            ${alertTxt ? `<div class="tech-alert" style="margin-top:12px">${toRichHtml(alertTxt)}</div>` : ''}
           </div>`;
         Swal.fire({ title: t, html, showCloseButton: true, showConfirmButton: false, width: '820px', background: '#f8f9fa' });
         return;
     }
 
-    const safeText = normalizeRichText(text ?? '');
+    const safeText = (text ?? '').toString();
     Swal.fire({
         title: title,
-        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${escapeHtml(safeText).replace(/\n/g,'<br>')}</div>`,
+        html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${toRichHtml(safeText)}</div>`,
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
 }
@@ -964,9 +935,6 @@ function showCardDetail(title, text) {
 function toggleEditMode() {
     if (!isAdminMode) return;
     isEditingActive = !isEditingActive;
-    // Tek kontrol noktası: tüm modüller aynı düzenleme modunu kullanır
-    window.telesalesEditMode = isEditingActive;
-    window.techEditMode = isEditingActive;
     document.body.classList.toggle('editing', isEditingActive);
     
     const btn = document.getElementById('dropdownQuickEdit');
@@ -978,10 +946,8 @@ function toggleEditMode() {
         btn.classList.remove('active');
         btn.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
     }
-    // Açık fullscreen alanları yenile
-    try{ if(document.getElementById('tech-fullscreen')?.style?.display==='flex') renderTechFullscreen(); }catch(e){}
-    try{ if(document.getElementById('telesales-fullscreen')?.style?.display==='flex') renderTelesalesFullscreen(); }catch(e){}
     filterContent();
+    try{ if(currentCategory==='home') renderHomePanels(); }catch(e){}
     if(document.getElementById('guide-modal').style.display === 'flex') openGuide();
     if(document.getElementById('sales-modal').style.display === 'flex') openSales();
     if(document.getElementById('news-modal').style.display === 'flex') openNews();
@@ -3755,25 +3721,21 @@ function renderHomePanels(){
                     return '';
                 };
 
-                const now = new Date();
-                const nowSecs = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
-                const timeToSecs = (t)=>{
-                  const s = String(t||'').trim();
-                  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-                  if(!m) return null;
-                  return (parseInt(m[1],10)||0)*3600 + (parseInt(m[2],10)||0)*60 + (parseInt(m[3]||'0',10)||0);
-                };
                 const todays = (items||[]).filter(it=>{
                     const iso = toISO(it.dateISO || it.date);
                     if(iso !== todayISO) return false;
-                    const ts = timeToSecs(it.time);
-                    if(ts === null) return true;
-                    // saati geçen karşılaşma gözükmesin
-                    return ts >= nowSecs;
-                }).sort((a,b)=>{
-                    const ta = timeToSecs(a.time) ?? 0;
-                    const tb = timeToSecs(b.time) ?? 0;
-                    return ta - tb;
+
+                    // Saati geçen karşılaşmalar görünmesin
+                    const now = Date.now();
+                    const se = Number(it.startEpoch || 0);
+                    if(se) return se > now;
+                    const t = String(it.time || '').trim();
+                    const m = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+                    if(!m) return true; // saat formatı yoksa göster
+                    const hh = parseInt(m[1],10), mm = parseInt(m[2],10), ss = parseInt(m[3]||'0',10);
+                    const dt = new Date();
+                    dt.setHours(hh,mm,ss,0);
+                    return dt.getTime() > now;
                 });
 
                 if(!todays.length){
@@ -3785,12 +3747,12 @@ function renderHomePanels(){
                         const title = escapeHtml(it.match || it.title || it.event || '');
                         const ch = escapeHtml(it.channel || it.platform || '');
                         const league = escapeHtml(it.league || it.category || '');
-                        const spiker = escapeHtml(it.spiker || it.spikerler || it.announcer || it.commentator || '');
+                        const spk = escapeHtml(it.spiker || it.spikers || it.commentator || it.commentators || '');
                         return `
                           <div class="home-mini-item">
                             <div class="home-mini-date">${time}${league?` • ${league}`:''}${ch?` • ${ch}`:''}</div>
                             <div class="home-mini-title">${title || 'Maç'}</div>
-                            ${spiker?`<div class="home-mini-desc" style="margin-top:2px"><i class=\"fas fa-microphone\" style=\"opacity:.7;margin-right:6px\"></i>${spiker}</div>`:''}
+                            ${spk ? `<div class="home-mini-desc" style="margin-top:4px;color:#555">🎙 ${spk}</div>` : ''}
                           </div>
                         `;
                     }).join('') + (todays.length>shown.length ? `<div style="color:#666;font-size:.9rem;margin-top:6px">+${todays.length-shown.length} maç daha…</div>` : '');
@@ -3860,19 +3822,71 @@ function editHomeBlock(kind){
     // --- GÜNÜN SÖZÜ ---
     const quoteEl = document.getElementById('home-quote');
     if(quoteEl){
-        const q = String((homeBlocks && homeBlocks.quote) || '').trim();
-        quoteEl.innerHTML = q ? escapeHtml(q) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
+        const blocks = (window.__homeBlocks || {});
+        const q = ((blocks.quote && blocks.quote.content) ? String(blocks.quote.content) : '').trim();
+        quoteEl.innerHTML = q ? toRichHtml(q) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
     }
-    // Admin: edit butonu sadece Düzenlemeyi Aç aktifken görünsün
+
+    // Admin: edit butonlarını aç
     try{
         const b1 = document.getElementById('home-edit-today');
         const b2 = document.getElementById('home-edit-ann');
         const b3 = document.getElementById('home-edit-quote');
-        if(b1) b1.style.display = 'none';
-        if(b2) b2.style.display = 'none';
+        if(b1) b1.style.display = 'none'; // artık dinamik
+        if(b2) b2.style.display = 'none'; // duyuru dinamik
         if(b3) b3.style.display = (isAdminMode && isEditingActive ? 'inline-flex' : 'none');
     }catch(e){}
 }
+
+// --- ANA SAYFA BLOKLARI (HomeBlocks sheet) ---
+async function loadHomeBlocks(){
+    try{
+        const res = await apiCall('getHomeBlocks', {});
+        window.__homeBlocks = (res && res.blocks) ? res.blocks : {};
+        try{ renderHomePanels(); }catch(e){}
+    }catch(e){
+        window.__homeBlocks = window.__homeBlocks || {};
+    }
+}
+
+// Admin edit (Günün Sözü)
+window.editHomeBlock = async function(kind){
+    if(!isAdminMode){
+        Swal.fire('Yetkisiz', 'Bu işlem için admin yetkisi gerekli.', 'warning');
+        return;
+    }
+    if(kind !== 'quote'){
+        Swal.fire('Bilgi', 'Bu alan artık otomatik güncelleniyor.', 'info');
+        return;
+    }
+    const blocks = (window.__homeBlocks || {});
+    const cur = ((blocks.quote && blocks.quote.content) ? String(blocks.quote.content) : '').trim();
+    const visibleGroups = (blocks.quote && blocks.quote.visibleGroups) ? String(blocks.quote.visibleGroups) : '';
+
+    const r = await Swal.fire({
+        title: 'Günün Sözü',
+        input: 'textarea',
+        inputValue: cur,
+        inputPlaceholder: 'Bugünün sözünü yaz…',
+        showCancelButton: true,
+        confirmButtonText: 'Kaydet',
+        cancelButtonText: 'Vazgeç',
+        preConfirm: (val)=> (val||'').trim()
+    });
+    if(!r.isConfirmed) return;
+    try{
+        await apiCall('updateHomeBlock', {
+            key: 'quote',
+            title: 'Günün Sözü',
+            content: r.value || '',
+            visibleGroups
+        });
+        await loadHomeBlocks();
+        Swal.fire('Kaydedildi', 'Günün sözü güncellendi.', 'success');
+    }catch(e){
+        Swal.fire('Hata', 'Kaydedilemedi.', 'error');
+    }
+};
 
 // Kart detayını doğrudan açmak için küçük bir yardımcı
 function openCardDetail(cardId){
@@ -3984,12 +3998,6 @@ function renderTelesalesDataOffers(){
     const grid = document.getElementById('t-data-grid');
     if(!grid) return;
 
-    // Override (admin düzenlemeleri localStorage'da tutulur)
-    try{
-        const ov = JSON.parse(localStorage.getItem('telesalesOffersOverride') || '[]');
-        if(Array.isArray(ov) && ov.length) telesalesOffers = ov;
-    }catch(e){}
-
     const q = (document.getElementById('t-data-search')?.value||'').toLowerCase();
 
     const list = (telesalesOffers||[]).filter(o=>{
@@ -3998,13 +4006,11 @@ function renderTelesalesDataOffers(){
         return okQ;
     });
 
-    const bar = (isAdminMode ? `
+    const bar = (isAdminMode && isEditingActive) ? `
         <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center;margin:6px 0 12px;">
-          
-          ${window.telesalesEditMode ? `<button class="x-btn x-btn-admin" onclick="addTelesalesOffer()"><i class="fas fa-plus"></i> Teklif Ekle</button>` : ``}
-          <span style="color:#888;font-weight:800;font-size:.9rem">Bu düzenlemeler tarayıcıda saklanır (local).</span>
+          <button class="x-btn x-btn-admin" onclick="addTelesalesOffer()"><i class="fas fa-plus"></i> Teklif Ekle</button>
         </div>
-    ` : '');
+    ` : '';
 
     if(list.length===0){
         grid.innerHTML = bar + '<div style="opacity:.7;padding:20px;grid-column:1/-1">Sonuç bulunamadı.</div>';
@@ -4023,7 +4029,7 @@ function renderTelesalesDataOffers(){
           </div>
           <div class="t-training-desc">${escapeHtml((o.desc||'').slice(0,140))}${(o.desc||'').length>140?'...':''}</div>
           <div style="margin-top:10px;color:#999;font-size:.8rem">(Detay için tıkla)</div>
-          ${(isAdminMode && window.telesalesEditMode) ? `
+          ${(isAdminMode && isEditingActive) ? `
             <div style="margin-top:12px;display:flex;gap:10px">
               <button class="x-btn x-btn-admin" onclick="event.stopPropagation(); editTelesalesOffer(${idx});"><i class="fas fa-pen"></i> Düzenle</button>
               <button class="x-btn x-btn-admin" onclick="event.stopPropagation(); deleteTelesalesOffer(${idx});"><i class="fas fa-trash"></i> Sil</button>
@@ -4031,26 +4037,6 @@ function renderTelesalesDataOffers(){
           ` : ``}
         </div>
     `).join('');
-}
-
-window.telesalesEditMode = false;
-
-function toggleTelesalesEdit(){
-    window.telesalesEditMode = !window.telesalesEditMode;
-    renderTelesalesDataOffers();
-    renderTelesalesScripts();
-}
-
-function getTelesalesOffersStore(){
-    try{
-        const ov = JSON.parse(localStorage.getItem('telesalesOffersOverride') || '[]');
-        if(Array.isArray(ov) && ov.length) return ov;
-    }catch(e){}
-    return telesalesOffers || [];
-}
-function saveTelesalesOffersStore(arr){
-    localStorage.setItem('telesalesOffersOverride', JSON.stringify(arr||[]));
-    telesalesOffers = arr||[];
 }
 
 function addTelesalesOffer(){
@@ -4076,20 +4062,34 @@ function addTelesalesOffer(){
                 detail:(document.getElementById('to-detail').value||'').trim(),
             };
         }
-    }).then(res=>{
+    }).then(async res=>{
         if(!res.isConfirmed) return;
-        const arr = getTelesalesOffersStore();
-        arr.unshift(res.value);
-        saveTelesalesOffersStore(arr);
-        renderTelesalesDataOffers();
+        const v = res.value;
+        Swal.fire({ title:'Ekleniyor...', didOpen:()=>Swal.showLoading(), showConfirmButton:false });
+        try{
+          const r = await fetch(SCRIPT_URL, {
+            method:'POST',
+            headers:{'Content-Type':'text/plain;charset=utf-8'},
+            body: JSON.stringify({ action:'upsertTelesalesOffer', username: currentUser, token: getToken(), keyTitle: '', keySegment: '', ...v })
+          });
+          const d = await r.json();
+          if(d.result==='success'){
+            Swal.fire({ icon:'success', title:'Eklendi', timer:1200, showConfirmButton:false });
+            await fetchSheetObjects();
+            renderTelesalesDataOffers();
+          }else{
+            Swal.fire('Hata', d.message||'Eklenemedi', 'error');
+          }
+        }catch(e){
+          Swal.fire('Hata','Sunucu hatası.', 'error');
+        }
     });
 }
 
-function editTelesalesOffer(idx){
-    const arr = getTelesalesOffersStore();
-    const o = arr[idx];
+async function editTelesalesOffer(idx){
+    const o = (telesalesOffers||[])[idx];
     if(!o) return;
-    Swal.fire({
+    const { value: v } = await Swal.fire({
         title:"Teklifi Düzenle",
         html: `
           <input id="to-title" class="swal2-input" placeholder="Başlık" value="${escapeHtml(o.title||'')}">
@@ -4104,33 +4104,64 @@ function editTelesalesOffer(idx){
             const title=(document.getElementById('to-title').value||'').trim();
             if(!title) return Swal.showValidationMessage("Başlık zorunlu");
             return {
-                ...o,
                 title,
                 segment:(document.getElementById('to-seg').value||'').trim(),
                 desc:(document.getElementById('to-desc').value||'').trim(),
                 detail:(document.getElementById('to-detail').value||'').trim(),
             };
         }
-    }).then(res=>{
-        if(!res.isConfirmed) return;
-        arr[idx]=res.value;
-        saveTelesalesOffersStore(arr);
-        renderTelesalesDataOffers();
     });
+    if(!v) return;
+
+    Swal.fire({ title:'Kaydediliyor...', didOpen:()=>Swal.showLoading(), showConfirmButton:false });
+    try{
+      const r = await fetch(SCRIPT_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'upsertTelesalesOffer', username: currentUser, token: getToken(), keyTitle: o.title, keySegment: o.segment, ...v })
+      });
+      const d = await r.json();
+      if(d.result==='success'){
+        Swal.fire({ icon:'success', title:'Kaydedildi', timer:1200, showConfirmButton:false });
+        await fetchSheetObjects();
+        renderTelesalesDataOffers();
+      }else{
+        Swal.fire('Hata', d.message||'Kaydedilemedi', 'error');
+      }
+    }catch(e){
+      Swal.fire('Hata','Sunucu hatası.', 'error');
+    }
 }
 
 function deleteTelesalesOffer(idx){
+    const o = (telesalesOffers||[])[idx];
+    if(!o) return;
     Swal.fire({
         title:"Silinsin mi?",
+        text:"Teklif pasife alınacak.",
         icon:"warning",
         showCancelButton:true,
         confirmButtonText:"Sil",
         cancelButtonText:"Vazgeç"
-    }).then(res=>{
+    }).then(async res=>{
         if(!res.isConfirmed) return;
-        const arr = getTelesalesOffersStore().filter((_,i)=>i!==idx);
-        saveTelesalesOffersStore(arr);
-        renderTelesalesDataOffers();
+        try{
+          const r = await fetch(SCRIPT_URL, {
+            method:'POST',
+            headers:{'Content-Type':'text/plain;charset=utf-8'},
+            body: JSON.stringify({ action:'deleteTelesalesOffer', username: currentUser, token: getToken(), keyTitle: o.title, keySegment: o.segment })
+          });
+          const d = await r.json();
+          if(d.result==='success'){
+            await fetchSheetObjects();
+            renderTelesalesDataOffers();
+            Swal.fire({ icon:'success', title:'Silindi', timer:1000, showConfirmButton:false });
+          }else{
+            Swal.fire('Hata', d.message||'Silinemedi', 'error');
+          }
+        }catch(e){
+          Swal.fire('Hata','Sunucu hatası.', 'error');
+        }
     });
 }
 
@@ -4162,7 +4193,7 @@ function renderTelesalesScripts(){
 
     const bar = (isAdminMode ? `
         <div style="display:flex;gap:10px;align-items:center;margin:6px 0 12px;">
-          
+          <button class="x-btn x-btn-admin" onclick="toggleTelesalesEdit()"><i class="fas fa-pen"></i> ${window.telesalesEditMode ? 'Düzenlemeyi Kapat' : 'Düzenlemeyi Aç'}</button>
           ${window.telesalesEditMode ? `<button class="x-btn x-btn-admin" onclick="addTelesalesScript()"><i class="fas fa-plus"></i> Script Ekle</button>` : ``}
         </div>
     ` : '');
@@ -4300,7 +4331,7 @@ async function openTechArea(tab){
     // İlk açılışta "bozuk görünüm" (flicker) olmasın: veri gelene kadar bekle
     try{
         if((!database || database.length===0) && window.__dataLoadedPromise){
-            const lists = ['x-broadcast-list','x-access-list','x-app-list','x-activation-list','x-cards-list'];
+            const lists = ['x-broadcast-list','x-access-list','x-app-list','x-activation-list','x-cards'];
             lists.forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML = '<div class="home-mini-item">Yükleniyor...</div>'; });
             await window.__dataLoadedPromise;
         }
@@ -4394,7 +4425,7 @@ function renderTechList(bucketKey, q, listId){
 
     const bar = (isAdminMode ? `
         <div style="display:flex;gap:10px;align-items:center;margin:10px 0 14px;">
-          
+          <button class="x-btn x-btn-admin" onclick="toggleTechEdit()"><i class="fas fa-pen"></i> ${techEditMode ? 'Düzenlemeyi Kapat' : 'Düzenlemeyi Aç'}</button>
           ${techEditMode ? `<button class="x-btn x-btn-admin" onclick="addTechCard('${bucketKey}')"><i class="fas fa-plus"></i> Kart Ekle</button>` : ``}
           <span style="color:#888;font-weight:800;font-size:.9rem">Bu düzenlemeler tarayıcıda saklanır (local).</span>
         </div>
@@ -4420,7 +4451,7 @@ function techCardHtml(c, idx){
     const title = escapeHtml(c.title||'');
     const badge = escapeHtml(c.code || c.category || 'TEKNİK');
     const rawText = (c.text||'').toString();
-    const text = escapeHtml(rawText);
+    const textHtml = toRichHtml(rawText);
     const link = (c.link||'').trim();
     const script = (c.script||'').trim();
     const key = techCardKey(c, idx);
@@ -4435,7 +4466,7 @@ function techCardHtml(c, idx){
           <div class="x-card-badge">${badge}</div>
         </div>
         <div class="x-card-body">
-          ${text ? `<div class="x-card-text x-card-text-truncate">${text}</div>` : ``}
+          ${textHtml ? `<div class="x-card-text x-card-text-truncate">${textHtml}</div>` : ``}
           ${hasDetail ? `<button class="x-readmore" onclick="openTechCardDetail(${JSON.stringify(key)})">Devam oku</button>` : ``}
         </div>
         <div class="x-card-actions">
@@ -4744,45 +4775,157 @@ function embeddedTwReset(targetId){
 
 /* -------------------------
    TEKNİK KARTLAR (FULLSCREEN)
+   - Eski kart görünümü (liste)
+   - Düzenleme, E-Tablo (Data) üzerinden (updateContent/addCard)
 --------------------------*/
 
 function __getTechCardsForUi(){
-    const baseCards = (database||[]).filter(c=>String(c.category||'').toLowerCase()==='teknik');
-    let override = [];
-    try{ override = JSON.parse(localStorage.getItem('techCardsOverride') || '[]'); }catch(e){ override = []; }
-    return (Array.isArray(override) && override.length) ? override : baseCards;
+    return (database||[])
+      .map((c, i)=>({ ...c, __dbIndex: i }))
+      .filter(c=>String(c.category||'').toLowerCase()==='teknik' && String(c.status||'').toLowerCase()!=='pasif');
+}
+
+async function addTechCardSheet(){
+    if(!isAdminMode) return;
+    const { value: v } = await Swal.fire({
+      title: 'Teknik Kart Ekle',
+      html: `
+        <input id="tc-title" class="swal2-input" placeholder="Başlık">
+        <textarea id="tc-text" class="swal2-textarea" placeholder="Açıklama"></textarea>
+        <textarea id="tc-script" class="swal2-textarea" placeholder="Script (opsiyonel)"></textarea>
+        <input id="tc-link" class="swal2-input" placeholder="Link (opsiyonel)">
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Ekle',
+      cancelButtonText: 'Vazgeç',
+      preConfirm: ()=>{
+        const title = (document.getElementById('tc-title').value||'').trim();
+        if(!title) return Swal.showValidationMessage('Başlık zorunlu');
+        return {
+          type: 'card',
+          category: 'Teknik',
+          title,
+          text: (document.getElementById('tc-text').value||'').trim(),
+          script: (document.getElementById('tc-script').value||'').trim(),
+          link: (document.getElementById('tc-link').value||'').trim(),
+          status: 'Aktif'
+        };
+      }
+    });
+    if(!v) return;
+
+    Swal.fire({ title: 'Ekleniyor...', didOpen: () => Swal.showLoading(), showConfirmButton:false });
+    try{
+      const r = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'addCard', username: currentUser, token: getToken(), ...v })
+      });
+      const d = await r.json();
+      if(d.result==='success'){
+        Swal.fire({ icon:'success', title:'Eklendi', timer: 1200, showConfirmButton:false });
+        await loadContentData();
+        filterTechCards();
+      }else{
+        Swal.fire('Hata', d.message||'Eklenemedi', 'error');
+      }
+    }catch(e){
+      Swal.fire('Hata','Sunucu hatası.','error');
+    }
+}
+
+async function editTechCardSheet(dbIndex){
+    if(!isAdminMode) return;
+    const it = (database||[])[dbIndex];
+    if(!it) return;
+    const { value: v } = await Swal.fire({
+      title: 'Teknik Kartı Düzenle',
+      html: `
+        <input id="tc-title" class="swal2-input" placeholder="Başlık" value="${escapeHtml(it.title||'')}">
+        <textarea id="tc-text" class="swal2-textarea" placeholder="Açıklama">${escapeHtml(it.text||'')}</textarea>
+        <textarea id="tc-script" class="swal2-textarea" placeholder="Script">${escapeHtml(it.script||'')}</textarea>
+        <input id="tc-link" class="swal2-input" placeholder="Link" value="${escapeHtml(it.link||'')}">
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Kaydet',
+      cancelButtonText: 'Vazgeç',
+      preConfirm: ()=>{
+        const title = (document.getElementById('tc-title').value||'').trim();
+        if(!title) return Swal.showValidationMessage('Başlık zorunlu');
+        return {
+          title,
+          text: (document.getElementById('tc-text').value||'').trim(),
+          script: (document.getElementById('tc-script').value||'').trim(),
+          link: (document.getElementById('tc-link').value||'').trim(),
+        };
+      }
+    });
+    if(!v) return;
+    const originalTitle = it.title;
+    // sendUpdate sırayla update eder
+    if(v.text !== (it.text||'')) sendUpdate(originalTitle, 'Text', v.text, 'card');
+    setTimeout(()=>{ if(v.script !== (it.script||'')) sendUpdate(originalTitle, 'Script', v.script, 'card'); }, 350);
+    setTimeout(()=>{ if(v.link !== (it.link||'')) sendUpdate(originalTitle, 'Link', v.link, 'card'); }, 700);
+    setTimeout(()=>{ if(v.title !== originalTitle) sendUpdate(originalTitle, 'Title', v.title, 'card'); }, 1100);
+}
+
+function deleteTechCardSheet(dbIndex){
+    if(!isAdminMode) return;
+    const it = (database||[])[dbIndex];
+    if(!it) return;
+    Swal.fire({
+      title:'Silinsin mi?',
+      text:'Kart pasife alınacak.',
+      icon:'warning',
+      showCancelButton:true,
+      confirmButtonText:'Sil',
+      cancelButtonText:'Vazgeç'
+    }).then(res=>{
+      if(!res.isConfirmed) return;
+      sendUpdate(it.title, 'Status', 'Pasif', 'card');
+    });
 }
 
 function renderTechCardsTab(q=''){
-    const grid = document.getElementById('x-cards');
-    if(!grid) return;
+    const box = document.getElementById('x-cards');
+    if(!box) return;
 
     const query = String(q||'').trim().toLowerCase();
     const all = __getTechCardsForUi();
     const filtered = !query ? all : all.filter(c=>{
-        const hay = `${c.title||''} ${c.text||''} ${c.script||''} ${c.link||''}`.toLowerCase();
-        return hay.includes(query);
+      const hay = `${c.title||''} ${c.text||''} ${c.script||''} ${c.link||''}`.toLowerCase();
+      return hay.includes(query);
     });
 
-    // Admin bar (edit mode)
-    const bar = (isAdminMode ? `
-        <div class="x-admin-bar" style="grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-          
-          ${techEditMode ? `<button class="x-btn x-btn-admin" onclick="addTechCard('cards')"><i class="fas fa-plus"></i> Kart Ekle</button>` : ``}
-          <span style="color:#cbd5e1;font-weight:800;font-size:.85rem">Düzenlemeler tarayıcıda saklanır (local)</span>
-        </div>
-    ` : '');
+    const bar = (isAdminMode && isEditingActive)
+      ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+           <button class="x-btn x-btn-admin" onclick="addTechCardSheet()"><i class="fas fa-plus"></i> Kart Ekle</button>
+         </div>`
+      : ``;
 
     if(!filtered.length){
-        grid.innerHTML = bar + '<div class="home-mini-item" style="grid-column:1/-1">Kayıt bulunamadı.</div>';
-        return;
+      box.innerHTML = bar + '<div style="opacity:.7;padding:16px">Kayıt bulunamadı.</div>';
+      return;
     }
 
-    const cardsHtml = filtered.map((c, idx)=>techCardHtml(c, idx)).join('');
-    grid.innerHTML = bar + cardsHtml;
+    box.innerHTML = bar + filtered.map(c=>{
+      const edit = (isAdminMode && isEditingActive)
+        ? `<div style="display:flex;gap:8px;margin-top:10px">
+             <button class="x-btn x-btn-admin" onclick="editTechCardSheet(${c.__dbIndex})"><i class="fas fa-pen"></i> Düzenle</button>
+             <button class="x-btn x-btn-admin" onclick="deleteTechCardSheet(${c.__dbIndex})"><i class="fas fa-trash"></i> Sil</button>
+           </div>`
+        : ``;
+      return `
+        <div class="news-item" style="cursor:pointer" onclick="showCardDetail(${JSON.stringify({title:c.title,text:c.text||'',script:c.script||'',link:c.link||''}).replace(/</g,'\\u003c')})">
+          <span class="news-title">${escapeHtml(c.title||'')}</span>
+          <div class="news-desc" style="white-space:pre-line">${escapeHtml((c.text||'').slice(0,220))}${(c.text||'').length>220?'...':''}</div>
+          ${(c.script||'') ? `<div class="script-box" style="margin-top:10px"><b>Script:</b><div style="margin-top:6px;white-space:pre-line">${escapeHtml((c.script||'').slice(0,220))}${(c.script||'').length>220?'...':''}</div><div style="text-align:right;margin-top:10px"><button class="btn btn-copy" onclick="event.stopPropagation(); copyText('${escapeForJsString(c.script||'')}')">Kopyala</button></div></div>`:''}
+          ${edit}
+        </div>
+      `;
+    }).join('');
 }
 
-// oninput handler (index.html içinde çağrılıyor)
 function filterTechCards(){
     const inp = document.getElementById('x-cards-search');
     renderTechCardsTab(inp ? inp.value : '');
@@ -4874,68 +5017,44 @@ function __renderTechList(tabKey, items){
     tabKey==="app" ? "x-app-list" :
     tabKey==="activation" ? "x-activation-list" : ""
   );
-  const docsEl = document.getElementById(
-    tabKey==="broadcast" ? "x-broadcast-docs" :
-    tabKey==="access" ? "x-access-docs" :
-    tabKey==="app" ? "x-app-docs" :
-    tabKey==="activation" ? "x-activation-docs" : ""
-  );
   if(!listEl) return;
 
   if(!items || items.length===0){
     listEl.innerHTML = `<div style="padding:16px;opacity:.75">Bu başlık altında henüz içerik yok. (Sheet: Teknik_Dokumanlar)</div>`;
-    if(docsEl) docsEl.innerHTML = "";
     return;
   }
 
-  // Search box
-  const searchId = `x-tech-search-${tabKey}`;
-  let searchBox = document.getElementById(searchId);
-  if(!searchBox){
-    searchBox = document.createElement("div");
-    searchBox.id = searchId;
-    searchBox.style.padding = "12px 0 0 0";
-    searchBox.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center;padding:0 4px 12px 4px">
-        <input id="${searchId}-inp" placeholder="Sorunlarda ara..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.12)">
-        <span style="font-size:12px;opacity:.7" id="${searchId}-cnt"></span>
-      </div>
-    `;
-    listEl.parentElement.insertBefore(searchBox, listEl);
-  }
+  // Admin bar (düzenleme global menüden açılır)
+  const adminBar = (isAdminMode && isEditingActive)
+    ? `<div style="display:flex;gap:10px;align-items:center;margin:0 0 12px;">
+         <button class="x-btn x-btn-admin" onclick="addTechDoc('${tabKey}')"><i class=\"fas fa-plus\"></i> Yeni Konu Ekle</button>
+       </div>`
+    : ``;
 
   function render(filtered){
-    document.getElementById(`${searchId}-cnt`).textContent = `${filtered.length} kayıt`;
-    listEl.innerHTML = filtered.map((it, idx) => {
+    listEl.innerHTML = adminBar + filtered.map((it, idx) => {
       const body = [
         it.icerik ? `<div class="q-doc-body">${it.icerik}</div>` : "",
         it.adim ? `<div class="q-doc-meta"><b>Adım:</b> ${__escapeHtml(it.adim)}</div>` : "",
         it.not ? `<div class="q-doc-meta"><b>Not:</b> ${__escapeHtml(it.not)}</div>` : "",
         it.link ? `<div class="q-doc-meta"><b>Link:</b> <a href="${__escapeHtml(it.link)}" target="_blank">${__escapeHtml(it.link)}</a></div>` : ""
       ].join("");
+      const adminBtns = (isAdminMode && isEditingActive)
+        ? `<span style="float:right;display:inline-flex;gap:8px" onclick="event.stopPropagation();event.preventDefault();">
+             <button class="x-btn x-btn-admin" style="padding:6px 10px" onclick="editTechDoc('${tabKey}','${escapeForJsString(it.baslik)}')"><i class=\"fas fa-pen\"></i></button>
+             <button class="x-btn x-btn-admin" style="padding:6px 10px" onclick="deleteTechDoc('${tabKey}','${escapeForJsString(it.baslik)}')"><i class=\"fas fa-trash\"></i></button>
+           </span>`
+        : ``;
       return `
         <details class="q-accordion" style="margin-bottom:10px;background:#fff;border-radius:12px;border:1px solid rgba(0,0,0,.08);padding:10px 12px">
-          <summary style="cursor:pointer;font-weight:800">${__escapeHtml(it.baslik)}</summary>
+          <summary style="cursor:pointer;font-weight:800">${__escapeHtml(it.baslik)}${adminBtns}</summary>
           <div style="padding:10px 2px 2px 2px">${body}</div>
         </details>
       `;
     }).join("");
   }
 
-  const inp = document.getElementById(`${searchId}-inp`);
-  inp.oninput = () => {
-    const q = inp.value.toLowerCase().trim();
-    const filtered = !q ? items : items.filter(x =>
-      (x.baslik||"").toLowerCase().includes(q) ||
-      (x.icerik||"").toLowerCase().includes(q) ||
-      (x.adim||"").toLowerCase().includes(q) ||
-      (x.not||"").toLowerCase().includes(q)
-    );
-    render(filtered);
-  };
-
   render(items);
-  if(docsEl) docsEl.innerHTML = ""; // docs stack reserved if later needed
 }
 
 async function loadTechDocsIfNeeded(force=false){
@@ -4948,7 +5067,6 @@ async function loadTechDocsIfNeeded(force=false){
     return rows;
   }catch(e){
     console.error("[TECH DOCS]", e);
-    if(typeof showGlobalError === "function") showGlobalError("Teknik döküman verisi çekilemedi. SCRIPT_URL ve Web App yetkilerini kontrol et.");
     return [];
   }
 }
@@ -4970,6 +5088,143 @@ async function filterTechDocList(tabKey){
   }catch(e){
     console.error(e);
   }
+}
+
+// ---------------------------
+// TECH DOCS (Sheet) - Admin CRUD
+// ---------------------------
+async function addTechDoc(tabKey){
+  if(!isAdminMode) return;
+  const { value: v } = await Swal.fire({
+    title: 'Teknik Konu Ekle',
+    html: `
+      <input id="td-title" class="swal2-input" placeholder="Başlık">
+      <textarea id="td-content" class="swal2-textarea" placeholder="İçerik"></textarea>
+      <input id="td-step" class="swal2-input" placeholder="Adım (opsiyonel)">
+      <input id="td-note" class="swal2-input" placeholder="Not (opsiyonel)">
+      <input id="td-link" class="swal2-input" placeholder="Link (opsiyonel)">
+    `,
+    showCancelButton:true,
+    confirmButtonText:'Ekle',
+    cancelButtonText:'Vazgeç',
+    preConfirm: ()=>{
+      const title = (document.getElementById('td-title').value||'').trim();
+      if(!title) return Swal.showValidationMessage('Başlık zorunlu');
+      return {
+        kategori: tabKey,
+        baslik: title,
+        icerik: (document.getElementById('td-content').value||'').trim(),
+        adim: (document.getElementById('td-step').value||'').trim(),
+        not: (document.getElementById('td-note').value||'').trim(),
+        link: (document.getElementById('td-link').value||'').trim(),
+        durum: 'Aktif'
+      };
+    }
+  });
+  if(!v) return;
+
+  Swal.fire({ title:'Ekleniyor...', didOpen:()=>Swal.showLoading(), showConfirmButton:false });
+  try{
+    const r = await fetch(SCRIPT_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'upsertTechDoc', username: currentUser, token: getToken(), keyKategori:'', keyBaslik:'', ...v })
+    });
+    const d = await r.json();
+    if(d.result==='success'){
+      Swal.fire({ icon:'success', title:'Eklendi', timer:1200, showConfirmButton:false });
+      await loadTechDocsIfNeeded(true);
+      filterTechDocList(tabKey);
+    }else{
+      Swal.fire('Hata', d.message||'Eklenemedi', 'error');
+    }
+  }catch(e){
+    Swal.fire('Hata','Sunucu hatası.', 'error');
+  }
+}
+
+async function editTechDoc(tabKey, baslik){
+  if(!isAdminMode) return;
+  const all = await loadTechDocsIfNeeded(false);
+  const it = all.find(x=>x.categoryKey===tabKey && (x.baslik||'')===baslik);
+  if(!it) return;
+  const { value: v } = await Swal.fire({
+    title: 'Teknik Konuyu Düzenle',
+    html: `
+      <input id="td-title" class="swal2-input" placeholder="Başlık" value="${__escapeHtml(it.baslik||'')}">
+      <textarea id="td-content" class="swal2-textarea" placeholder="İçerik">${__escapeHtml(it.icerik||'')}</textarea>
+      <input id="td-step" class="swal2-input" placeholder="Adım" value="${__escapeHtml(it.adim||'')}">
+      <input id="td-note" class="swal2-input" placeholder="Not" value="${__escapeHtml(it.not||'')}">
+      <input id="td-link" class="swal2-input" placeholder="Link" value="${__escapeHtml(it.link||'')}">
+    `,
+    showCancelButton:true,
+    confirmButtonText:'Kaydet',
+    cancelButtonText:'Vazgeç',
+    preConfirm: ()=>{
+      const title = (document.getElementById('td-title').value||'').trim();
+      if(!title) return Swal.showValidationMessage('Başlık zorunlu');
+      return {
+        kategori: tabKey,
+        baslik: title,
+        icerik: (document.getElementById('td-content').value||'').trim(),
+        adim: (document.getElementById('td-step').value||'').trim(),
+        not: (document.getElementById('td-note').value||'').trim(),
+        link: (document.getElementById('td-link').value||'').trim(),
+        durum: 'Aktif'
+      };
+    }
+  });
+  if(!v) return;
+
+  Swal.fire({ title:'Kaydediliyor...', didOpen:()=>Swal.showLoading(), showConfirmButton:false });
+  try{
+    const r = await fetch(SCRIPT_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'upsertTechDoc', username: currentUser, token: getToken(), keyKategori: tabKey, keyBaslik: baslik, ...v })
+    });
+    const d = await r.json();
+    if(d.result==='success'){
+      Swal.fire({ icon:'success', title:'Kaydedildi', timer:1200, showConfirmButton:false });
+      await loadTechDocsIfNeeded(true);
+      filterTechDocList(tabKey);
+    }else{
+      Swal.fire('Hata', d.message||'Kaydedilemedi', 'error');
+    }
+  }catch(e){
+    Swal.fire('Hata','Sunucu hatası.', 'error');
+  }
+}
+
+function deleteTechDoc(tabKey, baslik){
+  if(!isAdminMode) return;
+  Swal.fire({
+    title:'Silinsin mi?',
+    text:'Konu pasife alınacak.',
+    icon:'warning',
+    showCancelButton:true,
+    confirmButtonText:'Sil',
+    cancelButtonText:'Vazgeç'
+  }).then(async res=>{
+    if(!res.isConfirmed) return;
+    try{
+      const r = await fetch(SCRIPT_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'deleteTechDoc', username: currentUser, token: getToken(), keyKategori: tabKey, keyBaslik: baslik })
+      });
+      const d = await r.json();
+      if(d.result==='success'){
+        await loadTechDocsIfNeeded(true);
+        filterTechDocList(tabKey);
+        Swal.fire({ icon:'success', title:'Silindi', timer:1000, showConfirmButton:false });
+      }else{
+        Swal.fire('Hata', d.message||'Silinemedi', 'error');
+      }
+    }catch(e){
+      Swal.fire('Hata','Sunucu hatası.', 'error');
+    }
+  });
 }
 
 // override / extend existing switchTechTab
@@ -5008,14 +5263,4 @@ window.switchTechTab = async function(tab){
 };
 
 // expose for onclick
-try{ window.openMenuPermissions = openMenuPermissions; }catch(e){
-function openTechDocDetail(catKey, idx){
-  try{
-    const all = window.__techDocsCache || {};
-    const list = all[catKey] || [];
-    const item = list[idx];
-    if(!item) return;
-    showCardDetail(item);
-  }catch(e){}
-}
-}
+try{ window.openMenuPermissions = openMenuPermissions; }catch(e){}
