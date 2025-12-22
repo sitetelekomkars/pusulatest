@@ -516,10 +516,12 @@ function checkSession() {
         }
 
         currentUser = savedUser;
+        const displayName = localStorage.getItem("sSportFullName") || savedUser;
         document.getElementById("login-screen").style.display = "none";
-        const displayName = (localStorage.getItem("sSportFullName") || currentUser);
         document.getElementById("user-display").innerText = displayName;
         setHomeWelcomeUser(displayName);
+        try{ const qn=document.getElementById("q-side-name"); if(qn) qn.textContent=displayName; }catch(e){}
+        try{ const qa=document.getElementById("q-side-avatar"); if(qa) qa.textContent=(displayName||currentUser||"U").trim().charAt(0).toUpperCase(); }catch(e){}
 
         checkAdmin(savedRole);
 
@@ -582,7 +584,7 @@ function girisYap() {
         if (data.result === "success") {
             currentUser = data.username;
             localStorage.setItem("sSportUser", currentUser);
-            if (typeof data.fullName !== "undefined") localStorage.setItem("sSportFullName", (data.fullName || ""));
+            if (data.fullName) localStorage.setItem("sSportFullName", data.fullName);
             localStorage.setItem("sSportToken", data.token);
             localStorage.setItem("sSportRole", data.role);
             if (data.group) localStorage.setItem("sSportGroup", data.group);
@@ -599,9 +601,8 @@ function girisYap() {
                 }).then(() => { changePasswordPopup(true); });
             } else {
                 document.getElementById("login-screen").style.display = "none";
-                const displayName = (data.fullName || localStorage.getItem("sSportFullName") || currentUser);
                 document.getElementById("user-display").innerText = displayName;
-                setHomeWelcomeUser(displayName);
+                setHomeWelcomeUser(currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -690,7 +691,7 @@ function logout() {
     try{ document.getElementById("user-display").innerText = "Misafir"; }catch(e){}
     setHomeWelcomeUser("Misafir");
     document.body.classList.remove('editing');
-    localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportFullName"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole"); localStorage.removeItem("sSportGroup"); localStorage.removeItem("sSportSessionDay"); localStorage.removeItem("sSportLoginAt");
+    localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole"); localStorage.removeItem("sSportGroup"); localStorage.removeItem("sSportSessionDay"); localStorage.removeItem("sSportLoginAt");
     if (sessionTimeout) clearTimeout(sessionTimeout);
     document.getElementById("main-app").style.display = "none";
     document.getElementById("login-screen").style.display = "flex";
@@ -2351,7 +2352,7 @@ function updateDashAgentList() {
     filteredUsers.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.name; 
-        opt.innerText = (u.displayName || u.name);
+        opt.innerText = u.name;
         agentSelect.appendChild(opt);
     });
     
@@ -2513,7 +2514,8 @@ function updateFeedbackAgentList(shouldRefresh=true) {
     agents.forEach(a => {
         const opt = document.createElement('option');
         opt.value = a;
-        opt.textContent = a;
+        const found = (adminUserList||[]).find(x=>x.name===a);
+        opt.textContent = (found && (found.fullName||found.name)) ? (found.fullName||found.name) : a;
         agentSelect.appendChild(opt);
     });
 
@@ -2942,7 +2944,7 @@ async function assignTrainingPopup() {
                 const agentSelect = document.getElementById('swal-t-agent');
                 agentSelect.style.display = val === 'Individual' ? 'block' : 'none';
                 if (val === 'Individual') {
-                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.name}">${(u.displayName || u.name)}</option>`).join('');
+                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.name}">${u.name}</option>`).join('');
                 }
             };
             updateTrainingTarget('Genel');
@@ -3245,7 +3247,7 @@ async function addManualFeedbackPopup() {
         confirmButtonText: '<i class="fas fa-save"></i> Kaydet',
         didOpen: () => {
             const sel = document.getElementById('manual-q-agent');
-            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${(u.displayName || u.name)}</option>`);
+            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${u.name}</option>`);
         },
         preConfirm: () => {
             const agentName = document.getElementById('manual-q-agent').value;
@@ -3464,7 +3466,7 @@ function updateAgentListBasedOnGroup() {
     } else {
         agentSelect.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>`;
     }
-    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${(u.displayName || u.name)}</option>`; });
+    filteredUsers.forEach(u => { const label = (u.fullName || u.name); agentSelect.innerHTML += `<option value="${u.name}">${label}</option>`; });
     fetchEvaluationsForAgent();
 }
 function fetchUserListForAdmin() {
