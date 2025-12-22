@@ -53,6 +53,7 @@ window.__dataLoadedPromise = new Promise(r=>{ __dataLoadedResolve = r; });
 let techWizardData = {}; // Teknik Sihirbaz Verisi
 let currentUser = "";
 
+let currentFullName = "";
 // -------------------- Menu Permissions (LocAdmin) --------------------
 let menuPermissions = null; // { key: {allowedGroups:[], allowedRoles:[]} }
 
@@ -268,6 +269,32 @@ let sessionTimeout;
 let activeCards = [];
 let currentCategory = "home";
 let adminUserList = [];
+
+
+let userDisplayMap = {}; // username -> Ad Soyad
+
+function setUserDisplayMap(list){
+  userDisplayMap = {};
+  (list||[]).forEach(u=>{
+    const key = String((u && (u.name||u.username||u.user||"")) || "").trim();
+    if(!key) return;
+    const disp = String((u.displayName || u.fullName || u.adSoyad || u.name || key) || "").trim();
+    userDisplayMap[key] = disp || key;
+  });
+}
+
+function getDisplayName(username){
+  const u = String(username||"").trim();
+  if(!u) return "";
+  return userDisplayMap[u] || u;
+}
+
+function getCurrentDisplayName(){
+  const fromLS = String(localStorage.getItem("sSportFullName")||"").trim();
+  const n = String(currentFullName||fromLS||currentUser||"").trim();
+  return n || currentUser;
+}
+
 let allEvaluationsData = [];
 let wizardStepsData = {};
 let trainingData = [];
@@ -599,9 +626,14 @@ function girisYap() {
                 }).then(() => { changePasswordPopup(true); });
             } else {
                 document.getElementById("login-screen").style.display = "none";
-                const displayName = (data.fullName || localStorage.getItem("sSportFullName") || currentUser);
-                document.getElementById("user-display").innerText = displayName;
-                setHomeWelcomeUser(displayName);
+                const displayName = String((data.fullName || localStorage.getItem("sSportFullName") || currentUser) || "").trim();
+                // FullName sakla (Users tablosunda varsa)
+                if (typeof data.fullName !== "undefined") {
+                    localStorage.setItem("sSportFullName", String(data.fullName || "").trim());
+                    currentFullName = String(data.fullName || "").trim();
+                }
+                document.getElementById("user-display").innerText = (displayName || currentUser);
+                setHomeWelcomeUser(displayName || currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -2208,9 +2240,9 @@ function openQualityArea() {
     const fullScreen = document.getElementById('quality-fullscreen');
     fullScreen.style.display = 'flex';
     // Kullanıcı bilgisini güncelle
-    document.getElementById('q-side-name').innerText = currentUser;
+    document.getElementById('q-side-name').innerText = getCurrentDisplayName();
     document.getElementById('q-side-role').innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
-    document.getElementById('q-side-avatar').innerText = currentUser.charAt(0).toUpperCase();
+    document.getElementById('q-side-avatar').innerText = (getCurrentDisplayName().charAt(0) || 'U').toUpperCase();
     // Dönem filtresini doldur
     populateMonthFilterFull();
     // Yetki kontrolü (Admin butonlarını göster/gizle)
@@ -2351,7 +2383,7 @@ function updateDashAgentList() {
     filteredUsers.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.name; 
-        opt.innerText = (u.displayName || u.name);
+        opt.innerText = (u.displayName || getDisplayName(u.name) || u.name);
         agentSelect.appendChild(opt);
     });
     
@@ -2377,7 +2409,7 @@ function updateDashRingTitle() {
     const a = aSel ? aSel.value : 'all';
 
     if(a && a !== 'all') {
-        tEl.textContent = `${a} Puan Durumu`;
+        tEl.textContent = `${getDisplayName(a)} Puan Durumu`;
     } else if(g && g !== 'all') {
         tEl.textContent = `${g} Takım Ortalaması`;
     } else {
@@ -2498,14 +2530,15 @@ function updateFeedbackAgentList(shouldRefresh=true) {
     const selectedGroup = groupSelect.value;
 
     // seçilen gruba göre kullanıcıları filtrele
-    const filteredUsers = adminUserList.filter(u => {
-        if(!u || !u.username) return false;
+    const filteredUsers = (adminUserList||[]).filter(u => {
+        const uname = String((u && (u.name || u.username)) || '').trim();
+        if(!uname) return false;
         if(selectedGroup === 'all') return true;
         return u.group === selectedGroup;
     });
 
     const agents = filteredUsers
-        .map(u => u.username)
+        .map(u => String(u.name || u.username || "").trim())
         .filter(a => a)
         .sort((a,b) => a.localeCompare(b, 'tr'));
 
@@ -2513,7 +2546,7 @@ function updateFeedbackAgentList(shouldRefresh=true) {
     agents.forEach(a => {
         const opt = document.createElement('option');
         opt.value = a;
-        opt.textContent = a;
+        opt.textContent = getDisplayName(a);
         agentSelect.appendChild(opt);
     });
 
@@ -2942,7 +2975,7 @@ async function assignTrainingPopup() {
                 const agentSelect = document.getElementById('swal-t-agent');
                 agentSelect.style.display = val === 'Individual' ? 'block' : 'none';
                 if (val === 'Individual') {
-                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.name}">${(u.displayName || u.name)}</option>`).join('');
+                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.name}">${(u.displayName || getDisplayName(u.name) || u.name)}</option>`).join('');
                 }
             };
             updateTrainingTarget('Genel');
@@ -3245,7 +3278,7 @@ async function addManualFeedbackPopup() {
         confirmButtonText: '<i class="fas fa-save"></i> Kaydet',
         didOpen: () => {
             const sel = document.getElementById('manual-q-agent');
-            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${(u.displayName || u.name)}</option>`);
+            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${(u.displayName || getDisplayName(u.name) || u.name)}</option>`);
         },
         preConfirm: () => {
             const agentName = document.getElementById('manual-q-agent').value;
@@ -3464,7 +3497,7 @@ function updateAgentListBasedOnGroup() {
     } else {
         agentSelect.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>`;
     }
-    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${(u.displayName || u.name)}</option>`; });
+    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${(u.displayName || getDisplayName(u.name) || u.name)}</option>`; });
     fetchEvaluationsForAgent();
 }
 function fetchUserListForAdmin() {
@@ -3473,7 +3506,7 @@ function fetchUserListForAdmin() {
             method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({ action: "getUserList", username: currentUser, token: getToken() })
         }).then(response => response.json()).then(data => {
-            if (data.result === "success") { adminUserList = data.users.filter(u => u.group !== 'Yönetim'); resolve(adminUserList); } 
+            if (data.result === "success") { adminUserList = data.users.filter(u => u.group !== 'Yönetim'); setUserDisplayMap(adminUserList); resolve(adminUserList); } 
             else resolve([]);
         }).catch(err => resolve([]));
     });
