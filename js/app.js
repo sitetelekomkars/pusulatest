@@ -13,7 +13,7 @@ function showGlobalError(message){
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby3kd04k2u9XdVDD1-vdbQQAsHNW6WLIn8bNYxTlVCL3U1a0WqZo6oPp9zfBWIpwJEinQ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -378,19 +378,6 @@ window.recalcTotalSliderScore = function() {
 };
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
-function getMyFullName(){ return (localStorage.getItem("sSportFullName")||"").trim(); }
-function getMyDisplayName(){
-  const fn=getMyFullName();
-  return fn ? fn : (currentUser||localStorage.getItem("sSportUser")||"Misafir");
-}
-// username -> full name map (admin user list loads this)
-let userDisplayMap = {};
-function resolveUserDisplay(u){
-  const key=String(u||"").trim();
-  if(!key) return "";
-  if(key===currentUser) return getMyDisplayName();
-  return userDisplayMap[key] || key;
-}
 function setHomeWelcomeUser(name){
   try{
     const el = document.getElementById("home-welcome-user");
@@ -530,8 +517,8 @@ function checkSession() {
 
         currentUser = savedUser;
         document.getElementById("login-screen").style.display = "none";
-        document.getElementById("user-display").innerText = getMyDisplayName();
-        setHomeWelcomeUser(getMyDisplayName());
+        document.getElementById("user-display").innerText = currentUser;
+        setHomeWelcomeUser(currentUser);
 
         checkAdmin(savedRole);
 
@@ -597,7 +584,6 @@ function girisYap() {
             localStorage.setItem("sSportToken", data.token);
             localStorage.setItem("sSportRole", data.role);
             if (data.group) localStorage.setItem("sSportGroup", data.group);
-            if (data.fullName) localStorage.setItem("sSportFullName", data.fullName);
             // ✅ Oturum zaman damgası (ertesi gün otomatik çıkış için)
             localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
             localStorage.setItem("sSportLoginAt", String(Date.now()));
@@ -611,8 +597,8 @@ function girisYap() {
                 }).then(() => { changePasswordPopup(true); });
             } else {
                 document.getElementById("login-screen").style.display = "none";
-                document.getElementById("user-display").innerText = getMyDisplayName();
-                setHomeWelcomeUser(getMyDisplayName());
+                document.getElementById("user-display").innerText = currentUser;
+                setHomeWelcomeUser(currentUser);
                 const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
                 checkAdmin(savedRole);
                 startSessionTimer();
@@ -701,7 +687,7 @@ function logout() {
     try{ document.getElementById("user-display").innerText = "Misafir"; }catch(e){}
     setHomeWelcomeUser("Misafir");
     document.body.classList.remove('editing');
-    localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole"); localStorage.removeItem("sSportGroup"); localStorage.removeItem("sSportFullName"); localStorage.removeItem("sSportSessionDay"); localStorage.removeItem("sSportLoginAt");
+    localStorage.removeItem("sSportUser"); localStorage.removeItem("sSportToken"); localStorage.removeItem("sSportRole"); localStorage.removeItem("sSportGroup"); localStorage.removeItem("sSportSessionDay"); localStorage.removeItem("sSportLoginAt");
     if (sessionTimeout) clearTimeout(sessionTimeout);
     document.getElementById("main-app").style.display = "none";
     document.getElementById("login-screen").style.display = "flex";
@@ -2145,7 +2131,7 @@ function finishPenaltyGame() {
     fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "logQuiz", actorName: getMyDisplayName(), username: currentUser, token: getToken(), score: pScore * 10, total: 100 })
+        body: JSON.stringify({ action: "logQuiz", username: currentUser, token: getToken(), score: pScore * 10, total: 100 })
     }).finally(() => {
         // lobby tablosunu güncel tut
         setTimeout(fetchLeaderboard, 600);
@@ -2219,9 +2205,9 @@ function openQualityArea() {
     const fullScreen = document.getElementById('quality-fullscreen');
     fullScreen.style.display = 'flex';
     // Kullanıcı bilgisini güncelle
-    document.getElementById('q-side-name').innerText = getMyDisplayName();
+    document.getElementById('q-side-name').innerText = currentUser;
     document.getElementById('q-side-role').innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
-    document.getElementById('q-side-avatar').innerText = getMyDisplayName().charAt(0).toUpperCase();
+    document.getElementById('q-side-avatar').innerText = currentUser.charAt(0).toUpperCase();
     // Dönem filtresini doldur
     populateMonthFilterFull();
     // Yetki kontrolü (Admin butonlarını göster/gizle)
@@ -2361,8 +2347,8 @@ function updateDashAgentList() {
     }
     filteredUsers.forEach(u => {
         const opt = document.createElement('option');
-        opt.value = u.username;
-        opt.innerText = (u.fullName || u.username);
+        opt.value = u.name; 
+        opt.innerText = u.name;
         agentSelect.appendChild(opt);
     });
     
@@ -2516,14 +2502,15 @@ function updateFeedbackAgentList(shouldRefresh=true) {
     });
 
     const agents = filteredUsers
-        .slice()
-        .sort((a,b) => (a.fullName||a.username).localeCompare((b.fullName||b.username), 'tr'));
+        .map(u => u.username)
+        .filter(a => a)
+        .sort((a,b) => a.localeCompare(b, 'tr'));
 
     agentSelect.innerHTML = '<option value="all">Tüm Temsilciler</option>';
-    agents.forEach(u => {
+    agents.forEach(a => {
         const opt = document.createElement('option');
-        opt.value = u.username;
-        opt.textContent = (u.fullName || u.username);
+        opt.value = a;
+        opt.textContent = a;
         agentSelect.appendChild(opt);
     });
 
@@ -2634,7 +2621,7 @@ function loadQualityDashboard() {
                     if (e.group) {
                         matchGroup = (e.group === selectedGroup);
                     } else {
-                        const user = adminUserList.find(u => u.username === e.agent);
+                        const user = adminUserList.find(u => u.name === e.agent);
                         matchGroup = (user && user.group === selectedGroup);
                     }
                 }
@@ -2883,7 +2870,7 @@ function startTraining(id){
     fetch(SCRIPT_URL, {
         method:'POST',
         headers:{"Content-Type":"text/plain;charset=utf-8"},
-        body: JSON.stringify({ action: "startTraining", actorName: getMyDisplayName(), trainingId: id, username: currentUser, token: getToken() })
+        body: JSON.stringify({ action: "startTraining", trainingId: id, username: currentUser, token: getToken() })
     }).then(r=>r.json()).catch(()=>{});
 }
 
@@ -2913,7 +2900,7 @@ function completeTraining(id) {
     fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "completeTraining", actorName: getMyDisplayName(), trainingId: id, username: currentUser, token: getToken() })
+        body: JSON.stringify({ action: "completeTraining", trainingId: id, username: currentUser, token: getToken() })
     }).then(r => r.json()).then(d => {
         if(d.result === 'success') {
             Swal.fire('Harika!', 'Eğitim tamamlandı olarak işaretlendi.', 'success');
@@ -2952,7 +2939,7 @@ async function assignTrainingPopup() {
                 const agentSelect = document.getElementById('swal-t-agent');
                 agentSelect.style.display = val === 'Individual' ? 'block' : 'none';
                 if (val === 'Individual') {
-                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.username}">${escapeHtml(u.fullName||u.username)}</option>`).join('');
+                    agentSelect.innerHTML = adminUserList.map(u => `<option value="${u.name}">${u.name}</option>`).join('');
                 }
             };
             updateTrainingTarget('Genel');
@@ -2971,7 +2958,7 @@ async function assignTrainingPopup() {
                 docLink: document.getElementById('swal-t-doc').value || 'N/A',
                 target: target,
                 targetAgent: agent, // Kişiye özel atama için
-                creator: getMyDisplayName(),
+                creator: currentUser,
                 startDate: formatDateToDDMMYYYY(document.getElementById('swal-t-start').value), 
                 endDate: formatDateToDDMMYYYY(document.getElementById('swal-t-end').value), 
                 duration: document.getElementById('swal-t-duration').value 
@@ -2983,7 +2970,7 @@ async function assignTrainingPopup() {
         fetch(SCRIPT_URL, {
             method: 'POST',
             headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "assignTraining", actorName: getMyDisplayName(), username: currentUser, token: getToken(), ...formValues })
+            body: JSON.stringify({ action: "assignTraining", username: currentUser, token: getToken(), ...formValues })
         }).then(r=>r.json()).then(d=>{
             Swal.fire('Başarılı', 'Eğitim atandı.', 'success');
             loadTrainingData();
@@ -3092,9 +3079,9 @@ function loadFeedbackList() {
         listEl.innerHTML += `
             <div class="feedback-card" style="border-left-color: ${feedbackClass};">
                 <div class="feedback-header">
-                    <div style="font-weight:bold; color:#0e1b42; font-size:1.1rem;">${resolveUserDisplay(e.agent)}</div>
+                    <div style="font-weight:bold; color:#0e1b42; font-size:1.1rem;">${e.agent}</div>
                     <div class="feedback-info-right">
-                        <span><i class="fas fa-user-check"></i> Değerleyen: ${resolveUserDisplay(e.evaluator)}</span>
+                        <span><i class="fas fa-user-check"></i> Değerleyen: ${e.evaluator}</span>
                         <span><i class="fas fa-id-badge"></i> Çağrı ID: ${cleanCallId}</span>
                         <span><i class="fas fa-calendar-alt"></i> Tarih: ${e.callDate}</span>
                     </div>
@@ -3255,7 +3242,7 @@ async function addManualFeedbackPopup() {
         confirmButtonText: '<i class="fas fa-save"></i> Kaydet',
         didOpen: () => {
             const sel = document.getElementById('manual-q-agent');
-            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.username}">${escapeHtml(u.fullName||u.username)}</option>`);
+            adminUserList.forEach(u => sel.innerHTML += `<option value="${u.name}">${u.name}</option>`);
         },
         preConfirm: () => {
             const agentName = document.getElementById('manual-q-agent').value;
@@ -3326,7 +3313,7 @@ async function addManualFeedbackPopup() {
         fetch(SCRIPT_URL, { 
             method: 'POST', 
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: "logEvaluation", actorName: getMyDisplayName(), username: currentUser, token: getToken(), ...formValues }) 
+            body: JSON.stringify({ action: "logEvaluation", username: currentUser, token: getToken(), ...formValues }) 
         })
         .then(r => r.json()).then(async d => {
             if (d.result === "success") { 
@@ -3352,7 +3339,7 @@ async function addManualFeedbackPopup() {
                     fetch(SCRIPT_URL, { 
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: "logEvaluation", actorName: getMyDisplayName(), username: currentUser, token: getToken(), force: true, ...formValues })
+                        body: JSON.stringify({ action: "logEvaluation", username: currentUser, token: getToken(), force: true, ...formValues })
                     }).then(r2 => r2.json()).then(d2 => {
                         if (d2.result === "success") {
                             Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false });
@@ -3402,7 +3389,7 @@ async function fetchEvaluationsForAgent(forcedName, silent=false) {
             normalEvaluations.forEach((evalItem, index) => {
                 const scoreColor = evalItem.score >= 90 ? '#2e7d32' : (evalItem.score >= 70 ? '#ed6c02' : '#d32f2f');
                 let editBtn = isAdminMode ? `<i class="fas fa-pen" style="font-size:1rem; color:#fabb00; cursor:pointer; margin-right:5px;" onclick="event.stopPropagation(); editEvaluation('${evalItem.callId}')"></i>` : '';
-                let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${escapeHtml(resolveUserDisplay(evalItem.agent))}</span>` : '';
+                let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${evalItem.agent}</span>` : '';
                 
                 // Detay HTML oluşturma
                 let detailHtml = '';
@@ -3437,13 +3424,13 @@ async function fetchEvaluationsForAgent(forcedName, silent=false) {
                 <div class="evaluation-summary" id="eval-summary-${index}" style="border-left:4px solid ${scoreColor}; padding:15px; margin-bottom:10px; border-radius:8px; background:#fff; cursor:pointer;" onclick="toggleEvaluationDetail(${index})">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <div style="font-weight:700; color:#2c3e50;">${agentNameDisplay}</div>
+                            <div style="font-weight:700; color:#2c3e50;">${evalItem.agent} ${agentNameDisplay}</div>
                             <!-- Geliştirme: Çağrı Tarihi ve Dinlenme Tarihi -->
                             <div class="eval-date-info">
                                 <span><i class="fas fa-phone"></i> Çağrı: ${callDateDisplay}</span>
                                 <span><i class="fas fa-headphones"></i> Dinlenme: ${listenDateDisplay}</span>
                             </div>
-                            <div style="font-size:0.75rem; color:#999; margin-top:2px; cursor:pointer; user-select:none;" title="Çift tıkla kopyala" data-copy-id="${evalItem.callId}">ID: ${evalItem.callId}</div>
+                            <div style="font-size:0.75rem; color:#999; margin-top:2px;">ID: ${evalItem.callId}</div>
                         </div>
                         <div style="text-align:right;">
                              ${editBtn} <span style="font-weight:800; font-size:1.6rem; color:${scoreColor};">${evalItem.score}</span>
@@ -3474,7 +3461,7 @@ function updateAgentListBasedOnGroup() {
     } else {
         agentSelect.innerHTML = `<option value="all">-- Tüm Temsilciler --</option>`;
     }
-    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.username}">${escapeHtml(u.fullName||u.username)}</option>`; });
+    filteredUsers.forEach(u => { agentSelect.innerHTML += `<option value="${u.name}">${u.name}</option>`; });
     fetchEvaluationsForAgent();
 }
 function fetchUserListForAdmin() {
@@ -3483,14 +3470,7 @@ function fetchUserListForAdmin() {
             method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({ action: "getUserList", username: currentUser, token: getToken() })
         }).then(response => response.json()).then(data => {
-            if (data.result === "success") {
-                adminUserList = (data.users || []).filter(u => u && u.group !== 'Yönetim');
-                // map for display names
-                userDisplayMap = {};
-                adminUserList.forEach(u => { if(u && u.username) userDisplayMap[u.username] = (u.fullName || u.username); });
-                if(currentUser) userDisplayMap[currentUser] = getMyDisplayName();
-                resolve(adminUserList);
-            } 
+            if (data.result === "success") { adminUserList = data.users.filter(u => u.group !== 'Yönetim'); resolve(adminUserList); } 
             else resolve([]);
         }).catch(err => resolve([]));
     });
@@ -3522,7 +3502,7 @@ async function exportEvaluations() {
     fetch(SCRIPT_URL, {
         method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
-            action: "exportEvaluations", actorName: getMyDisplayName(),
+            action: "exportEvaluations",
             targetAgent: agentSelect ? agentSelect.value : 'all',
             targetGroup: groupSelect ? groupSelect.value : 'all',
             username: currentUser, token: getToken()
@@ -3546,7 +3526,7 @@ async function logEvaluationPopup() {
     if (!agentName || agentName === 'all') { Swal.fire('Uyarı', 'Lütfen listeden bir temsilci seçiniz.', 'warning'); return; }
     
     let agentGroup = 'Genel';
-    const foundUser = adminUserList.find(u => String(u.username||'').toLowerCase() === String(agentName||'').toLowerCase());
+    const foundUser = adminUserList.find(u => u.name.toLowerCase() === agentName.toLowerCase());
     if (foundUser && foundUser.group) { agentGroup = foundUser.group; }
     
     const isChat = agentGroup.indexOf('Chat') > -1;
@@ -3581,7 +3561,7 @@ async function logEvaluationPopup() {
     // GÜNCELLENMİŞ MODAL: Call ID zorunlu yapıldı
     const contentHtml = `
         <div class="eval-modal-wrapper">
-            <div class="score-dashboard"><div><div style="font-size:0.9rem;">Değerlendirilen</div><div style="font-size:1.2rem; font-weight:bold; color:#fabb00;">${resolveUserDisplay(agentName)}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${isCriteriaBased ? '100' : '100'}</div></div></div>
+            <div class="score-dashboard"><div><div style="font-size:0.9rem;">Değerlendirilen</div><div style="font-size:1.2rem; font-weight:bold; color:#fabb00;">${agentName}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${isCriteriaBased ? '100' : '100'}</div></div></div>
             <div class="eval-header-card"><div><label>Call ID <span style="color:red;">*</span></label><input id="eval-callid" class="swal2-input" style="height:35px; margin:0; width:100%;" placeholder="Call ID"></div><div><label>Tarih</label><input type="date" id="eval-calldate" class="swal2-input" style="height:35px; margin:0; width:100%;" value="${new Date().toISOString().substring(0, 10)}"></div></div>
             ${isCriteriaBased ? criteriaFieldsHtml : `<div style="padding:15px; border:1px dashed #ccc; text-align:center;"><label>Manuel Puan</label><br><input id="eval-manual-score" type="number" class="swal2-input" value="100" min="0" max="100" style="width:100px; text-align:center;"></div><textarea id="eval-details" class="swal2-textarea" placeholder="Detaylar..."></textarea>`}
             <div style="margin-top:15px; padding:10px; background:#fafafa; border:1px solid #eee;"><label>Geri Bildirim Tipi</label><select id="feedback-type" class="swal2-input" style="width:100%; height:40px; margin:0;"><option value="Yok" selected>Yok</option><option value="Sözlü">Sözlü</option><option value="Mail">Mail</option></select></div>
@@ -3630,7 +3610,7 @@ async function logEvaluationPopup() {
         fetch(SCRIPT_URL, { 
             method: 'POST', 
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: "logEvaluation", actorName: getMyDisplayName(), username: currentUser, token: getToken(), ...formValues }) 
+            body: JSON.stringify({ action: "logEvaluation", username: currentUser, token: getToken(), ...formValues }) 
         })
         .then(r => r.json()).then(d => {
             if (d.result === "success") { 
@@ -3665,7 +3645,7 @@ async function editEvaluation(targetCallId) {
     let oldDetails = []; try { oldDetails = JSON.parse(evalData.details || "[]"); } catch(e) { oldDetails = []; }
     
     // GÜNCELLENMİŞ MODAL: Call ID gösteriliyor
-    let contentHtml = `<div class="eval-modal-wrapper" style="border-top:5px solid #1976d2;"><div class="score-dashboard"><div><div style="font-size:0.9rem;">DÜZENLENEN</div><div style="font-size:1.2rem; font-weight:bold; color:#1976d2;">${resolveUserDisplay(agentName)}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${evalData.score}</div></div></div><div class="eval-header-card"><div><label>Call ID</label><input id="eval-callid" class="swal2-input" value="${evalData.callId}" readonly style="background:#eee; height:35px; width:100%;"></div></div>`;
+    let contentHtml = `<div class="eval-modal-wrapper" style="border-top:5px solid #1976d2;"><div class="score-dashboard"><div><div style="font-size:0.9rem;">DÜZENLENEN</div><div style="font-size:1.2rem; font-weight:bold; color:#1976d2;">${agentName}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${evalData.score}</div></div></div><div class="eval-header-card"><div><label>Call ID</label><input id="eval-callid" class="swal2-input" value="${evalData.callId}" readonly style="background:#eee; height:35px; width:100%;"></div></div>`;
     
     if (isCriteriaBased) {
         contentHtml += `<div class="criteria-container">`;
@@ -3976,8 +3956,8 @@ async function openTelesalesArea(){
     const av = document.getElementById('t-side-avatar');
     const nm = document.getElementById('t-side-name');
     const rl = document.getElementById('t-side-role');
-    if(av) av.innerText = (getMyDisplayName()||'U').trim().slice(0,1).toUpperCase();
-    if(nm) nm.innerText = getMyDisplayName() || 'Kullanıcı';
+    if(av) av.innerText = (currentUser||'U').trim().slice(0,1).toUpperCase();
+    if(nm) nm.innerText = currentUser || 'Kullanıcı';
     if(rl) rl.innerText = isAdminMode ? 'Admin' : 'Temsilci';
 
     // Data teklifleri: önce e-tabladan çekmeyi dene, olmazsa fallback
@@ -4368,8 +4348,8 @@ async function openTechArea(tab){
     const av = document.getElementById('x-side-avatar');
     const nm = document.getElementById('x-side-name');
     const rl = document.getElementById('x-side-role');
-    if(av) av.innerText = (getMyDisplayName()||'U').trim().slice(0,1).toUpperCase();
-    if(nm) nm.innerText = getMyDisplayName() || 'Kullanıcı';
+    if(av) av.innerText = (currentUser||'U').trim().slice(0,1).toUpperCase();
+    if(nm) nm.innerText = currentUser || 'Kullanıcı';
     if(rl) rl.innerText = isAdminMode ? 'Admin' : 'Temsilci';
 
     // İlk açılışta "bozuk görünüm" (flicker) olmasın: veri gelene kadar bekle
@@ -5401,41 +5381,3 @@ window.switchTechTab = async function(tab){
 
 // expose for onclick
 try{ window.openMenuPermissions = openMenuPermissions; }catch(e){}
-// ==========================================================
-// Değerlendirme geçmişi: ID üzerine çift tıkla kopyala
-// ==========================================================
-(function __bindCopyIdDblClick(){
-  if(window.__copyIdDblBound) return;
-  window.__copyIdDblBound = true;
-
-  async function writeClipboard(text){
-    try{
-      await navigator.clipboard.writeText(text);
-      return true;
-    }catch(e){
-      // fallback
-      try{
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        return true;
-      }catch(e2){ return false; }
-    }
-  }
-
-  document.addEventListener('dblclick', async function(e){
-    const el = e.target.closest('[data-copy-id]');
-    if(!el) return;
-    const val = el.getAttribute('data-copy-id');
-    if(!val) return;
-    const ok = await writeClipboard(val);
-    if(ok){
-      try{ Swal.fire({toast:true,position:'top',icon:'success',title:'Kopyalandı',showConfirmButton:false,timer:1200}); }catch(err){}
-    }
-  });
-})();
