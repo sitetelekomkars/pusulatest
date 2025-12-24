@@ -140,8 +140,8 @@
       </div>
     </div>
     <div class="q-nav-menu">
-      <div class="q-nav-item active" data-tech-tab="wizard" onclick="switchTechTab('wizard')"><i class="fas fa-tv"></i> Yayın Sorunları</div>
-      <div class="q-nav-item" data-tech-tab="access" onclick="switchTechTab('access')"><i class="fas fa-wifi"></i> Erişim Sorunlar</div>
+      <div class="q-nav-item active" data-tech-tab="broadcast" onclick="switchTechTab('broadcast')"><i class="fas fa-tv"></i> Yayın Sorunları</div>
+      <div class="q-nav-item" data-tech-tab="access" onclick="switchTechTab('access')"><i class="fas fa-wifi"></i> Erişim Sorunları</div>
       <div class="q-nav-item" data-tech-tab="app" onclick="switchTechTab('app')"><i class="fas fa-mobile-screen"></i> App Hataları</div>
       <div class="q-nav-item" data-tech-tab="activation" onclick="switchTechTab('activation')"><i class="fas fa-bolt"></i> Aktivasyon Sorunları</div>
       <div class="q-nav-item" data-tech-tab="payment" onclick="switchTechTab('payment')"><i class="fas fa-credit-card"></i> Ödeme Sorunları</div>
@@ -166,7 +166,7 @@
       <section id="x-view-access" class="q-view-section">
         <div class="q-split">
           <div class="q-pane">
-            <div class="q-pane-title">Erişim Sorunlar</div>
+            <div class="q-pane-title">Erişim Sorunları</div>
             <div class="q-pane-search"><input id="x-access-search" class="q-input" placeholder="Sorunlarda ara..." oninput="filterTechDocList('access')"></div>
             <div id="x-access-list" class="q-accordion"></div>
           </div>
@@ -220,61 +220,89 @@
     </div>
   </div>
 </div>
-
-<!-- Teknik sekme aktiflik / yanlış renklenme düzeltmesi (scoped) -->
 <script>
-  (function(){
-    const TECH_MAP = {
-      wizard: 'broadcast',
-      access: 'access',
-      app: 'app',
-      activation: 'activation',
-      payment: 'payment',
-      cards: 'cards',
-      info: 'info'
-    };
+/* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
+(function(){
+  function fixActive(tab){
+    var root = document.getElementById('tech-fullscreen');
+    if(!root) return;
+    var items = root.querySelectorAll('.q-nav-menu .q-nav-item');
+    items.forEach(function(el){
+      el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
+    });
+  }
 
-    function setActiveTechNav(tab){
-      const root = document.getElementById('tech-fullscreen');
-      if(!root) return;
-      root.querySelectorAll('.q-nav-menu .q-nav-item').forEach(el=>{
-        el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
-      });
+  var origSwitch = window.switchTechTab;
+  window.switchTechTab = function(tab){
+    if (typeof origSwitch === 'function') {
+      origSwitch(tab);
     }
+    setTimeout(function(){ fixActive(tab); }, 0);
+  };
 
-    function showTechSection(viewKey){
-      const root = document.getElementById('tech-fullscreen');
-      if(!root) return;
-      root.querySelectorAll('.q-main .q-view .q-view-section').forEach(sec=>sec.classList.remove('active'));
-      const sec = document.getElementById('x-view-' + viewKey);
-      if(sec) sec.classList.add('active');
+  var origOpen = window.openTechArea;
+  window.openTechArea = function(tab){
+    if (typeof origOpen === 'function') {
+      origOpen(tab);
     }
+    setTimeout(function(){ fixActive(tab || 'wizard'); }, 0);
+  };
+})();
+</script>
 
-    // Global fonksiyon: mevcut app.js içindeki switchTechTab hatalıysa override eder
-    window.switchTechTab = function(tab){
-      const mapped = TECH_MAP[tab] || tab;
-      setActiveTechNav(tab);
-      showTechSection(mapped);
+<script>
+/* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
+(function(){
+  function fixActive(tab){
+    var root = document.getElementById('tech-fullscreen');
+    if(!root) return;
+    var items = root.querySelectorAll('.q-nav-menu .q-nav-item');
+    items.forEach(function(el){
+      el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
+    });
+  }
 
-      // arama inputu varsa sıfırla (yanlış kategoriye filtre taşımasın)
-      try {
-        const id = 'x-' + mapped + '-search';
-        const inp = document.getElementById(id);
-        if(inp) inp.value = '';
-      } catch(e){}
-    };
+  var origSwitch = window.switchTechTab;
+  window.switchTechTab = function(tab){
+    if (typeof origSwitch === 'function') {
+      origSwitch(tab);
+    }
+    setTimeout(function(){ fixActive(tab); }, 0);
+  };
 
-    // Menüde tıklanınca yanlış sekme renklenmesin diye click'i de scoped ele al
-    document.addEventListener('click', function(e){
-      const root = document.getElementById('tech-fullscreen');
-      if(!root || root.style.display === 'none') return;
-      const item = e.target.closest && e.target.closest('#tech-fullscreen .q-nav-menu .q-nav-item');
-      if(item){
-        const tab = item.getAttribute('data-tech-tab');
-        if(tab) window.switchTechTab(tab);
-      }
-    }, true);
-  })();
+  var origOpen = window.openTechArea;
+  window.openTechArea = function(tab){
+    if (typeof origOpen === 'function') {
+      origOpen(tab);
+    }
+    setTimeout(function(){ fixActive(tab || 'wizard'); }, 0);
+  };
+})();
+</script>
+<script>
+/* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
+(function(){
+  function fixActive(tab){
+    var root = document.getElementById('tech-fullscreen');
+    if(!root) return;
+    var items = root.querySelectorAll('.q-nav-menu .q-nav-item');
+    items.forEach(function(el){
+      el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
+    });
+  }
+
+  var origSwitch = window.switchTechTab;
+  window.switchTechTab = function(tab){
+    if (typeof origSwitch === 'function') origSwitch(tab);
+    setTimeout(function(){ fixActive(tab); }, 0);
+  };
+
+  var origOpen = window.openTechArea;
+  window.openTechArea = function(tab){
+    if (typeof origOpen === 'function') origOpen(tab);
+    setTimeout(function(){ fixActive(tab || 'wizard'); }, 0);
+  };
+})();
 </script>
 
 </body></html>
