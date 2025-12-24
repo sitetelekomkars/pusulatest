@@ -4361,8 +4361,11 @@ async function openTechArea(tab){
         }
     }catch(e){}
 
-    // İçerikler switchTechTab içinde yükleniyor
-    switchTechTab(tab || 'wizard');
+    // İçerikleri (bucket/list) hazırla
+    try{ renderTechSections(); }catch(e){}
+
+    // Sekmeyi aç
+    switchTechTab(tab || 'broadcast');
 }
 
 function closeFullTech(){
