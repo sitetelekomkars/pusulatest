@@ -3463,7 +3463,13 @@ async function fetchEvaluationsForAgent(forcedName, silent=false) {
             normalEvaluations.forEach((evalItem, index) => {
                 const scoreColor = evalItem.score >= 90 ? '#2e7d32' : (evalItem.score >= 70 ? '#ed6c02' : '#d32f2f');
                 let editBtn = isAdminMode ? `<i class="fas fa-pen" style="font-size:1rem; color:#fabb00; cursor:pointer; margin-right:5px;" onclick="event.stopPropagation(); editEvaluation('${evalItem.callId}')"></i>` : '';
-                let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${evalItem.agent}</span>` : '';
+                // İsim iki kez yazılmasın: agent zaten başlıkta var. Eğer agentName gibi ayrı bir alan varsa onu göster.
+                const baseAgent = escapeHtml(evalItem.agent || '');
+                const altNameRaw = (evalItem.agentName != null) ? String(evalItem.agentName).trim() : '';
+                const showAltName = altNameRaw && altNameRaw !== String(evalItem.agent || '').trim();
+                let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) && showAltName
+                  ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${escapeHtml(altNameRaw)}</span>`
+                  : '';
                 
                 // Detay HTML oluşturma
                 let detailHtml = '';
@@ -3498,7 +3504,7 @@ async function fetchEvaluationsForAgent(forcedName, silent=false) {
                 <div class="evaluation-summary" id="eval-summary-${index}" style="border-left:4px solid ${scoreColor}; padding:15px; margin-bottom:10px; border-radius:8px; background:#fff; cursor:pointer;" onclick="toggleEvaluationDetail(${index})">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <div style="font-weight:700; color:#2c3e50;">${evalItem.agent} ${agentNameDisplay}</div>
+                            <div style="font-weight:700; color:#2c3e50;">${baseAgent} ${agentNameDisplay}</div>
                             <!-- Geliştirme: Çağrı Tarihi ve Dinlenme Tarihi -->
                             <div class="eval-date-info">
                                 <span><i class="fas fa-phone"></i> Çağrı: ${callDateDisplay}</span>
@@ -3994,6 +4000,7 @@ function openCardDetail(cardId){
    TELE SATIŞ FULLSCREEN
 --------------------------*/
 let telesalesOffers = [];
+let telesalesScriptsLoaded = false;
 function safeGetToken(){
     try{ return (typeof getToken === 'function') ? getToken() : ''; }catch(e){ return ''; }
 }
@@ -4008,6 +4015,44 @@ async function fetchSheetObjects(actionName){
     if(!d || d.result !== "success") throw new Error((d && d.message) ? d.message : "Veri alınamadı.");
     // backend handleFetchData returns {data:[...]} ; other handlers may use {items:[...]}
     return d.data || d.items || [];
+}
+
+async function maybeLoadTelesalesScriptsFromSheet(){
+    if(telesalesScriptsLoaded) return;
+    telesalesScriptsLoaded = true;
+    // Eğer kullanıcı local override yaptıysa sheet'ten ezmeyelim
+    try{
+        const ov = JSON.parse(localStorage.getItem('telesalesScriptsOverride') || '[]');
+        if(Array.isArray(ov) && ov.length) return;
+    }catch(e){}
+    try{
+        const loaded = await fetchSheetObjects('getTelesalesScripts');
+        if(Array.isArray(loaded) && loaded.length){
+            // Sheet kolon adlarını normalize et
+            window.salesScripts = loaded.map(s=>({
+                id: s.id || s.ID || s.Id || '',
+                title: s.title || s.Başlık || s.Baslik || s.Script || s['Script Başlığı'] || 'Script',
+                text: s.text || s.Metin || s['Script Metni'] || s.content || ''
+            })).filter(x=>x.text);
+        }
+    }catch(e){
+        // sessiz fallback
+    }
+}
+
+async function syncTelesalesScriptsToSheet(arr){
+    // Backend desteği varsa Sheets'e yaz; yoksa sessizce local'de kalsın.
+    try{
+        await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'saveTelesalesScripts', username: (currentUser||''), token: safeGetToken(), scripts: arr||[] })
+        }).then(r=>r.json()).then(d=>{
+            if(!d || d.result !== 'success') throw new Error(d && d.message ? d.message : 'fail');
+        });
+    }catch(e){
+        // sessiz fallback
+    }
 }
 
 async function openTelesalesArea(){
@@ -4059,6 +4104,8 @@ async function openTelesalesArea(){
 
     // Segment filtresi kaldırıldı
     renderTelesalesDataOffers();
+    // Scriptler: sheet'ten çekmeyi dene
+    await maybeLoadTelesalesScriptsFromSheet();
     renderTelesalesScripts();
     switchTelesalesTab('data');
 }
@@ -4350,6 +4397,8 @@ function addTelesalesScript(){
         const arr = getTelesalesScriptsStore();
         arr.unshift(res.value);
         saveTelesalesScriptsStore(arr);
+        // mümkünse sheet'e de yaz
+        syncTelesalesScriptsToSheet(arr);
         renderTelesalesScripts();
     });
 }
@@ -4377,6 +4426,7 @@ function editTelesalesScript(idx){
         if(!res.isConfirmed) return;
         arr[idx]=res.value;
         saveTelesalesScriptsStore(arr);
+        syncTelesalesScriptsToSheet(arr);
         renderTelesalesScripts();
     });
 }
@@ -4385,6 +4435,7 @@ function deleteTelesalesScript(idx){
         if(!res.isConfirmed) return;
         const arr = getTelesalesScriptsStore().filter((_,i)=>i!==idx);
         saveTelesalesScriptsStore(arr);
+        syncTelesalesScriptsToSheet(arr);
         renderTelesalesScripts();
     });
 }
