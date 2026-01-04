@@ -487,7 +487,33 @@ function copyText(t) {
 }
 document.addEventListener('contextmenu', event => event.preventDefault());
 document.onkeydown = function(e) { if(e.keyCode == 123) return false; }
-document.addEventListener('DOMContentLoaded', () => { checkSession(); });
+document.addEventListener('DOMContentLoaded', () => { checkSession(); wireGlobalUIEvents(); });
+
+function wireGlobalUIEvents(){
+    // Forgot password
+    const fp = document.getElementById('forgot-password-link');
+    if(fp){
+        fp.addEventListener('click', (e)=>{ e.preventDefault(); openForgotPasswordFlow(); });
+    }
+
+    // Delegated clicks
+    document.addEventListener('click', (e)=>{
+        const btn = e.target.closest('[data-action]');
+        if(!btn) return;
+        const action = btn.getAttribute('data-action');
+        if(action === 'open-objection'){
+            e.preventDefault();
+            const callId = btn.getAttribute('data-call-id');
+            openObjectionFlow(callId);
+        }
+        if(action === 'objection-admin-update'){
+            e.preventDefault();
+            const objId = btn.getAttribute('data-obj-id');
+            openAdminObjectionUpdate(objId);
+        }
+    });
+}
+
 // --- SESSION & LOGIN ---
 function checkSession() {
     const savedUser = localStorage.getItem("sSportUser");
@@ -2356,6 +2382,7 @@ function switchQualityTab(tabName, element) {
     // Veri Yükleme
     if (tabName === 'dashboard') loadQualityDashboard();
     else if (tabName === 'evaluations') fetchEvaluationsForAgent();
+    else if (tabName === 'objections') fetchObjections();
     // DÜZELTME: Feedback sekmesi açılırken önce Feedback_Logs çekilmeli
     else if (tabName === 'feedback') {
         populateFeedbackFilters();
@@ -3383,8 +3410,7 @@ async function assignTrainingPopup() {
                 docLink: document.getElementById('swal-t-doc').value || 'N/A',
                 docFile: (window.__trainingUpload && window.__trainingUpload.b64) ? window.__trainingUpload : null,
                 target: target,
-                targetUser: agent, // Kişiye özel atama için (backend bekler)
-                targetAgent: agent, // geriye dönük uyumluluk
+                targetAgent: agent, // Kişiye özel atama için
                 creator: currentUser,
                 startDate: formatDateToDDMMYYYY(document.getElementById('swal-t-start').value), 
                 endDate: formatDateToDDMMYYYY(document.getElementById('swal-t-end').value), 
@@ -3880,7 +3906,12 @@ async function fetchEvaluationsForAgent(forcedName, silent=false) {
                     <div class="evaluation-details-content" id="eval-details-${index}">
                         ${detailHtml}
                         <div style="margin-top:10px; background:#f8f9fa; padding:10px; border-radius:4px;">
-                            <strong>Feedback:</strong> ${evalItem.feedback || '-'}
+                            <strong>Feedback:</strong> ${evalItem.feedback || '-'} 
+                            <div style="margin-top:10px">
+                              <button class="q-objection-btn" data-action="open-objection" data-call-id="${escapeHtml(String(evalItem.callId))}">
+                                <i class="fas fa-exclamation-circle"></i> İtiraz Et
+                              </button>
+                            </div>
                         </div>
                     </div>
                 </div>`;
