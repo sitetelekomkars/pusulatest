@@ -810,7 +810,7 @@ function processRawData(rawData) {
         // News
         else if (type === 'news') {
             newsData.push({
-                date: formatDateToDDMMYYYY(i.Date), title: i.Title, desc: i.Text, type: i.Category, status: i.Status
+                date: formatDateToDDMMYYYY(i.Date), title: i.Title, desc: i.Text, type: i.Category, status: i.Status, image: i.Image
             });
         }
         // Sport
@@ -1391,11 +1391,12 @@ async function editNews(index) {
         title: 'Duyuruyu Düzenle',
         html: `<div class="card" style="text-align:left; border-left: 5px solid var(--secondary); padding:15px; background:#fff8e1;"><label style="font-weight:bold;">Başlık</label><input id="swal-title" class="swal2-input" style="width:100%; margin-bottom:10px;"
         value="${i.title || ''}"><div style="display:flex; gap:10px; margin-bottom:10px;"><div style="flex:1;"><label style="font-weight:bold;">Tarih</label><input id="swal-date" class="swal2-input" style="width:100%;"
-        value="${i.date || ''}"></div><div style="flex:1;"><label style="font-weight:bold;">Tür</label><select id="swal-type" class="swal2-input" style="width:100%;">${typeOptions}</select></div></div><label style="font-weight:bold;">Metin</label><textarea id="swal-desc" class="swal2-textarea" style="margin-bottom:10px;">${i.desc || ''}</textarea><label style="font-weight:bold;">Durum</label><select id="swal-status" class="swal2-input" style="width:100%;">${statusOptions}</select></div>`,
+        value="${i.date || ''}"></div><div style="flex:1;"><label style="font-weight:bold;">Tür</label><select id="swal-type" class="swal2-input" style="width:100%;">${typeOptions}</select></div></div><label style="font-weight:bold;">Metin</label><textarea id="swal-desc" class="swal2-textarea" style="margin-bottom:10px;">${i.desc || ''}</textarea><label style="font-weight:bold;">Görsel Linki</label><input id="swal-image" class="swal2-input" style="width:100%; margin-bottom:10px;" value="${i.image || ''}" placeholder="Görsel URL (opsiyonel)"><label style="font-weight:bold;">Durum</label><select id="swal-status" class="swal2-input" style="width:100%;">${statusOptions}</select></div>`,
         width: '600px', showCancelButton: true, confirmButtonText: 'Kaydet',
         preConfirm: () => [
             document.getElementById('swal-title').value, document.getElementById('swal-date').value,
-            document.getElementById('swal-desc').value, document.getElementById('swal-type').value, document.getElementById('swal-status').value
+            document.getElementById('swal-desc').value, document.getElementById('swal-type').value, document.getElementById('swal-status').value,
+            document.getElementById('swal-image').value
         ]
     });
     if (formValues) {
@@ -1404,6 +1405,7 @@ async function editNews(index) {
         if (formValues[2] !== i.desc) setTimeout(() => sendUpdate(originalTitle, "Text", formValues[2], 'news'), 500);
         if (formValues[3] !== i.type) setTimeout(() => sendUpdate(originalTitle, "Category", formValues[3], 'news'), 1000);
         if (formValues[4] !== i.status) setTimeout(() => sendUpdate(originalTitle, "Status", formValues[4], 'news'), 1500);
+        if (formValues[5] !== (i.image || '')) setTimeout(() => sendUpdate(originalTitle, "Image", formValues[5], 'news'), 1750);
         if (formValues[0] !== originalTitle) setTimeout(() => sendUpdate(originalTitle, "Title", formValues[0], 'news'), 2000);
     }
 }
@@ -1430,7 +1432,8 @@ function openNews() {
         let passiveStyle = i.status === 'Pasif' ? 'opacity:0.5; background:#eee;' : '';
         let passiveBadge = i.status === 'Pasif' ? '<span class="news-tag" style="background:#555; color:white;">PASİF</span>' : '';
         let editBtn = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" style="top:0; right:0; font-size:0.9rem; padding:4px;" onclick="event.stopPropagation(); editNews(${index})"></i>` : '';
-        c.innerHTML += `<div class="news-item" style="${passiveStyle}">${editBtn}<span class="news-date">${i.date}</span><span class="news-title">${i.title} ${passiveBadge}</span><div class="news-desc">${i.desc}</div><span class="news-tag ${cl}">${tx}</span></div>`;
+        let imageHtml = i.image ? `<div style="margin:10px 0;"><img src="${processImageUrl(i.image)}" loading="lazy" onerror="this.style.display='none'" style="max-width:100%; border-radius:8px; max-height:300px; object-fit:cover;"></div>` : '';
+        c.innerHTML += `<div class="news-item" style="${passiveStyle}">${editBtn}<span class="news-date">${i.date}</span><span class="news-title">${i.title} ${passiveBadge}</span>${imageHtml}<div class="news-desc">${i.desc}</div><span class="news-tag ${cl}">${tx}</span></div>`;
     });
 }
 
@@ -5991,6 +5994,7 @@ function __renderTechList(tabKey, items) {
         listEl.innerHTML = adminBar + filtered.map((it, idx) => {
             const body = [
                 it.icerik ? `<div class="q-doc-body">${it.icerik}</div>` : "",
+                it.image ? `<div style="margin:10px 0;"><img src="${processImageUrl(it.image)}" loading="lazy" onerror="this.style.display='none'" style="max-width:100%; border-radius:8px; max-height:300px; object-fit:cover;"></div>` : "",
                 it.adim ? `<div class="q-doc-meta"><b>Adım:</b> ${__escapeHtml(it.adim)}</div>` : "",
                 it.not ? `<div class="q-doc-meta"><b>Not:</b> ${__escapeHtml(it.not)}</div>` : "",
                 it.link ? `<div class="q-doc-meta"><b>Link:</b> <a href="${__escapeHtml(it.link)}" target="_blank">${__escapeHtml(it.link)}</a></div>` : ""
@@ -6093,6 +6097,7 @@ async function addTechDoc(tabKey) {
       <input id="td-step" class="swal2-input" placeholder="Adım (opsiyonel)">
       <input id="td-note" class="swal2-input" placeholder="Not (opsiyonel)">
       <input id="td-link" class="swal2-input" placeholder="Link (opsiyonel)">
+      <input id="td-image" class="swal2-input" placeholder="Görsel Linki (opsiyonel)">
     `,
         showCancelButton: true,
         confirmButtonText: 'Ekle',
@@ -6109,6 +6114,7 @@ async function addTechDoc(tabKey) {
                 adim: (document.getElementById('td-step').value || '').trim(),
                 not: (document.getElementById('td-note').value || '').trim(),
                 link: (document.getElementById('td-link').value || '').trim(),
+                image: (document.getElementById('td-image').value || '').trim(),
                 durum: 'Aktif'
             };
         }
@@ -6156,6 +6162,7 @@ async function editTechDoc(tabKey, baslik) {
       <input id="td-step" class="swal2-input" placeholder="Adım" value="${__escapeHtml(it.adim || '')}">
       <input id="td-note" class="swal2-input" placeholder="Not" value="${__escapeHtml(it.not || '')}">
       <input id="td-link" class="swal2-input" placeholder="Link" value="${__escapeHtml(it.link || '')}">
+      <input id="td-image" class="swal2-input" placeholder="Görsel Linki" value="${__escapeHtml(it.image || '')}">
     `,
         showCancelButton: true,
         confirmButtonText: 'Kaydet',
@@ -6172,6 +6179,7 @@ async function editTechDoc(tabKey, baslik) {
                 adim: (document.getElementById('td-step').value || '').trim(),
                 not: (document.getElementById('td-note').value || '').trim(),
                 link: (document.getElementById('td-link').value || '').trim(),
+                image: (document.getElementById('td-image').value || '').trim(),
                 durum: 'Aktif'
             };
         }
