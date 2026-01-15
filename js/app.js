@@ -801,7 +801,7 @@ function processRawData(rawData) {
         // Database (Cards)
         if (['card', 'bilgi', 'teknik', 'kampanya', 'ikna'].includes(type)) {
             database.push({
-                title: i.Title, category: i.Category, text: i.Text, script: i.Script, code: i.Code, link: i.Link, date: formatDateToDDMMYYYY(i.Date)
+                title: i.Title, category: i.Category, text: i.Text, script: i.Script, code: i.Code, link: i.Link, image: i.Image, date: formatDateToDDMMYYYY(i.Date)
             });
         }
         // News
@@ -945,10 +945,13 @@ function renderCards(data) {
             const editIconHtml = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" onclick="editContent(${index})" style="display:block;"></i>` : '';
             let formattedText = (item.text || "").replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<b>$1</b>');
 
+            const imgNotif = item.image ? `<div style="margin-bottom:8px;"><img src="${item.image}" style="max-width:100%;border-radius:6px;max-height:150px;object-fit:cover;"></div>` : '';
+
             return `<div class="card ${item.category}">${newBadge}
                 <div class="icon-wrapper">${editIconHtml}<i class="${favClass} fav-icon" onclick="toggleFavorite('${safeTitle}')"></i></div>
                 <div class="card-header"><h3 class="card-title">${highlightText(item.title)}</h3><span class="badge">${item.category}</span></div>
-                <div class="card-content" onclick="showCardDetail('${safeTitle}', '${escapeForJsString(item.text)}')">
+                <div class="card-content" onclick="showCardDetailByIndex(${index})">
+                    ${imgNotif}
                     <div class="card-text-truncate">${highlightText(formattedText)}</div>
                     <div style="font-size:0.8rem; color:#999; margin-top:5px; text-align:right;">(Tamamını oku)</div>
                 </div>
@@ -1080,11 +1083,35 @@ function showCardDetail(title, text) {
     }
 
     const safeText = (text ?? '').toString();
+    // Image support (passed via different flow usually, but handle basic text case)
     Swal.fire({
         title: title,
         html: `<div style="text-align:left; font-size:1rem; line-height:1.6;">${escapeHtml(safeText).replace(/\n/g, '<br>')}</div>`,
         showCloseButton: true, showConfirmButton: false, width: '600px', background: '#f8f9fa'
     });
+}
+
+function showCardDetailByIndex(index) {
+    const item = activeCards[index];
+    if (!item) return;
+
+    const t = item.title || 'Detay';
+    const body = (item.text || '').toString();
+    const script = (item.script || '').toString();
+    const link = (item.link || '').toString();
+    const img = (item.image || '').toString();
+
+    const html = `
+      <div style="text-align:left; font-size:1rem; line-height:1.6; white-space:pre-line;">
+        ${img ? `<div style="margin-bottom:15px;text-align:center;"><img src="${escapeHtml(img)}" style="max-width:100%;border-radius:8px;"></div>` : ''}
+        ${escapeHtml(body).replace(/\n/g, '<br>')}
+        ${link ? `<div style="margin-top:12px"><a href="${escapeHtml(link)}" target="_blank" rel="noreferrer" style="font-weight:800;color:var(--info);text-decoration:none"><i class="fas fa-link"></i> Link</a></div>` : ''}
+        ${script ? `<div class="tech-script-box" style="margin-top:12px">
+            <span class="tech-script-label">Müşteriye iletilecek:</span>${escapeHtml(script).replace(/\n/g, '<br>')}
+          </div>` : ''}
+      </div>`;
+
+    Swal.fire({ title: t, html, showCloseButton: true, showConfirmButton: false, width: '820px', background: '#f8f9fa' });
 }
 
 function toggleEditMode() {
