@@ -679,6 +679,7 @@ function girisYap() {
 }
 function checkAdmin(role) {
     const addCardDropdown = document.getElementById('dropdownAddCard');
+    const imageDropdown = document.getElementById('dropdownImage');
     const quickEditDropdown = document.getElementById('dropdownQuickEdit');
 
     isAdminMode = (role === "admin" || role === "locadmin");
@@ -711,6 +712,7 @@ function checkAdmin(role) {
 
     if (isAdminMode) {
         if (addCardDropdown) addCardDropdown.style.display = 'flex';
+        if (imageDropdown) imageDropdown.style.display = 'flex';
         if (quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
             // İstek: Yetki Yönetimi sadece LocAdmin rolünde görünsün
@@ -721,6 +723,7 @@ function checkAdmin(role) {
         }
     } else {
         if (addCardDropdown) addCardDropdown.style.display = 'none';
+        if (imageDropdown) imageDropdown.style.display = 'none';
         if (quickEditDropdown) quickEditDropdown.style.display = 'none';
         const perms = document.getElementById('dropdownPerms');
         if (perms) perms.style.display = 'none';
@@ -1298,6 +1301,7 @@ async function editContent(index) {
             <div class="card-actions" style="margin-top:15px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                 <div style="position:relative;"><i class="fas fa-code" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-code" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" value="${item.code || ''}" placeholder="Kod"></div>
                 <div style="position:relative;"><i class="fas fa-link" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-link" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px;" value="${item.link || ''}" placeholder="Link"></div>
+                <div style="position:relative;grid-column: 1 / -1;"><i class="fas fa-image" style="position:absolute; left:10px; top:10px; color:#aaa;"></i><input id="swal-image" class="swal2-input" style="margin:0; height:35px; font-size:0.85rem; padding-left:30px; width: 100%; box-sizing: border-box;" value="${item.image || ''}" placeholder="Görsel Linki (Drive vb.)"></div>
             </div>
         </div>`,
         width: '700px', showCancelButton: true, confirmButtonText: '<i class="fas fa-save"></i> Kaydet', cancelButtonText: 'İptal', focusConfirm: false,
@@ -1314,7 +1318,8 @@ async function editContent(index) {
                 text: document.getElementById('swal-text').value,
                 script: document.getElementById('swal-script').value,
                 code: document.getElementById('swal-code').value,
-                link: document.getElementById('swal-link').value
+                link: document.getElementById('swal-link').value,
+                image: document.getElementById('swal-image').value
             }
         }
     });
@@ -1324,6 +1329,7 @@ async function editContent(index) {
         if (formValues.script !== (item.script || '').replace(/<br>/g, '\n')) setTimeout(() => sendUpdate(item.title, "Script", formValues.script, 'card'), 1000);
         if (formValues.code !== (item.code || '')) setTimeout(() => sendUpdate(item.title, "Code", formValues.code, 'card'), 1500);
         if (formValues.link !== (item.link || '')) setTimeout(() => sendUpdate(item.title, "Link", formValues.link, 'card'), 2000);
+        if (formValues.image !== (item.image || '')) setTimeout(() => sendUpdate(item.title, "Image", formValues.image, 'card'), 2250);
         if (formValues.title !== item.title) setTimeout(() => sendUpdate(item.title, "Title", formValues.title, 'card'), 2500);
     }
 }
@@ -6260,3 +6266,66 @@ window.switchTechTab = async function (tab) {
 
 // expose for onclick
 try { window.openMenuPermissions = openMenuPermissions; } catch (e) { }
+
+// --- GÖRSEL YÜKLEME ARACI (Admin/LocAdmin) ---
+function openImageUploader() {
+    Swal.fire({
+        title: 'Görsel Yükle (Drive)',
+        html: `
+        <div style="font-size:0.9rem;color:#555;margin-bottom:15px">
+           Seçtiğiniz görsel, Drive'daki doküman klasörüne yüklenecek ve size bir link verilecektir.
+           Bu linki "Image" sütununa yapıştırarak kartlarda kullanabilirsiniz.
+        </div>
+        <input type="file" id="swal-img-input" accept="image/*" class="swal2-file" style="display:block;margin:0 auto;">
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Yükle',
+        cancelButtonText: 'İptal',
+        preConfirm: () => {
+            const fileInput = document.getElementById('swal-img-input');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                Swal.showValidationMessage('Lütfen bir görsel seçin.');
+                return;
+            }
+            const file = fileInput.files[0];
+            // Base64 okuma
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const b64 = reader.result.split(',')[1]; // data:image/png;base64, kısmını at
+                    resolve({
+                        base64: b64,
+                        mimeType: file.type,
+                        fileName: file.name
+                    });
+                };
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+    }).then(result => {
+        if (result.isConfirmed) {
+            const fileData = result.value;
+            Swal.fire({ title: 'Yükleniyor...', didOpen: () => { Swal.showLoading() } });
+
+            apiCall("uploadImage", fileData).then(res => {
+                if (res.result === "success") {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Yüklendi!',
+                        html: `
+                           <div>Görsel Linki:</div>
+                           <input type="text" value="${res.url}" id="uploaded-img-url" class="swal2-input" readonly>
+                           <button class="btn btn-copy" style="margin-top:10px" onclick="copyText(document.getElementById('uploaded-img-url').value)">Link'i Kopyala</button>
+                         `,
+                        confirmButtonText: 'Tamam'
+                    });
+                } else {
+                    Swal.fire('Hata', res.message || 'Yüklenemedi.', 'error');
+                }
+            }).catch(e => {
+                Swal.fire('Hata', 'Sunucu hatası: ' + e, 'error');
+            });
+        }
+    });
+}
