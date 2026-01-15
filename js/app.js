@@ -144,13 +144,23 @@ function getMyRole() { return normalizeRole(localStorage.getItem("sSportRole") |
 function isAllowedByPerm(perm) {
     if (!perm) return true;
     if (perm.enabled === false) return false;
-    const role = getMyRole(), grp = getMyGroup();
+
+    const role = getMyRole();
+    const grp = getMyGroup();
     const roles = perm.allowedRoles || [];
     let groups = perm.allowedGroups || [];
+
     // "ALL" varsa herkese açık kabul et
     if (groups.indexOf("ALL") > -1) groups = [];
-    if (roles.length && roles.indexOf(role) === -1) return false;
+
+    // Grup filtresi
     if (groups.length && groups.indexOf(grp) === -1) return false;
+
+    // Rol filtresi sadece qusers için çalışsın
+    if (normalizeRole(role) === 'qusers') {
+        if (roles.length && roles.indexOf('qusers') === -1) return false;
+    }
+
     return true;
 }
 function applyMenuPermissions() {
@@ -221,11 +231,19 @@ function openMenuPermissions() {
 
         const menus = (res.items || []);
 
+        
         const rowsHtml = menus.map(m => {
             const allowed = normalizeList(m.allowedGroups);
             const enabled = !(m.enabled === false || String(m.enabled).toUpperCase() === "FALSE");
+
+            // Qusers rolü için mevcut izin
+            const roleList = normalizeList(m.allowedRoles);
+            const qusersAllowed = roleList.indexOf('qusers') > -1;
+
             const cells = groups.map(g => {
-                const checked = (allowed.length === 0 || allowed.indexOf("ALL") > -1) ? true : (allowed.indexOf(g) > -1);
+                const checked = (allowed.length === 0 || allowed.indexOf("ALL") > -1)
+                    ? true
+                    : (allowed.indexOf(g) > -1);
                 return `<td style="text-align:center">
           <input type="checkbox" data-mk="${m.key}" data-g="${g}" ${checked ? 'checked' : ''}/>
         </td>`;
@@ -233,13 +251,17 @@ function openMenuPermissions() {
             return `<tr>
         <td style="font-weight:600">${escapeHtml(m.title || m.label || m.key)}</td>
         <td style="text-align:center"><input type="checkbox" data-enabled="${m.key}" ${enabled ? 'checked' : ''}/></td>
+        <td style="text-align:center">
+          <input type="checkbox" data-role-qusers="${m.key}" ${qusersAllowed ? 'checked' : ''}/>
+        </td>
         ${cells}
       </tr>`;
         }).join('');
 
         const tableHtml = `
       <div style="text-align:left;margin-bottom:10px;color:#444">
-        Menü/sekme bazlı “hangi grup görsün” ayarı. İşaretli olmayan gruplar menüyü görmez.
+        Menü/sekme bazlı “hangi grup görsün” ayarı.
+        <br><strong>Qusers</strong> sütunu ile kalite kullanıcılarının hangi menüleri görebileceğini ayrıca belirleyebilirsin.
       </div>
       <div style="max-height:420px;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:12px">
         <table style="width:100%;border-collapse:collapse">
@@ -247,6 +269,7 @@ function openMenuPermissions() {
             <tr>
               <th style="text-align:left;padding:12px">Menü</th>
               <th style="text-align:center;padding:12px;width:90px">Aktif</th>
+              <th style="text-align:center;padding:12px;width:120px">Qusers (Kalite)</th>
               ${groups.map(g => `<th style="text-align:center;padding:12px">${escapeHtml(g)}</th>`).join('')}
             </tr>
           </thead>
@@ -265,7 +288,9 @@ function openMenuPermissions() {
             cancelButtonText: "Vazgeç",
             preConfirm: () => {
                 const out = {};
-                menus.forEach(m => { out[m.key] = { allowedGroups: [], enabled: true }; });
+                menus.forEach(m => {
+                    out[m.key] = { allowedGroups: [], enabled: true, allowedRoles: [] };
+                });
                 // enabled
                 document.querySelectorAll('input[type="checkbox"][data-enabled]').forEach(cb => {
                     const k = cb.getAttribute('data-enabled');
@@ -276,6 +301,14 @@ function openMenuPermissions() {
                     const k = cb.getAttribute('data-mk');
                     const g = cb.getAttribute('data-g');
                     if (cb.checked && out[k]) out[k].allowedGroups.push(g);
+                });
+                // Qusers rolü
+                document.querySelectorAll('input[type="checkbox"][data-role-qusers]').forEach(cb => {
+                    const k = cb.getAttribute('data-role-qusers');
+                    if (!out[k]) return;
+                    if (cb.checked) {
+                        out[k].allowedRoles.push('qusers');
+                    }
                 });
                 // Hepsi seçiliyse "ALL" olarak yaz (daha temiz)
                 Object.keys(out).forEach(k => {
@@ -588,14 +621,6 @@ function checkSession() {
             loadWizardData();
             loadTechWizardData();
 
-            // Eğer qusers rolündeyse, ana içeriği gizle ve kalite modülünü aç
-            if (savedRole === 'qusers') {
-                const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
-                const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
-                const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
-
-                openQualityArea(); // Yeni Full Screen Modül
-            }
         }
     }
 }
@@ -658,12 +683,7 @@ function girisYap() {
                         loadWizardData();
                         loadTechWizardData();
 
-                        if (savedRole === 'qusers') {
-                            const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
-                            const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
-                            const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
-                            openQualityArea();
-                        }
+                        
                     }
                 }
             } else {
@@ -687,27 +707,20 @@ function checkAdmin(role) {
     isEditingActive = false;
     document.body.classList.remove('editing');
 
-    const isQualityUser = (role === 'qusers');
+    
     const filterButtons = document.querySelectorAll('.filter-btn:not(.btn-fav)');
+    filterButtons.forEach(btn => {
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+        btn.style.filter = 'none';
+    });
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.disabled = false;
+        searchInput.placeholder = "İçeriklerde hızlı ara...";
+        searchInput.style.opacity = '1';
+    }
 
-    if (isQualityUser) {
-        filterButtons.forEach(btn => {
-            if (btn.innerText.indexOf('Kalite') === -1) {
-                btn.style.opacity = '0.5';
-                btn.style.pointerEvents = 'none';
-                btn.style.filter = 'grayscale(100%)';
-            } else { btn.style.filter = 'none'; }
-        });
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) { searchInput.disabled = true; searchInput.placeholder = "Arama devre dışı (Kalite Modu)"; searchInput.style.opacity = '0.6'; }
-    } else {
-        filterButtons.forEach(btn => {
-            btn.style.opacity = '1';
-            btn.style.pointerEvents = 'auto';
-            btn.style.filter = 'none';
-        });
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) { searchInput.disabled = false; searchInput.placeholder = "İçeriklerde hızlı ara..."; searchInput.style.opacity = '1'; }
     }
 
     if (isAdminMode) {
