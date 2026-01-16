@@ -134,7 +134,6 @@ function normalizeGroup(v) {
         .replaceAll('ç', 'c').replaceAll('Ç', 'c');
     // map common variants to display names used in permissions table
     if (tr.includes('telesat')) return 'Telesatış';
-    if (tr.includes('teknik')) return 'Teknik';
     if (tr.includes('chat')) return 'Chat';
     return String(v || '').trim();
 }
@@ -6468,8 +6467,8 @@ async function openMenuPermissions() {
 
         allRolePermissions = res.permissions || [];
 
-        // Düzenlenebilir roller + Takımlar
-        const roles = ["admin", "qusers", "users", "chat", "telesatış", "teknik"];
+        // ✅ Dinamik Roller: Backend'den (Users sayfasından) gelen grupları kullan
+        const roles = res.groups || ["admin", "qusers", "users"];
         let activeTabIndex = 0;
 
         const renderRbacContent = (roleIndex) => {
@@ -6489,7 +6488,6 @@ async function openMenuPermissions() {
                     cat: "Sayfa Erişimi", items: [
                         { key: "home", label: "Ana Sayfa (Kartlar)", perms: ["View"] },
                         { key: "search", label: "Arama Çubuğu", perms: ["View"] },
-                        { key: "tech", label: "Teknik Sayfası", perms: ["View"] },
                         { key: "telesales", label: "TeleSatış Sayfası", perms: ["View"] },
                         { key: "persuasion", label: "İkna Sayfası", perms: ["View"] },
                         { key: "campaign", label: "Kampanya Sayfası", perms: ["View"] },
