@@ -717,28 +717,8 @@ function checkAdmin(role) {
     isEditingActive = false;
     document.body.classList.remove('editing');
 
-    const isQualityUser = (role === 'qusers');
-    const filterButtons = document.querySelectorAll('.filter-btn:not(.btn-fav)');
+    // Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
 
-    if (isQualityUser) {
-        filterButtons.forEach(btn => {
-            if (btn.innerText.indexOf('Kalite') === -1) {
-                btn.style.opacity = '0.5';
-                btn.style.pointerEvents = 'none';
-                btn.style.filter = 'grayscale(100%)';
-            } else { btn.style.filter = 'none'; }
-        });
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) { searchInput.disabled = true; searchInput.placeholder = "Arama devre dışı (Kalite Modu)"; searchInput.style.opacity = '0.6'; }
-    } else {
-        filterButtons.forEach(btn => {
-            btn.style.opacity = '1';
-            btn.style.pointerEvents = 'auto';
-            btn.style.filter = 'none';
-        });
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) { searchInput.disabled = false; searchInput.placeholder = "İçeriklerde hızlı ara..."; searchInput.style.opacity = '1'; }
-    }
 
     if (isAdminMode) {
         if (addCardDropdown) addCardDropdown.style.display = 'flex';
@@ -6508,11 +6488,13 @@ async function openMenuPermissions() {
                 {
                     cat: "Sayfa Erişimi", items: [
                         { key: "home", label: "Ana Sayfa (Kartlar)", perms: ["View"] },
+                        { key: "search", label: "Arama Çubuğu", perms: ["View"] },
                         { key: "tech", label: "Teknik Sayfası", perms: ["View"] },
                         { key: "telesales", label: "TeleSatış Sayfası", perms: ["View"] },
                         { key: "persuasion", label: "İkna Sayfası", perms: ["View"] },
                         { key: "campaign", label: "Kampanya Sayfası", perms: ["View"] },
                         { key: "info", label: "Bilgi Sayfası", perms: ["View"] },
+                        { key: "news", label: "Duyurular", perms: ["View"] },
                         { key: "quality", label: "Kalite Paneli", perms: ["View"] },
                         { key: "shift", label: "Vardiyam", perms: ["View"] },
                         { key: "broadcast", label: "Yayın Akışı", perms: ["View"] },
@@ -6701,11 +6683,13 @@ function applyPermissionsToUI() {
 
     const menuMap = {
         "home": "home",
+        "search": "search",
         "tech": "tech",
         "telesales": "telesales",
         "persuasion": "persuasion",
         "campaign": "campaign",
         "info": "info",
+        "news": "news",
         "quality": "quality",
         "shift": "shift",
         "broadcast": "broadcast",
@@ -6715,11 +6699,23 @@ function applyPermissionsToUI() {
     };
 
     Object.keys(menuMap).forEach(key => {
-        const btn = document.querySelector(`[data-menu-key="${key}"]`);
-        if (btn && !hasPerm(menuMap[key], "View")) {
-            btn.style.display = 'none';
-        } else if (btn) {
-            btn.style.display = ''; // Yetki varsa geri getir
-        }
+        const elements = document.querySelectorAll(`[data-menu-key="${key}"]`);
+        elements.forEach(el => {
+            if (!hasPerm(menuMap[key], "View")) {
+                el.style.display = 'none';
+            } else {
+                el.style.display = '';
+            }
+        });
+
+        // Hızlı kısayollar (ana sayfa chips) - data-shortcut-key ile de eşleşebilirler
+        const shortcuts = document.querySelectorAll(`[data-shortcut-key="${key}"]`);
+        shortcuts.forEach(sc => {
+            if (!hasPerm(menuMap[key], "View")) {
+                sc.style.display = 'none';
+            } else {
+                sc.style.display = '';
+            }
+        });
     });
 }
