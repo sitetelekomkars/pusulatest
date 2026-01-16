@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxt1GN8hhnrsDheB5a_xUn8r_RxjmqB-tulhOtRX6yhZB84zgb4li0J9oyE5fQSVEPE/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -756,6 +756,11 @@ function checkAdmin(role) {
             // İstek: Yetki Yönetimi sadece LocAdmin rolünde görünsün
             const perms = document.getElementById('dropdownPerms');
             if (perms) perms.style.display = (isLocAdmin ? 'flex' : 'none');
+
+            // Aktif Kullanıcılar butonu (admin ve locadmin için)
+            const activeUsersBtn = document.getElementById('dropdownActiveUsers');
+            if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
+
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
         }
@@ -765,6 +770,8 @@ function checkAdmin(role) {
         if (quickEditDropdown) quickEditDropdown.style.display = 'none';
         const perms = document.getElementById('dropdownPerms');
         if (perms) perms.style.display = 'none';
+        const activeUsersBtn = document.getElementById('dropdownActiveUsers');
+        if (activeUsersBtn) activeUsersBtn.style.display = 'none';
     }
 }
 function logout() {
@@ -6338,4 +6345,133 @@ function openImageUploader() {
             });
         }
     });
+}
+
+// ============================================================
+// --- AKTİF KULLANICI YÖNETİMİ (v14.1) ---
+// ============================================================
+
+async function openActiveUsersPanel() {
+    try {
+        Swal.fire({ title: 'Yükleniyor...', didOpen: () => { Swal.showLoading() } });
+
+        const res = await apiCall("getActiveUsers", {});
+
+        if (!res || res.result !== "success") {
+            Swal.fire("Hata", "Aktif kullanıcılar yüklenemedi", "error");
+            return;
+        }
+
+        const users = res.users || [];
+
+        if (users.length === 0) {
+            Swal.fire({
+                title: "👥 Aktif Kullanıcılar",
+                html: '<p style="color:#999;padding:20px">Şu an aktif kullanıcı yok.</p>',
+                confirmButtonText: 'Tamam'
+            });
+            return;
+        }
+
+        const rowsHtml = users.map((u, idx) => {
+            const loginTime = u.loginTime || '-';
+            const lastActivity = u.lastActivity || '-';
+            const ip = u.ip || '-';
+
+            return `
+                <tr style="border-bottom:1px solid #eee">
+                    <td style="padding:12px;text-align:center">${idx + 1}</td>
+                    <td style="padding:12px;font-weight:600">${escapeHtml(u.username)}</td>
+                    <td style="padding:12px;text-align:center">
+                        <span style="display:inline-block;padding:4px 8px;border-radius:4px;font-size:0.85rem;background:${u.role === 'admin' ? '#4caf50' :
+                    u.role === 'locadmin' ? '#2196f3' :
+                        u.role === 'qusers' ? '#ff9800' : '#9e9e9e'
+                };color:#fff">${escapeHtml(u.role)}</span>
+                    </td>
+                    <td style="padding:12px;font-size:0.9rem">${escapeHtml(u.group || '-')}</td>
+                    <td style="padding:12px;font-size:0.85rem;color:#666">${escapeHtml(loginTime)}</td>
+                    <td style="padding:12px;font-size:0.85rem;color:#666">${escapeHtml(ip)}</td>
+                    <td style="padding:12px;text-align:center">
+                        <button 
+                            onclick="kickUser('${escapeForJsString(u.username)}', '${escapeForJsString(u.token)}')" 
+                            style="padding:6px 12px;background:#d32f2f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem"
+                            title="Kullanıcıyı sistemden at">
+                            <i class="fas fa-sign-out-alt"></i> Çıkart
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const tableHtml = `
+            <div style="max-height:500px;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:12px">
+                <table style="width:100%;border-collapse:collapse">
+                    <thead style="position:sticky;top:0;background:#f7f7f7;z-index:1">
+                        <tr>
+                            <th style="padding:12px;text-align:center">#</th>
+                            <th style="padding:12px;text-align:left">Kullanıcı</th>
+                            <th style="padding:12px;text-align:center">Rol</th>
+                            <th style="padding:12px;text-align:left">Grup</th>
+                            <th style="padding:12px;text-align:left">Giriş Zamanı</th>
+                            <th style="padding:12px;text-align:left">IP Adresi</th>
+                            <th style="padding:12px;text-align:center">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:15px;padding:10px;background:#e3f2fd;border-radius:8px;font-size:0.9rem;color:#1976d2">
+                <i class="fas fa-info-circle"></i> Toplam <strong>${users.length}</strong> aktif kullanıcı
+            </div>
+        `;
+
+        Swal.fire({
+            title: "👥 Aktif Kullanıcılar",
+            html: tableHtml,
+            width: 1000,
+            showConfirmButton: true,
+            confirmButtonText: "Kapat"
+        });
+
+    } catch (e) {
+        Swal.fire("Hata", "Bir hata oluştu: " + e.message, "error");
+    }
+}
+
+async function kickUser(username, token) {
+    const result = await Swal.fire({
+        title: 'Emin misiniz?',
+        html: `<strong>${username}</strong> kullanıcısını sistemden çıkartmak istediğinizden emin misiniz?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Evet, Çıkart',
+        cancelButtonText: 'Vazgeç',
+        confirmButtonColor: '#d32f2f'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        Swal.fire({ title: 'İşleniyor...', didOpen: () => { Swal.showLoading() } });
+
+        const res = await apiCall("kickUser", { targetUsername: username, targetToken: token });
+
+        if (res && res.result === "success") {
+            Swal.fire({
+                icon: 'success',
+                title: 'Başarılı',
+                text: `${username} sistemden çıkartıldı.`,
+                timer: 2000
+            }).then(() => {
+                // Paneli yenile
+                openActiveUsersPanel();
+            });
+        } else {
+            Swal.fire("Hata", res.message || "Kullanıcı çıkartılamadı", "error");
+        }
+    } catch (e) {
+        Swal.fire("Hata", "Bir hata oluştu: " + e.message, "error");
+    }
 }
