@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxt1GN8hhnrsDheB5a_xUn8r_RxjmqB-tulhOtRX6yhZB84zgb4li0J9oyE5fQSVEPE/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -5930,11 +5930,11 @@ function __normalizeTechCategory(cat) {
 
 function processImageUrl(url) {
     if (!url) return '';
-    if (url.includes('drive.google.com') && (url.includes('/view') || url.includes('/file/d/'))) {
-        let id = '';
-        const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (m && m[1]) id = m[1];
-        if (id) return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1000';
+    let id = '';
+    const m = url.match(/\/d\/([-\w]+)/) || url.match(/id=([-\w]+)/);
+    if (m && m[1]) id = m[1];
+    if (id && url.includes('drive.google.com')) {
+        return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1000';
     }
     return url;
 }
