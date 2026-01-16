@@ -124,18 +124,18 @@ function normalizeRole(v) {
     return String(v || '').trim().toLowerCase();
 }
 function normalizeGroup(v) {
-    // normalize Turkish chars & case so comparisons work
-    const s = String(v || '').trim().toLowerCase();
-    const tr = s.replaceAll('ş', 's').replaceAll('Ş', 's')
-        .replaceAll('ı', 'i').replaceAll('İ', 'i')
-        .replaceAll('ğ', 'g').replaceAll('Ğ', 'g')
-        .replaceAll('ü', 'u').replaceAll('Ü', 'u')
-        .replaceAll('ö', 'o').replaceAll('Ö', 'o')
-        .replaceAll('ç', 'c').replaceAll('Ç', 'c');
+    if (!v) return "";
+    // Önce Türkçe karakterleri temizle, sonra küçült (i̇ gibi dotted yapıları önlemek için)
+    let s = String(v).trim()
+        .replace(/İ/g, 'i').replace(/ı/g, 'i')
+        .replace(/Ş/g, 's').replace(/ş/g, 's')
+        .replace(/Ğ/g, 'g').replace(/ğ/g, 'g')
+        .replace(/Ü/g, 'u').replace(/ü/g, 'u')
+        .replace(/Ö/g, 'o').replace(/ö/g, 'o')
+        .replace(/Ç/g, 'c').replace(/ç/g, 'c');
 
-    // Sistem artık dinamik olduğu için sabit eşlemelere gerek yok.
-    // Sadece ilk harfi büyüterek estetik bir isim döndürelim.
-    return tr.charAt(0).toUpperCase() + tr.slice(1);
+    const lower = s.toLowerCase();
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function normalizeList(v) {
@@ -6622,20 +6622,24 @@ async function openMenuPermissions() {
     }
 }
 
-/**
- * Uygulama genelinde yetki kontrolü yapan yardımcı fonksiyon.
- * LocAdmin her zaman true döner.
- */
 function hasPerm(resource, permission = "All") {
-    const role = (getMyRole() || "").toLowerCase();
+    const role = (getMyRole() || "").trim().toLowerCase();
     const rawGroup = localStorage.getItem("sSportGroup") || "";
-    const group = normalizeGroup(rawGroup).toLowerCase();
+
+    // Güçlü Normalizasyon (Türkçe karakter ve i̇ karmaşasını bitirir)
+    function clean(str) {
+        return String(str || "").toLowerCase()
+            .replace(/i̇/g, 'i').replace(/ı/g, 'i').replace(/ş/g, 's')
+            .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c').trim();
+    }
+
+    const group = clean(rawGroup);
 
     if (role === "locadmin") return true;
 
     // 1. Önce grup (takım) bazlı yetkiye bak
     const groupPerm = allRolePermissions.find(p =>
-        p.role === group &&
+        clean(p.role) === group &&
         (p.resource === resource || p.resource === "All") &&
         (p.permission === permission || p.permission === "All")
     );
