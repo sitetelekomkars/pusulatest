@@ -6510,9 +6510,14 @@ async function openMenuPermissions() {
                         { key: "home", label: "Ana Sayfa (Kartlar)", perms: ["View"] },
                         { key: "tech", label: "Teknik Sayfası", perms: ["View"] },
                         { key: "telesales", label: "TeleSatış Sayfası", perms: ["View"] },
-                        { key: "kalite", label: "Kalite Paneli", perms: ["View"] },
+                        { key: "persuasion", label: "İkna Sayfası", perms: ["View"] },
+                        { key: "campaign", label: "Kampanya Sayfası", perms: ["View"] },
+                        { key: "info", label: "Bilgi Sayfası", perms: ["View"] },
+                        { key: "quality", label: "Kalite Paneli", perms: ["View"] },
                         { key: "shift", label: "Vardiyam", perms: ["View"] },
                         { key: "broadcast", label: "Yayın Akışı", perms: ["View"] },
+                        { key: "guide", label: "Spor Rehberi", perms: ["View"] },
+                        { key: "return", label: "İade Asistanı", perms: ["View"] },
                         { key: "game", label: "Oyun Merkezi", perms: ["View"] }
                     ]
                 },
@@ -6698,15 +6703,19 @@ function applyPermissionsToUI() {
         "home": "home",
         "tech": "tech",
         "telesales": "telesales",
-        "kalite": "kalite",
+        "persuasion": "persuasion",
+        "campaign": "campaign",
+        "info": "info",
+        "quality": "quality",
         "shift": "shift",
         "broadcast": "broadcast",
+        "guide": "guide",
+        "return": "return",
         "game": "game"
     };
 
     Object.keys(menuMap).forEach(key => {
         const btn = document.querySelector(`[data-menu-key="${key}"]`);
-        // Özel Durum: Ana sayfa butonu home keyine bakıyor
         if (btn && !hasPerm(menuMap[key], "View")) {
             btn.style.display = 'none';
         } else if (btn) {
