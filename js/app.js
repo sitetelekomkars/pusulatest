@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxt1GN8hhnrsDheB5a_xUn8r_RxjmqB-tulhOtRX6yhZB84zgb4li0J9oyE5fQSVEPE/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -144,27 +144,15 @@ function getMyRole() { return normalizeRole(localStorage.getItem("sSportRole") |
 function isAllowedByPerm(perm) {
     if (!perm) return true;
     if (perm.enabled === false) return false;
-
-    const role = getMyRole();
-    const grp = getMyGroup();
+    const role = getMyRole(), grp = getMyGroup();
     const roles = perm.allowedRoles || [];
     let groups = perm.allowedGroups || [];
-
     // "ALL" varsa herkese açık kabul et
     if (groups.indexOf("ALL") > -1) groups = [];
-
-    // Grup filtresi
+    if (roles.length && roles.indexOf(role) === -1) return false;
     if (groups.length && groups.indexOf(grp) === -1) return false;
-
-    // Rol filtresi sadece qusers için çalışsın
-    // Qusers kullanıcıları, sadece AllowedRoles içinde 'qusers' açıkça işaretlenmiş menüleri görebilsin.
-    if (normalizeRole(role) === 'qusers') {
-        if (!roles.length || roles.indexOf('qusers') === -1) return false;
-    }
-
     return true;
 }
-
 function applyMenuPermissions() {
     try {
         const navButtons = document.querySelectorAll('[data-menu-key]');
@@ -233,19 +221,11 @@ function openMenuPermissions() {
 
         const menus = (res.items || []);
 
-        
         const rowsHtml = menus.map(m => {
             const allowed = normalizeList(m.allowedGroups);
             const enabled = !(m.enabled === false || String(m.enabled).toUpperCase() === "FALSE");
-
-            // Qusers rolü için mevcut izin
-            const roleList = normalizeList(m.allowedRoles);
-            const qusersAllowed = roleList.indexOf('qusers') > -1;
-
             const cells = groups.map(g => {
-                const checked = (allowed.length === 0 || allowed.indexOf("ALL") > -1)
-                    ? true
-                    : (allowed.indexOf(g) > -1);
+                const checked = (allowed.length === 0 || allowed.indexOf("ALL") > -1) ? true : (allowed.indexOf(g) > -1);
                 return `<td style="text-align:center">
           <input type="checkbox" data-mk="${m.key}" data-g="${g}" ${checked ? 'checked' : ''}/>
         </td>`;
@@ -253,17 +233,13 @@ function openMenuPermissions() {
             return `<tr>
         <td style="font-weight:600">${escapeHtml(m.title || m.label || m.key)}</td>
         <td style="text-align:center"><input type="checkbox" data-enabled="${m.key}" ${enabled ? 'checked' : ''}/></td>
-        <td style="text-align:center">
-          <input type="checkbox" data-role-qusers="${m.key}" ${qusersAllowed ? 'checked' : ''}/>
-        </td>
         ${cells}
       </tr>`;
         }).join('');
 
         const tableHtml = `
       <div style="text-align:left;margin-bottom:10px;color:#444">
-        Menü/sekme bazlı “hangi grup görsün” ayarı.
-        <br><strong>Qusers</strong> sütunu ile kalite kullanıcılarının hangi menüleri görebileceğini ayrıca belirleyebilirsin.
+        Menü/sekme bazlı “hangi grup görsün” ayarı. İşaretli olmayan gruplar menüyü görmez.
       </div>
       <div style="max-height:420px;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:12px">
         <table style="width:100%;border-collapse:collapse">
@@ -271,7 +247,6 @@ function openMenuPermissions() {
             <tr>
               <th style="text-align:left;padding:12px">Menü</th>
               <th style="text-align:center;padding:12px;width:90px">Aktif</th>
-              <th style="text-align:center;padding:12px;width:120px">Qusers (Kalite)</th>
               ${groups.map(g => `<th style="text-align:center;padding:12px">${escapeHtml(g)}</th>`).join('')}
             </tr>
           </thead>
@@ -290,9 +265,7 @@ function openMenuPermissions() {
             cancelButtonText: "Vazgeç",
             preConfirm: () => {
                 const out = {};
-                menus.forEach(m => {
-                    out[m.key] = { allowedGroups: [], enabled: true, allowedRoles: [] };
-                });
+                menus.forEach(m => { out[m.key] = { allowedGroups: [], enabled: true }; });
                 // enabled
                 document.querySelectorAll('input[type="checkbox"][data-enabled]').forEach(cb => {
                     const k = cb.getAttribute('data-enabled');
@@ -303,14 +276,6 @@ function openMenuPermissions() {
                     const k = cb.getAttribute('data-mk');
                     const g = cb.getAttribute('data-g');
                     if (cb.checked && out[k]) out[k].allowedGroups.push(g);
-                });
-                // Qusers rolü
-                document.querySelectorAll('input[type="checkbox"][data-role-qusers]').forEach(cb => {
-                    const k = cb.getAttribute('data-role-qusers');
-                    if (!out[k]) return;
-                    if (cb.checked) {
-                        out[k].allowedRoles.push('qusers');
-                    }
                 });
                 // Hepsi seçiliyse "ALL" olarak yaz (daha temiz)
                 Object.keys(out).forEach(k => {
@@ -623,6 +588,14 @@ function checkSession() {
             loadWizardData();
             loadTechWizardData();
 
+            // Eğer qusers rolündeyse, ana içeriği gizle ve kalite modülünü aç
+            if (savedRole === 'qusers') {
+                const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
+                const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
+                const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
+
+                openQualityArea(); // Yeni Full Screen Modül
+            }
         }
     }
 }
@@ -685,7 +658,12 @@ function girisYap() {
                         loadWizardData();
                         loadTechWizardData();
 
-                        
+                        if (savedRole === 'qusers') {
+                            const grid = document.getElementById('cardGrid'); if (grid) grid.style.display = 'none';
+                            const controls = document.querySelector('.control-wrapper'); if (controls) controls.style.display = 'none';
+                            const ticker = document.querySelector('.news-ticker-box'); if (ticker) ticker.style.display = 'none';
+                            openQualityArea();
+                        }
                     }
                 }
             } else {
@@ -700,53 +678,37 @@ function girisYap() {
         });
 }
 function checkAdmin(role) {
-    // Rolü normalize et (küçük harfe çevir)
-    const r = normalizeRole(role);
-
-    const addCardDropdown   = document.getElementById('dropdownAddCard');
-    const imageDropdown     = document.getElementById('dropdownImage');
+    const addCardDropdown = document.getElementById('dropdownAddCard');
+    const imageDropdown = document.getElementById('dropdownImage');
     const quickEditDropdown = document.getElementById('dropdownQuickEdit');
 
-    // admin / locadmin kontrolü artık case-insensitive
-    isAdminMode     = (r === "admin" || r === "locadmin");
-    isLocAdmin      = (r === "locadmin");
+    isAdminMode = (role === "admin" || role === "locadmin");
+    isLocAdmin = (role === "locadmin");
     isEditingActive = false;
     document.body.classList.remove('editing');
 
+    const isQualityUser = (role === 'qusers');
     const filterButtons = document.querySelectorAll('.filter-btn:not(.btn-fav)');
-    filterButtons.forEach(btn => {
-        btn.style.opacity = '1';
-        btn.style.pointerEvents = 'auto';
-        btn.style.filter = 'none';
-    });
 
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.disabled    = false;
-        searchInput.placeholder = "İçeriklerde hızlı ara...";
-        searchInput.style.opacity = '1';
-    }
-
-    if (isAdminMode) {
-        if (addCardDropdown) addCardDropdown.style.display = 'flex';
-        if (imageDropdown)   imageDropdown.style.display   = 'flex';
-        if (quickEditDropdown) {
-            quickEditDropdown.style.display = 'flex';
-            // İstek: Yetki Yönetimi sadece LocAdmin rolünde görünsün
-            const perms = document.getElementById('dropdownPerms');
-            if (perms) perms.style.display = (isLocAdmin ? 'flex' : 'none');
-            quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
-            quickEditDropdown.classList.remove('active');
-        }
+    if (isQualityUser) {
+        filterButtons.forEach(btn => {
+            if (btn.innerText.indexOf('Kalite') === -1) {
+                btn.style.opacity = '0.5';
+                btn.style.pointerEvents = 'none';
+                btn.style.filter = 'grayscale(100%)';
+            } else { btn.style.filter = 'none'; }
+        });
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) { searchInput.disabled = true; searchInput.placeholder = "Arama devre dışı (Kalite Modu)"; searchInput.style.opacity = '0.6'; }
     } else {
-        if (addCardDropdown)   addCardDropdown.style.display   = 'none';
-        if (imageDropdown)     imageDropdown.style.display     = 'none';
-        if (quickEditDropdown) quickEditDropdown.style.display = 'none';
-        const perms = document.getElementById('dropdownPerms');
-        if (perms) perms.style.display = 'none';
+        filterButtons.forEach(btn => {
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
+            btn.style.filter = 'none';
+        });
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) { searchInput.disabled = false; searchInput.placeholder = "İçeriklerde hızlı ara..."; searchInput.style.opacity = '1'; }
     }
-}
-
 
     if (isAdminMode) {
         if (addCardDropdown) addCardDropdown.style.display = 'flex';
@@ -766,7 +728,7 @@ function checkAdmin(role) {
         const perms = document.getElementById('dropdownPerms');
         if (perms) perms.style.display = 'none';
     }
-
+}
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
     try { document.getElementById("user-display").innerText = "Misafir"; } catch (e) { }
@@ -4684,7 +4646,9 @@ async function openTelesalesArea() {
             ? loaded.map(o => ({
                 segment: o.segment || o.Segment || o.SEGMENT || '',
                 title: o.title || o.Başlık || o.Baslik || o.Teklif || o['Teklif Adı'] || o['Teklif Adi'] || '',
-                desc: o.desc || o.Açıklama || o.Aciklama || o.Detay || o['Detay/Not'] || o.Not || '',
+                desc: o.desc || o.Açıklama || o.Aciklama || o.Detay || o['Detay/Not'] || '',
+                note: o.note || o.Not || o.Note || '',
+                image: o.image || o.Image || o.Görsel || o.Gorsel || '',
                 example: o.example || o.Örnek || o.Ornek || '',
                 tips: o.tips || o.İpucu || o.Ipucu || '',
                 objection: o.objection || o.Itiraz || '',
@@ -4756,8 +4720,11 @@ function renderTelesalesDataOffers() {
     const cnt = document.getElementById('t-data-count');
     if (cnt) cnt.innerText = `${list.length} kayıt`;
 
-    grid.innerHTML = bar + list.map((o, idx) => `
+    grid.innerHTML = bar + list.map((o, idx) => {
+        const imgHtml = o.image ? `<div style="height:120px;overflow:hidden;border-radius:6px;margin-bottom:8px;"><img src="${processImageUrl(o.image)}" style="width:100%;height:100%;object-fit:cover;"></div>` : '';
+        return `
         <div class="q-training-card" onclick="showTelesalesOfferDetail(${idx})" style="cursor:pointer">
+          ${imgHtml}
           <div class="t-training-head">
             <div style="min-width:0">
               <div class="q-item-title" style="font-size:1.02rem">${escapeHtml(o.title || 'Teklif')}</div>
@@ -4773,17 +4740,20 @@ function renderTelesalesDataOffers() {
             </div>
           ` : ``}
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function addTelesalesOffer() {
     Swal.fire({
         title: "TeleSatış Teklifi Ekle",
         html: `
-          <input id="to-title" class="swal2-input" placeholder="Başlık">
-          <input id="to-seg" class="swal2-input" placeholder="Segment / Etiket (opsiyonel)">
-          <textarea id="to-desc" class="swal2-textarea" placeholder="Açıklama"></textarea>
-          <textarea id="to-detail" class="swal2-textarea" placeholder="Detay (opsiyonel)"></textarea>
+          <input id="to-title" class="swal2-input" placeholder="Başlık*" style="margin-bottom:10px">
+          <input id="to-seg" class="swal2-input" placeholder="Segment" style="margin-bottom:10px">
+           <input id="to-img" class="swal2-input" placeholder="Görsel URL (İsteğe bağlı)" style="margin-bottom:10px">
+          <textarea id="to-desc" class="swal2-textarea" placeholder="Açıklama" style="margin-bottom:10px"></textarea>
+          <textarea id="to-note" class="swal2-textarea" placeholder="Not (Kritik Bilgi)"></textarea>
+         <textarea id="to-detail" class="swal2-textarea" placeholder="Diğer Detay"></textarea>
         `,
         showCancelButton: true,
         confirmButtonText: "Ekle",
@@ -4792,11 +4762,13 @@ function addTelesalesOffer() {
             const title = (document.getElementById('to-title').value || '').trim();
             if (!title) return Swal.showValidationMessage("Başlık zorunlu");
             return {
-                id: 'local_' + Date.now(),
                 title,
                 segment: (document.getElementById('to-seg').value || '').trim(),
+                image: (document.getElementById('to-img').value || '').trim(),
                 desc: (document.getElementById('to-desc').value || '').trim(),
+                note: (document.getElementById('to-note').value || '').trim(),
                 detail: (document.getElementById('to-detail').value || '').trim(),
+                pk: Date.now().toString()
             };
         }
     }).then(async res => {
@@ -4804,17 +4776,18 @@ function addTelesalesOffer() {
         const v = res.value;
         Swal.fire({ title: 'Ekleniyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
         try {
+            telesalesOffers.unshift(v);
             const r = await fetch(SCRIPT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'upsertTelesalesOffer', username: currentUser, token: getToken(), keyTitle: '', keySegment: '', ...v })
+                body: JSON.stringify({ action: 'saveAllTelesalesOffers', username: currentUser, token: getToken(), offers: telesalesOffers })
             });
             const d = await r.json();
             if (d.result === 'success') {
                 Swal.fire({ icon: 'success', title: 'Eklendi', timer: 1200, showConfirmButton: false });
-                await fetchSheetObjects();
                 renderTelesalesDataOffers();
             } else {
+                telesalesOffers.shift();
                 Swal.fire('Hata', d.message || 'Eklenemedi', 'error');
             }
         } catch (e) {
@@ -4829,74 +4802,80 @@ async function editTelesalesOffer(idx) {
     const { value: v } = await Swal.fire({
         title: "Teklifi Düzenle",
         html: `
-          <input id="to-title" class="swal2-input" placeholder="Başlık" value="${escapeHtml(o.title || '')}">
-          <input id="to-seg" class="swal2-input" placeholder="Segment / Etiket" value="${escapeHtml(o.segment || '')}">
-          <textarea id="to-desc" class="swal2-textarea" placeholder="Açıklama">${escapeHtml(o.desc || '')}</textarea>
-          <textarea id="to-detail" class="swal2-textarea" placeholder="Detay">${escapeHtml(o.detail || '')}</textarea>
+          <label>Başlık</label><input id="to-title" class="swal2-input" value="${escapeHtml(o.title || '')}">
+          <label>Segment</label><input id="to-seg" class="swal2-input" value="${escapeHtml(o.segment || '')}">
+          <label>Görsel</label><input id="to-img" class="swal2-input" value="${escapeHtml(o.image || '')}">
+          <label>Açıklama</label><textarea id="to-desc" class="swal2-textarea">${escapeHtml(o.desc || '')}</textarea>
+           <label>Not</label><textarea id="to-note" class="swal2-textarea">${escapeHtml(o.note || '')}</textarea>
+          <label>Detay</label><textarea id="to-detail" class="swal2-textarea">${escapeHtml(o.detail || '')}</textarea>
         `,
         showCancelButton: true,
         confirmButtonText: "Kaydet",
-        cancelButtonText: "Vazgeç",
         preConfirm: () => {
             const title = (document.getElementById('to-title').value || '').trim();
             if (!title) return Swal.showValidationMessage("Başlık zorunlu");
             return {
                 title,
                 segment: (document.getElementById('to-seg').value || '').trim(),
+                image: (document.getElementById('to-img').value || '').trim(),
                 desc: (document.getElementById('to-desc').value || '').trim(),
-                detail: (document.getElementById('to-detail').value || '').trim(),
+                note: (document.getElementById('to-note').value || '').trim(),
+                detail: (document.getElementById('to-detail').value || '').trim()
             };
         }
     });
     if (!v) return;
 
     Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
+    const oldVal = telesalesOffers[idx];
+    telesalesOffers[idx] = { ...oldVal, ...v };
     try {
         const r = await fetch(SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'upsertTelesalesOffer', username: currentUser, token: getToken(), keyTitle: o.title, keySegment: o.segment, ...v })
+            body: JSON.stringify({ action: 'saveAllTelesalesOffers', username: currentUser, token: getToken(), offers: telesalesOffers })
         });
         const d = await r.json();
         if (d.result === 'success') {
             Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1200, showConfirmButton: false });
-            await fetchSheetObjects();
             renderTelesalesDataOffers();
         } else {
+            telesalesOffers[idx] = oldVal;
             Swal.fire('Hata', d.message || 'Kaydedilemedi', 'error');
         }
     } catch (e) {
+        telesalesOffers[idx] = oldVal;
         Swal.fire('Hata', 'Sunucu hatası.', 'error');
     }
 }
 
 function deleteTelesalesOffer(idx) {
-    const o = (telesalesOffers || [])[idx];
-    if (!o) return;
     Swal.fire({
         title: "Silinsin mi?",
-        text: "Teklif pasife alınacak.",
+        text: "Bu teklif kalıcı olarak silinecek.",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonText: "Sil",
-        cancelButtonText: "Vazgeç"
+        confirmButtonText: "Sil"
     }).then(async res => {
         if (!res.isConfirmed) return;
+        const oldVal = telesalesOffers[idx];
+        telesalesOffers.splice(idx, 1);
         try {
             const r = await fetch(SCRIPT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'deleteTelesalesOffer', username: currentUser, token: getToken(), keyTitle: o.title, keySegment: o.segment })
+                body: JSON.stringify({ action: 'saveAllTelesalesOffers', username: currentUser, token: getToken(), offers: telesalesOffers })
             });
             const d = await r.json();
             if (d.result === 'success') {
-                await fetchSheetObjects();
                 renderTelesalesDataOffers();
                 Swal.fire({ icon: 'success', title: 'Silindi', timer: 1000, showConfirmButton: false });
             } else {
+                telesalesOffers.splice(idx, 0, oldVal);
                 Swal.fire('Hata', d.message || 'Silinemedi', 'error');
             }
         } catch (e) {
+            telesalesOffers.splice(idx, 0, oldVal);
             Swal.fire('Hata', 'Sunucu hatası.', 'error');
         }
     });
@@ -4905,11 +4884,15 @@ function deleteTelesalesOffer(idx) {
 function showTelesalesOfferDetail(idx) {
     const o = (telesalesOffers || [])[idx];
     if (!o) return;
+    const imgHtml = o.image ? `<img src="${processImageUrl(o.image)}" style="max-width:100%;border-radius:6px;margin-bottom:15px;">` : '';
     Swal.fire({
-        title: `<i class="fas fa-database" style="color:#0e1b42"></i> ${escapeHtml(o.title || '')}`,
+        title: escapeHtml(o.title || ''),
         html: `<div style="text-align:left;line-height:1.6">
+                ${imgHtml}
                 <div style="margin-bottom:10px"><b>Segment:</b> ${escapeHtml(o.segment || '-')}</div>
+                 ${o.note ? `<div style="margin-bottom:10px;background:#fff3cd;padding:8px;border-radius:4px;border-left:4px solid #ffc107;"><b>Not:</b> ${escapeHtml(o.note)}</div>` : ''}
                 <div>${escapeHtml(o.desc || 'Detay yok.').replace(/\n/g, '<br>')}</div>
+                ${o.detail ? `<hr><div style="font-size:0.9rem;color:#666">${escapeHtml(o.detail)}</div>` : ''}
               </div>`,
         showCloseButton: true,
         showConfirmButton: false,
@@ -5945,6 +5928,17 @@ function __normalizeTechCategory(cat) {
     return "";
 }
 
+function processImageUrl(url) {
+    if (!url) return '';
+    if (url.includes('drive.google.com') && (url.includes('/view') || url.includes('/file/d/'))) {
+        let id = '';
+        const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (m && m[1]) id = m[1];
+        if (id) return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1000';
+    }
+    return url;
+}
+
 async function __fetchTechDocs() {
     if (!SCRIPT_URL) {
         if (typeof showGlobalError === "function") showGlobalError("SCRIPT_URL ayarlı değil. Sağ alttan ayarlayabilirsin.");
@@ -5968,6 +5962,7 @@ async function __fetchTechDocs() {
             adim: (r.Adım || r.Adim || r.Step || r["Adım"] || "").toString(),
             not: (r.Not || "").toString(),
             link: (r.Link || "").toString(),
+            resim: (r.Resim || r.Image || r.Görsel || r.Gorsel || "").toString(),
             durum: (r.Durum || "").toString()
         }))
         .filter(x => x.categoryKey && x.baslik);
@@ -6327,275 +6322,7 @@ function processImageUrl(url) {
     } catch (e) { }
     return url;
 }
-let telesalesOffersData = [];
-let __telesalesCache = null;
-let __telesalesLoadedAt = 0;
 
-// TeleSatış verilerini yükle
-async function loadTelesalesOffersIfNeeded(force = false) {
-    const now = Date.now();
-    if (!force && __telesalesCache && (now - __telesalesLoadedAt) < 120000) return __telesalesCache;
-    try {
-        const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'getTelesalesOffers', username: currentUser, token: getToken() })
-        });
-        const data = await res.json();
-        if (data.result === 'success' && Array.isArray(data.data)) {
-            __telesalesCache = data.data;
-            __telesalesLoadedAt = now;
-            return data.data;
-        }
-    } catch (e) {
-        console.error('[TELESALES OFFERS]', e);
-    }
-    return [];
-}
-
-// TeleSatış tekliflerini render et
-async function renderTelesalesOffers(containerId = 'telesales-offers-container') {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const offers = await loadTelesalesOffersIfNeeded(false);
-    telesalesOffersData = offers;
-
-    if (!offers || offers.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:40px;color:#999">Henüz teklif eklenmemiş.</div>';
-        return;
-    }
-
-    let html = '';
-    offers.forEach((offer, index) => {
-        const segment = offer.Segment || offer.segment || '';
-        const title = offer['Teklif Adı'] || offer.title || '';
-        const desc = offer.Açıklama || offer.desc || '';
-        const sample = offer.Örnek || offer.sample || '';
-        const image = offer.Image || offer.image || '';
-        const durum = offer.Durum || offer.durum || 'Aktif';
-
-        if (durum === 'Pasif') return; // Pasif teklifleri gösterme
-
-        const segmentClass = segment.toUpperCase().replace(/ /g, '_');
-        const imageHtml = image ? `<div style="margin:10px 0;"><img src="${processImageUrl(image)}" loading="lazy" onerror="this.style.display='none'" style="max-width:100%; border-radius:8px; max-height:200px; object-fit:cover;"></div>` : '';
-        const editBtn = (isAdminMode && isEditingActive) ? `<button class="x-btn x-btn-admin" style="position:absolute;top:10px;right:50px;padding:4px 8px;font-size:0.8rem;" onclick="editTelesalesOffer(${index})"><i class="fas fa-pen"></i> Düzenle</button>` : '';
-        const deleteBtn = (isAdminMode && isEditingActive) ? `<button class="x-btn x-btn-admin" style="position:absolute;top:10px;right:10px;padding:4px 8px;font-size:0.8rem;background:#dc3545;" onclick="deleteTelesalesOffer(${index})"><i class="fas fa-trash"></i> Sil</button>` : '';
-
-        html += `
-        <div class="telesales-card" style="position:relative;background:#fff;border-radius:12px;padding:20px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-            ${editBtn}
-            ${deleteBtn}
-            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
-                <h3 style="margin:0;color:#0e1b42;">${__escapeHtml(title)}</h3>
-                <span class="badge" style="background:var(--secondary);color:white;padding:4px 10px;border-radius:20px;font-size:0.75rem;">${__escapeHtml(segment)}</span>
-            </div>
-            ${desc ? `<p style="color:#666;margin:10px 0;">${__escapeHtml(desc)}</p>` : ''}
-            ${imageHtml}
-            ${sample ? `<div style="background:#f0f8ff;padding:10px;border-radius:6px;margin:10px 0;"><strong>Örnek:</strong> ${__escapeHtml(sample)}</div>` : ''}
-        </div>`;
-    });
-
-    container.innerHTML = html;
-}
-
-// TeleSatış teklifi ekle
-async function addTelesalesOffer() {
-    if (!isAdminMode) return;
-
-    const { value: formValues } = await Swal.fire({
-        title: 'Teklif Ekle',
-        html: `
-            <input id="t-segment" class="swal2-input" placeholder="Segment (ör: WINBACK)" style="width:100%;">
-            <input id="t-title" class="swal2-input" placeholder="Teklif Adı" style="width:100%;">
-            <textarea id="t-desc" class="swal2-textarea" placeholder="Açıklama" style="width:100%;"></textarea>
-            <input id="t-sample" class="swal2-input" placeholder="Örnek" style="width:100%;">
-            <input id="t-tip" class="swal2-input" placeholder="İpucu" style="width:100%;">
-            <input id="t-objection" class="swal2-input" placeholder="İtiraz" style="width:100%;">
-            <input id="t-answer" class="swal2-input" placeholder="Cevap" style="width:100%;">
-            <input id="t-image" class="swal2-input" placeholder="Görsel Linki (opsiyonel)" style="width:100%;">
-        `,
-        width: '600px',
-        showCancelButton: true,
-        confirmButtonText: 'Ekle',
-        cancelButtonText: 'Vazgeç',
-        preConfirm: () => {
-            const segment = (document.getElementById('t-segment').value || '').trim();
-            const title = (document.getElementById('t-title').value || '').trim();
-            if (!segment) return Swal.showValidationMessage('Segment zorunlu');
-            if (!title) return Swal.showValidationMessage('Teklif Adı zorunlu');
-            return {
-                segment,
-                title,
-                desc: (document.getElementById('t-desc').value || '').trim(),
-                ornek: (document.getElementById('t-sample').value || '').trim(),
-                ipucu: (document.getElementById('t-tip').value || '').trim(),
-                itiraz: (document.getElementById('t-objection').value || '').trim(),
-                cevap: (document.getElementById('t-answer').value || '').trim(),
-                image: (document.getElementById('t-image').value || '').trim(),
-                durum: 'Aktif'
-            };
-        }
-    });
-
-    if (!formValues) return;
-
-    Swal.fire({ title: 'Ekleniyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
-
-    try {
-        const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'upsertTelesalesOffer',
-                username: currentUser,
-                token: getToken(),
-                keySegment: '',
-                keyTitle: '',
-                ...formValues
-            })
-        });
-        const data = await res.json();
-        if (data.result === 'success') {
-            Swal.fire({ icon: 'success', title: 'Eklendi!', timer: 1200, showConfirmButton: false });
-            await loadTelesalesOffersIfNeeded(true);
-            renderTelesalesOffers();
-        } else {
-            Swal.fire('Hata', data.message || 'Eklenemedi', 'error');
-        }
-    } catch (e) {
-        Swal.fire('Hata', 'Sunucu hatası.', 'error');
-    }
-}
-
-// TeleSatış teklifi düzenle
-async function editTelesalesOffer(index) {
-    if (!isAdminMode) return;
-    const offer = telesalesOffersData[index];
-    if (!offer) return;
-
-    const { value: formValues } = await Swal.fire({
-        title: 'Teklifi Düzenle',
-        html: `
-            <input id="t-segment" class="swal2-input" placeholder="Segment" value="${__escapeHtml(offer.Segment || offer.segment || '')}" style="width:100%;">
-            <input id="t-title" class="swal2-input" placeholder="Teklif Adı" value="${__escapeHtml(offer['Teklif Adı'] || offer.title || '')}" style="width:100%;">
-            <textarea id="t-desc" class="swal2-textarea" placeholder="Açıklama" style="width:100%;">${__escapeHtml(offer.Açıklama || offer.desc || '')}</textarea>
-            <input id="t-sample" class="swal2-input" placeholder="Örnek" value="${__escapeHtml(offer.Örnek || offer.sample || '')}" style="width:100%;">
-            <input id="t-tip" class="swal2-input" placeholder="İpucu" value="${__escapeHtml(offer.İpucu || offer.tip || '')}" style="width:100%;">
-            <input id="t-objection" class="swal2-input" placeholder="İtiraz" value="${__escapeHtml(offer.İtiraz || offer.objection || '')}" style="width:100%;">
-            <input id="t-answer" class="swal2-input" placeholder="Cevap" value="${__escapeHtml(offer.Cevap || offer.answer || '')}" style="width:100%;">
-            <input id="t-image" class="swal2-input" placeholder="Görsel Linki" value="${__escapeHtml(offer.Image || offer.image || '')}" style="width:100%;">
-            <select id="t-status" class="swal2-select" style="width:100%;">
-                <option value="Aktif" ${(offer.Durum || offer.durum) === 'Aktif' ? 'selected' : ''}>Aktif</option>
-                <option value="Pasif" ${(offer.Durum || offer.durum) === 'Pasif' ? 'selected' : ''}>Pasif</option>
-            </select>
-        `,
-        width: '600px',
-        showCancelButton: true,
-        confirmButtonText: 'Kaydet',
-        cancelButtonText: 'Vazgeç',
-        preConfirm: () => {
-            const segment = (document.getElementById('t-segment').value || '').trim();
-            const title = (document.getElementById('t-title').value || '').trim();
-            if (!segment) return Swal.showValidationMessage('Segment zorunlu');
-            if (!title) return Swal.showValidationMessage('Teklif Adı zorunlu');
-            return {
-                segment,
-                title,
-                desc: (document.getElementById('t-desc').value || '').trim(),
-                ornek: (document.getElementById('t-sample').value || '').trim(),
-                ipucu: (document.getElementById('t-tip').value || '').trim(),
-                itiraz: (document.getElementById('t-objection').value || '').trim(),
-                cevap: (document.getElementById('t-answer').value || '').trim(),
-                image: (document.getElementById('t-image').value || '').trim(),
-                durum: document.getElementById('t-status').value
-            };
-        }
-    });
-
-    if (!formValues) return;
-
-    Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
-
-    try {
-        const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'upsertTelesalesOffer',
-                username: currentUser,
-                token: getToken(),
-                keySegment: offer.Segment || offer.segment || '',
-                keyTitle: offer['Teklif Adı'] || offer.title || '',
-                ...formValues
-            })
-        });
-        const data = await res.json();
-        if (data.result === 'success') {
-            Swal.fire({ icon: 'success', title: 'Kaydedildi!', timer: 1200, showConfirmButton: false });
-            await loadTelesalesOffersIfNeeded(true);
-            renderTelesalesOffers();
-        } else {
-            Swal.fire('Hata', data.message || 'Kaydedilemedi', 'error');
-        }
-    } catch (e) {
-        Swal.fire('Hata', 'Sunucu hatası.', 'error');
-    }
-}
-
-// TeleSatış teklifi sil
-async function deleteTelesalesOffer(index) {
-    if (!isAdminMode) return;
-    const offer = telesalesOffersData[index];
-    if (!offer) return;
-
-    const result = await Swal.fire({
-        title: 'Teklifi Sil?',
-        text: `"${offer['Teklif Adı'] || offer.title}" teklifini silmek istediğinize emin misiniz?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Evet, Sil',
-        cancelButtonText: 'Vazgeç',
-        confirmButtonColor: '#dc3545'
-    });
-
-    if (!result.isConfirmed) return;
-
-    Swal.fire({ title: 'Siliniyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
-
-    try {
-        const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-                action: 'upsertTelesalesOffer',
-                username: currentUser,
-                token: getToken(),
-                keySegment: offer.Segment || offer.segment || '',
-                keyTitle: offer['Teklif Adı'] || offer.title || '',
-                segment: offer.Segment || offer.segment || '',
-                title: offer['Teklif Adı'] || offer.title || '',
-                desc: offer.Açıklama || offer.desc || '',
-                ornek: offer.Örnek || offer.sample || '',
-                ipucu: offer.İpucu || offer.tip || '',
-                itiraz: offer.İtiraz || offer.objection || '',
-                cevap: offer.Cevap || offer.answer || '',
-                image: offer.Image || offer.image || '',
-                durum: 'Pasif' // Silme yerine Pasif yap
-            })
-        });
-        const data = await res.json();
-        if (data.result === 'success') {
-            Swal.fire({ icon: 'success', title: 'Silindi!', timer: 1200, showConfirmButton: false });
-            await loadTelesalesOffersIfNeeded(true);
-            renderTelesalesOffers();
-        } else {
-            Swal.fire('Hata', data.message || 'Silinemedi', 'error');
-        }
-    } catch (e) {
-        Swal.fire('Hata', 'Sunucu hatası.', 'error');
-    }
-}
 // --- GÖRSEL YÜKLEME ARACI (Admin/LocAdmin) ---
 function openImageUploader() {
     Swal.fire({
