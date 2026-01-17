@@ -1498,6 +1498,8 @@ function escapeHtml(str) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 }
+const __escapeHtml = escapeHtml;
+const _escapeHtml = escapeHtml;
 
 // ------------------------------------------------------------
 // Sağlamlaştırma (hata yönetimi + localStorage güvenli yazma)
@@ -5934,7 +5936,7 @@ async function addTechDoc(tabKey) {
     const opts = (cats && cats.length ? cats : Object.values(TECH_TAB_LABELS))
         .map(c => String(c || '').trim()).filter(Boolean);
     const uniq = Array.from(new Set(opts.map(x => x.toLowerCase()))).map(k => opts.find(x => x.toLowerCase() === k));
-    const optionsHtml = uniq.map(c => `<option value="${__escapeHtml(c)}" ${c === defaultLabel ? 'selected' : ''}>${__escapeHtml(c)}</option>`).join('');
+    const optionsHtml = uniq.map(c => `<option value="${escapeHtml(c)}" ${c === defaultLabel ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
     const { value: v } = await Swal.fire({
         title: 'Teknik Konu Ekle',
         html: `
@@ -5999,19 +6001,19 @@ async function editTechDoc(tabKey, baslik) {
     const opts = (cats && cats.length ? cats : Object.values(TECH_TAB_LABELS))
         .map(c => String(c || '').trim()).filter(Boolean);
     const uniq = Array.from(new Set(opts.map(x => x.toLowerCase()))).map(k => opts.find(x => x.toLowerCase() === k));
-    const optionsHtml = uniq.map(c => `<option value="${__escapeHtml(c)}" ${(c === it.kategori) ? 'selected' : ''}>${__escapeHtml(c)}</option>`).join('');
+    const optionsHtml = uniq.map(c => `<option value="${escapeHtml(c)}" ${(c === it.kategori) ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
     const { value: v } = await Swal.fire({
         title: 'Teknik Konuyu Düzenle',
         html: `
       <select id="td-cat" class="swal2-select" style="width:100%;max-width:420px">
         ${optionsHtml}
       </select>
-      <input id="td-title" class="swal2-input" placeholder="Başlık" value="${__escapeHtml(it.baslik || '')}">
-      <textarea id="td-content" class="swal2-textarea" placeholder="İçerik">${__escapeHtml(it.icerik || '')}</textarea>
-      <input id="td-step" class="swal2-input" placeholder="Adım" value="${__escapeHtml(it.adim || '')}">
-      <input id="td-note" class="swal2-input" placeholder="Not" value="${__escapeHtml(it.not || '')}">
-      <input id="td-link" class="swal2-input" placeholder="Link" value="${__escapeHtml(it.link || '')}">
-      <input id="td-image" class="swal2-input" placeholder="Görsel Linki" value="${__escapeHtml(it.image || '')}">
+      <input id="td-title" class="swal2-input" placeholder="Başlık" value="${escapeHtml(it.baslik || '')}">
+      <textarea id="td-content" class="swal2-textarea" placeholder="İçerik">${escapeHtml(it.icerik || '')}</textarea>
+      <input id="td-step" class="swal2-input" placeholder="Adım" value="${escapeHtml(it.adim || '')}">
+      <input id="td-note" class="swal2-input" placeholder="Not" value="${escapeHtml(it.not || '')}">
+      <input id="td-link" class="swal2-input" placeholder="Link" value="${escapeHtml(it.link || '')}">
+      <input id="td-image" class="swal2-input" placeholder="Görsel Linki" value="${escapeHtml(it.image || '')}">
     `,
         showCancelButton: true,
         confirmButtonText: 'Kaydet',
