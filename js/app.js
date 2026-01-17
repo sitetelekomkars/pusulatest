@@ -600,7 +600,6 @@ function checkSession() {
         try { loadMenuPermissions(); } catch (e) { }
         try { loadHomeBlocks(); } catch (e) { }
         try { loadPermissionsOnStartup(); } catch (e) { }
-
         if (BAKIM_MODU) {
             document.getElementById("maintenance-screen").style.display = "flex";
         } else {
@@ -4149,9 +4148,11 @@ async function logEvaluationPopup() {
     const foundUser = adminUserList.find(u => u.name.toLowerCase() === agentName.toLowerCase());
     if (foundUser && foundUser.group) { agentGroup = foundUser.group; }
 
-    const isChat = agentGroup.indexOf('Chat') > -1;
-    const isTelesatis = agentGroup.indexOf('Telesatış') > -1;
+    const isChat = agentGroup.toLowerCase().includes('chat') || agentGroup.toLowerCase() === 'ob';
+    const isTelesatis = agentGroup.toLowerCase().includes('telesat');
     if (isChat) agentGroup = 'Chat';
+    else if (isTelesatis) agentGroup = 'Telesatış';
+
 
     Swal.fire({ title: 'Hazırlanıyor...', didOpen: () => Swal.showLoading() });
     let criteriaList = [];
@@ -4252,9 +4253,10 @@ async function editEvaluation(targetCallId) {
 
     const agentName = evalData.agent;
     const agentGroupRaw = evalData.group || 'Genel';
-    const isChat = agentGroupRaw.indexOf('Chat') > -1;
-    const isTelesatis = agentGroupRaw.indexOf('Telesatış') > -1;
+    const isChat = agentGroupRaw.toLowerCase().includes('chat') || agentGroupRaw.toLowerCase() === 'ob';
+    const isTelesatis = agentGroupRaw.toLowerCase().includes('telesat');
     let agentGroup = isChat ? 'Chat' : (isTelesatis ? 'Telesatış' : 'Genel');
+
 
     Swal.fire({ title: 'İnceleniyor...', didOpen: () => Swal.showLoading() });
     let criteriaList = [];
