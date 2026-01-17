@@ -125,17 +125,12 @@ function normalizeRole(v) {
 }
 function normalizeGroup(v) {
     if (!v) return "";
-    // Önce Türkçe karakterleri temizle, sonra küçült (i̇ gibi dotted yapıları önlemek için)
-    let s = String(v).trim()
-        .replace(/İ/g, 'i').replace(/ı/g, 'i')
-        .replace(/Ş/g, 's').replace(/ş/g, 's')
-        .replace(/Ğ/g, 'g').replace(/ğ/g, 'g')
-        .replace(/Ü/g, 'u').replace(/ü/g, 'u')
-        .replace(/Ö/g, 'o').replace(/ö/g, 'o')
-        .replace(/Ç/g, 'c').replace(/ç/g, 'c');
-
-    const lower = s.toLowerCase();
-    return lower.charAt(0).toUpperCase() + lower.slice(1);
+    let s = String(v).trim().toLowerCase()
+        .replace(/i̇/g, 'i').replace(/ı/g, 'i')
+        .replace(/ş/g, 's').replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u').replace(/ö/g, 'o')
+        .replace(/ç/g, 'c');
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function normalizeList(v) {
@@ -6623,8 +6618,8 @@ async function openMenuPermissions() {
 }
 
 function hasPerm(resource, permission = "All") {
-    const role = (getMyRole() || "").trim().toLowerCase();
-    const rawGroup = localStorage.getItem("sSportGroup") || "";
+    const rawRole = (getMyRole() || "").trim().toLowerCase();
+    const rawGroup = (localStorage.getItem("sSportGroup") || "").trim().toLowerCase();
 
     // Güçlü Normalizasyon (Türkçe karakter ve i̇ karmaşasını bitirir)
     function clean(str) {
@@ -6633,21 +6628,28 @@ function hasPerm(resource, permission = "All") {
             .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c').trim();
     }
 
-    const group = clean(rawGroup);
+    const cRole = clean(rawRole);
+    const cGroup = clean(rawGroup);
 
-    if (role === "locadmin") return true;
+    // 1. KULLANICI TALEBİ: LocAdmin (Rol veya Grup) sınırsız yetkilidir.
+    if (cRole === "locadmin" || cGroup === "locadmin") return true;
 
-    // 1. Önce grup (takım) bazlı yetkiye bak
-    const groupPerm = allRolePermissions.find(p =>
-        clean(p.role) === group &&
-        (p.resource === resource || p.resource === "All") &&
-        (p.permission === permission || p.permission === "All")
-    );
-    if (groupPerm) return groupPerm.value;
+    // 2. ÖNCELİK: GRUP (TAKIM) YETKİSİ
+    // Eğer bir grubu varsa (ob, chat, telesatış vb.), yetkiyi oradan al.
+    if (cGroup && cGroup !== "" && cGroup !== "all") {
+        const groupPerm = allRolePermissions.find(p =>
+            clean(p.role) === cGroup &&
+            (p.resource === resource || p.resource === "All") &&
+            (p.permission === permission || p.permission === "All")
+        );
+        // Eğer grupta bir kayıt varsa (True veya False), direkt onu kullan.
+        if (groupPerm) return groupPerm.value;
+    }
 
-    // 2. Eğer grupta tanımlı değilse, role bak
+    // 3. FALLBACK: ROL YETKİSİ
+    // (Sadece grupta hiç tanım yoksa veya kullanıcı grupta değilse buraya düşer)
     const rolePerm = allRolePermissions.find(p =>
-        p.role === role &&
+        clean(p.role) === cRole &&
         (p.resource === resource || p.resource === "All") &&
         (p.permission === permission || p.permission === "All")
     );
