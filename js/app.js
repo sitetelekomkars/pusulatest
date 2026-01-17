@@ -6673,6 +6673,30 @@ async function loadPermissionsOnStartup() {
     if (res && res.result === "success") {
         allRolePermissions = res.permissions || [];
         applyPermissionsToUI();
+
+        // ✅ Akıllı Yönlendirme: Eğer Ana Sayfa (Home) yetkisi kapalıysa, yetkisi olan ilk sayfaya yönlendir.
+        if (!hasPerm("home", "View")) {
+            // Kontrol edilecek öncelikli sayfalar
+            const landingPages = [
+                { key: "quality", action: openQualityArea },
+                { key: "tech", action: () => openTechArea('wizard') },
+                { key: "shift", action: () => filterCategory(null, "shift") },
+                { key: "news", action: openNews },
+                { key: "broadcast", action: openBroadcastFlow },
+                { key: "telesales", action: () => filterCategory(null, "Telesatış") },
+                { key: "persuasion", action: () => filterCategory(null, "İkna") },
+                { key: "campaign", action: () => filterCategory(null, "Kampanya") },
+                { key: "info", action: () => filterCategory(null, "Bilgi") }
+            ];
+
+            for (const page of landingPages) {
+                if (hasPerm(page.key, "View")) {
+                    page.action();
+                    console.log(`[Auth] Ana sayfa yetkisi yok, ${page.key} sayfasına yönlendirildi.`);
+                    break;
+                }
+            }
+        }
     }
 }
 
