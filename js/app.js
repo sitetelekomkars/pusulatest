@@ -4055,9 +4055,10 @@ function toggleEvaluationDetail(index) {
 }
 async function exportEvaluations() {
     if (!isAdminMode) return;
-    const { isConfirmed } = await Swal.fire({ icon: 'question', title: 'Rapor İndirilsin mi?', showCancelButton: true, confirmButtonText: 'İndir' });
+    const { isConfirmed } = await Swal.fire({ icon: 'question', title: 'Gelişmiş Rapor (Excel)', text: 'Detaylı ve renkli rapor hazırlanacak.', showCancelButton: true, confirmButtonText: 'İndir' });
     if (!isConfirmed) return;
-    Swal.fire({ title: 'Hazırlanıyor...', didOpen: () => Swal.showLoading() });
+
+    Swal.fire({ title: 'Rapor Hazırlanıyor...', html: 'Veriler işleniyor, lütfen bekleyin.<br>Bu işlem veri yoğunluğuna göre biraz sürebilir.', didOpen: () => Swal.showLoading() });
 
     const groupSelect = document.getElementById('q-admin-group');
     const agentSelect = document.getElementById('q-admin-agent');
@@ -4071,14 +4072,100 @@ async function exportEvaluations() {
             username: currentUser, token: getToken()
         })
     }).then(r => r.json()).then(data => {
-        if (data.result === "success" && data.csvData) {
-            const blob = new Blob(["\ufeff" + data.csvData], { type: 'text/csv;charset=utf-8;' });
+        if (data.result === "success" && data.data) {
+
+            // --- EXCEL OLUŞTURUCU (HTML TABLE YÖNTEMİ) ---
+            const headers = data.headers;
+            const rows = data.data;
+
+            // 1. İstatistik Hesapla
+            let totalScore = 0;
+            let count = rows.length;
+            let maxScore = 0;
+            let minScore = 100;
+
+            rows.forEach(r => {
+                let s = parseFloat(r[5]) || 0; // 5. index Puan
+                totalScore += s;
+                if (s > maxScore) maxScore = s;
+                if (s < minScore) minScore = s;
+            });
+            let avg = count > 0 ? (totalScore / count).toFixed(2) : 0;
+
+            // 2. Özet Tablosu HTML
+            let excelHtml = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head><meta charset="utf-8"></head>
+            <body>
+            <h2 style="font-family:Arial">Kalite Değerlendirme Raporu</h2>
+            <table border="1" style="border-collapse:collapse; font-family:Arial; font-size:12px; margin-bottom:20px;">
+                <tr style="background-color:#E0E0E0; font-weight:bold;">
+                    <td colspan="2" style="padding:10px; font-size:14px;">Yönetici Özeti</td>
+                </tr>
+                <tr><td><strong>Rapor Tarihi:</strong></td><td>${new Date().toLocaleDateString()}</td></tr>
+                <tr><td><strong>Toplam Kayıt:</strong></td><td>${count}</td></tr>
+                <tr><td><strong>Genel Ortalama:</strong></td><td style="font-size:14px; font-weight:bold; color:${avg >= 85 ? 'green' : (avg < 70 ? 'red' : 'orange')}">${avg}</td></tr>
+                <tr><td><strong>En Yüksek Puan:</strong></td><td>${maxScore}</td></tr>
+                <tr><td><strong>En Düşük Puan:</strong></td><td>${minScore}</td></tr>
+            </table>
+
+            <br>
+
+            <table border="1" style="border-collapse:collapse; font-family:Arial; font-size:11px;">
+                <thead>
+                    <tr style="background-color:#2c3e50; color:white; height:30px;">
+                        ${headers.map(h => `<th style="padding:5px; white-space:nowrap;">${h}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            // 3. Detay Satırları
+            rows.forEach(r => {
+                // Puan Renklendirme (Index 5)
+                let score = r[5];
+                let scoreStyle = "";
+                if (score >= 90) scoreStyle = "background-color:#C6EFCE; color:#006100; font-weight:bold;";
+                else if (score < 70) scoreStyle = "background-color:#FFC7CE; color:#9C0006; font-weight:bold;";
+                else scoreStyle = "background-color:#FFEB9C; color:#9C6500;";
+
+                // Durum Renklendirme (Index 6)
+                let status = r[6];
+                let statusStyle = "";
+                if (status === "İncelemede") statusStyle = "background-color:#FFF2CC; font-weight:bold;";
+
+                // Satır Oluştur
+                excelHtml += `<tr>`;
+                r.forEach((cell, idx) => {
+                    let cellStyle = "padding:5px; vertical-align:top;";
+                    if (idx === 5) cellStyle += scoreStyle; // Puan
+                    if (idx === 6) cellStyle += statusStyle; // Durum
+
+                    // Metin Hücreleri (Notlar, Cevaplar)
+                    let val = (cell === null || cell === undefined) ? "" : String(cell);
+                    excelHtml += `<td style="${cellStyle} mso-number-format:'\@';">${val}</td>`;
+                });
+                excelHtml += `</tr>`;
+            });
+
+            excelHtml += `</tbody></table></body></html>`;
+
+            // 4. İndirme Tetikle
+            const blob = new Blob([excelHtml], { type: 'application/vnd.ms-excel' });
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url); link.setAttribute("download", data.fileName);
-            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-            Swal.fire('Başarılı', 'Rapor indirildi.', 'success');
+            link.setAttribute("href", url);
+            link.setAttribute("download", data.fileName || "Rapor.xls");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            Swal.fire({ icon: 'success', title: 'Rapor İndirildi', text: 'Excel dosyası hazırlandı.', timer: 1500, showConfirmButton: false });
+
         } else { Swal.fire('Hata', data.message || 'Veri alınamadı.', 'error'); }
+    }).catch(e => {
+        console.error(e);
+        Swal.fire('Hata', 'Sunucu hatası oluştu.', 'error');
     });
 }
 // --- EVALUATION POPUP & EDIT ---
