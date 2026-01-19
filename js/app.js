@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxt1GN8hhnrsDheB5a_xUn8r_RxjmqB-tulhOtRX6yhZB84zgb4li0J9oyE5fQSVEPE/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -3918,7 +3918,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 if (!isSeen && !isAdminMode) {
                     statusBadge = `<span style="background:#ef5350; color:white; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:bold; margin-left:8px; animation: pulse 2s infinite;">YENİ</span>`;
                 } else if (status === 'Bekliyor') {
-                    statusBadge = `<span style="background:#ff9800; color:white; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:bold; margin-left:8px;">İtiraz/Not İnceleniyor</span>`;
+                    statusBadge = `<span style="background:#ff9800; color:white; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:bold; margin-left:8px;">Görüş/Not İnceleniyor</span>`;
                 }
 
                 // Alt Panel (Feedback İşlemleri)
@@ -3928,7 +3928,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 if (!isAdminMode) {
                     if (!isSeen || (status !== 'Kapatıldı')) {
                         // Henüz görülmedi veya süreç bitmedi -> İşlem Butonu
-                        let btnText = isSeen ? 'Not Ekle / İtiraz Et' : '✅ Okudum / Not Ekle';
+                        let btnText = isSeen ? '📝 Not Ekle' : '✅ Okudum / Not Ekle';
                         let btnColor = isSeen ? '#f57c00' : '#2e7d32'; // Turuncu / Yeşil
                         interactionHtml += `
                          <div style="margin-top:15px; text-align:right; border-top:1px solid #eee; pt:10px;">
