@@ -1161,24 +1161,90 @@ body.editing .edit-icon {
 
 /* Gamer Modal Enhancements */
 .gamer-modal {
-  background: rgba(10, 20, 40, 0.95) !important;
+  background: rgba(10, 20, 40, 0.98) !important;
   border: 2px solid #00f2ff !important;
-  box-shadow: 0 0 20px rgba(0, 242, 255, 0.5), inset 0 0 15px rgba(0, 242, 255, 0.2) !important;
-  backdrop-filter: blur(15px) !important;
+  box-shadow: 0 0 30px rgba(0, 242, 255, 0.4), inset 0 0 15px rgba(0, 242, 255, 0.1) !important;
+  backdrop-filter: blur(20px) !important;
   color: #fff !important;
+  max-height: 95vh !important;
+  overflow-y: auto !important;
+}
+
+/* Responsive Scaling for Games on smaller screens */
+@media screen and (max-height: 800px) {
+  .gamer-modal {
+    transform: scale(0.9);
+    transform-origin: center top;
+  }
+}
+
+@media screen and (max-height: 700px) {
+  .gamer-modal {
+    transform: scale(0.8);
+  }
+}
+
+.gamer-modal h2 {
+  text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+}
+
+.gamer-modal p {
+  color: #fff !important;
+  font-size: 1.1rem;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Gamer Action Buttons */
+.gamer-modal .btn-copy {
+  background: #00f2ff !important;
+  color: #0e1b42 !important;
+  font-weight: 900 !important;
+  border: none !important;
+  padding: 12px 30px !important;
+  border-radius: 8px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  box-shadow: 0 0 20px rgba(0, 242, 255, 0.4) !important;
+  transition: all 0.2s !important;
+  cursor: pointer !important;
+}
+
+.gamer-modal .btn-copy:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 0 30px rgba(0, 242, 255, 0.7) !important;
+  background: #fff !important;
+}
+
+.gamer-modal .btn-link {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  padding: 10px 20px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+}
+
+.gamer-modal .btn-link:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .quick-chip {
-  background: rgba(0, 242, 255, 0.1);
-  border: 1px solid #00f2ff;
-  padding: 5px 12px;
-  border-radius: 15px;
-  color: #00f2ff;
-  font-weight: bold;
-  text-shadow: 0 0 5px rgba(0, 242, 255, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 242, 255, 0.5);
+  padding: 6px 15px;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 900;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  font-size: 0.9rem;
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.1);
+}
+
+.quick-chip span {
+  color: #00f2ff;
+  text-shadow: 0 0 5px rgba(0, 242, 255, 0.8);
 }
 
 .quick-topbar {
