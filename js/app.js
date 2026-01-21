@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxt1GN8hhnrsDheB5a_xUn8r_RxjmqB-tulhOtRX6yhZB84zgb4li0J9oyE5fQSVEPE/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbx9LV5bCnRRu4sBx9z6mZqUiDCqRI3yJeh4td4ba1n8Zx4ebSRQ2FvtwSVEg4zsbVeZ/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -4148,8 +4148,8 @@ function toggleEvaluationDetail(index, callId, isAlreadySeen, element) {
         detailEl.style.marginTop = '10px';
 
         // OTOMATİK OKUNDU İŞARETLEME
-        // Eğer daha önce görülmemişse ve şu an açılıyorsa
-        if (!isAlreadySeen && callId) {
+        // Eğer daha önce görülmemişse, şu an açılıyorsa ve ADMİN DEĞİLSE
+        if (!isAlreadySeen && callId && !isAdminMode) {
             // Backend'e hissettirmeden istek at
             apiCall("markEvaluationSeen", { callId: callId });
 
