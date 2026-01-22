@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbwbHykdCSBVrP8QHxApKcUM-iIFGz_yvqtK40lmzVfoDRJqn4JqQIzwzP8hdfsAor-l/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbzS8pNRnQsRdH_nj0xZMyF2ZNJxprE3jR1AwvVXqiOfcOYvy0fQBqmQ-Iir7xQZjn2QBA/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -745,12 +745,8 @@ function loadContentData() {
         document.getElementById('loading').style.display = 'block';
     }
 
-    // 2. Fetch Fresh Data
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "fetchData" })
-    }).then(response => response.json()).then(data => {
+    // 2. Fetch Fresh Data (Optimized with apiCall)
+    apiCall('fetchData', { limit: 1000 }).then(data => {
         if (!loadedFromCache) document.getElementById('loading').style.display = 'none';
 
         if (data.result === "success") {
@@ -758,6 +754,18 @@ function loadContentData() {
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(data.data)); } catch (e) { }
             // Render
             processRawData(data.data);
+
+            // Background load the rest if total > limit (optional but good for future)
+            if (data.total > 1000) {
+                apiCall('fetchData', { offset: 1000 }).then(moreData => {
+                    if (moreData.result === 'success') {
+                        const fullDB = data.data.concat(moreData.data);
+                        database = fullDB.filter(item => VALID_CATEGORIES.includes(item.category));
+                        // Cache update optional
+                        try { localStorage.setItem(CACHE_KEY, JSON.stringify(fullDB)); } catch (e) { }
+                    }
+                });
+            }
         } else {
             if (!loadedFromCache) document.getElementById('loading').innerHTML = `Veriler alınamadı: ${data.message || 'Bilinmeyen Hata'}`;
         }
@@ -788,57 +796,67 @@ function loadTechWizardData() {
     });
 }
 // --- RENDER & FILTERING ---
+const DISPLAY_LIMIT = 50;
+let currentDisplayCount = DISPLAY_LIMIT;
+
 function renderCards(data) {
     try {
         activeCards = data;
         const container = document.getElementById('cardGrid');
-        if (!container) {
-            if (typeof console !== 'undefined') console.error('cardGrid bulunamadı');
-            return;
-        }
+        if (!container) return;
 
         if (data.length === 0) {
             container.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px; color:#777;">Kayıt bulunamadı.</div>';
             return;
         }
 
-        // Performance Optimization: Build HTML string first, then inject once.
-        const htmlChunks = data.map((item, index) => {
-            const safeTitle = escapeForJsString(item.title);
-            const isFavorite = isFav(item.title);
-            const favClass = isFavorite ? 'fas fa-star active' : 'far fa-star';
-            const newBadge = isNew(item.date) ? '<span class="new-badge">YENİ</span>' : '';
-            const editIconHtml = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" onclick="editContent(${index})" style="display:block;"></i>` : '';
-            let formattedText = (item.text || "").replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<b>$1</b>');
+        // Reset display count on new render
+        currentDisplayCount = DISPLAY_LIMIT;
 
-            const imgNotif = item.image ? `<div style="margin-bottom:8px;"><img src="${processImageUrl(item.image)}" loading="lazy" onerror="this.style.display='none'" style="max-width:100%;border-radius:6px;max-height:150px;object-fit:cover;"></div>` : '';
+        const renderSlice = (count) => {
+            const listToRender = data.slice(0, count);
+            const htmlChunks = listToRender.map((item, index) => {
+                const safeTitle = escapeForJsString(item.title);
+                const isFavorite = isFav(item.title);
+                const favClass = isFavorite ? 'fas fa-star active' : 'far fa-star';
+                const newBadge = isNew(item.date) ? '<span class="new-badge">YENİ</span>' : '';
+                const editIconHtml = (isAdminMode && isEditingActive) ? `<i class="fas fa-pencil-alt edit-icon" onclick="editContent(${index})" style="display:block;"></i>` : '';
+                let formattedText = (item.text || "").replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<b>$1</b>');
+                const imgNotif = item.image ? `<div style="margin-bottom:8px;"><img src="${processImageUrl(item.image)}" loading="lazy" onerror="this.style.display='none'" style="max-width:100%;border-radius:6px;max-height:150px;object-fit:cover;"></div>` : '';
 
-            return `<div class="card ${item.category}">${newBadge}
-                <div class="icon-wrapper">${editIconHtml}<i class="${favClass} fav-icon" onclick="toggleFavorite('${safeTitle}')"></i></div>
-                <div class="card-header"><h3 class="card-title">${highlightText(item.title)}</h3><span class="badge">${item.category}</span></div>
-                <div class="card-content" onclick="showCardDetailByIndex(${index})">
-                    ${imgNotif}
-                    <div class="card-text-truncate">${highlightText(formattedText)}</div>
-                    <div style="font-size:0.8rem; color:#999; margin-top:5px; text-align:right;">(Tamamını oku)</div>
-                </div>
-                <div class="script-box">${highlightText(item.script)}</div>
-                <div class="card-actions">
-                    <button class="btn btn-copy" onclick="copyText('${escapeForJsString(item.script)}')"><i class="fas fa-copy"></i> Kopyala</button>
-                    ${item.code ? `<button class="btn btn-copy" style="background:var(--secondary); color:#333;" onclick="copyText('${escapeForJsString(item.code)}')">Kod</button>` : ''}
-                    ${item.link ? `<a href="${item.link}" target="_blank" class="btn btn-link"><i class="fas fa-external-link-alt"></i> Link</a>` : ''}
-                </div>
-            </div>`;
-        });
+                return `<div class="card ${item.category}">${newBadge}
+                    <div class="icon-wrapper">${editIconHtml}<i class="${favClass} fav-icon" onclick="toggleFavorite('${safeTitle}')"></i></div>
+                    <div class="card-header"><h3 class="card-title">${highlightText(item.title)}</h3><span class="badge">${item.category}</span></div>
+                    <div class="card-content" onclick="showCardDetailByIndex(${index})">
+                        ${imgNotif}
+                        <div class="card-text-truncate">${highlightText(formattedText)}</div>
+                        <div style="font-size:0.8rem; color:#999; margin-top:5px; text-align:right;">(Tamamını oku)</div>
+                    </div>
+                    <div class="script-box">${highlightText(item.script)}</div>
+                    <div class="card-actions">
+                        <button class="btn btn-copy" onclick="copyText('${escapeForJsString(item.script)}')"><i class="fas fa-copy"></i> Kopyala</button>
+                        ${item.code ? `<button class="btn btn-copy" style="background:var(--secondary); color:#333;" onclick="copyText('${escapeForJsString(item.code)}')">Kod</button>` : ''}
+                        ${item.link ? `<a href="${item.link}" target="_blank" class="btn btn-link"><i class="fas fa-external-link-alt"></i> Link</a>` : ''}
+                    </div>
+                </div>`;
+            });
 
-        container.innerHTML = htmlChunks.join('');
+            if (data.length > count) {
+                htmlChunks.push(`<div id="load-more-container" style="grid-column:1/-1; text-align:center; padding:20px;">
+                    <button class="btn" style="background:var(--primary); color:white; padding:10px 40px;" onclick="loadMoreCards()">Daha Fazla Yükle (${data.length - count} kaldı)</button>
+                </div>`);
+            }
+            container.innerHTML = htmlChunks.join('');
+        };
+
+        renderSlice(currentDisplayCount);
+        window.loadMoreCards = () => {
+            currentDisplayCount += DISPLAY_LIMIT;
+            renderSlice(currentDisplayCount);
+        };
 
     } catch (e) {
-        try {
-            if (typeof showGlobalError === 'function') {
-                showGlobalError('Kartlar yüklenemedi: ' + (e && e.message ? e.message : String(e)));
-            }
-        } catch (_) { }
-        if (typeof console !== 'undefined') console.error('[renderCards]', e);
+        console.error('[renderCards]', e);
     }
 }
 function highlightText(htmlContent) {
