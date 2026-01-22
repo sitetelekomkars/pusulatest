@@ -4,49 +4,51 @@
  */
 
 // --- CONFIGURATION ---
-const BAKIM_MODU = false;
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbyV1ybWkF3thWE08goIQ_kDB4cNYNuidZlxS4V-RibcajHJGL4xEi1Po8LnorztNLmx/exec";
+var BAKIM_MODU = false;
+var DEBUG = false;
+var SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbyV1ybWkF3thWE08goIQ_kDB4cNYNuidZlxS4V-RibcajHJGL4xEi1Po8LnorztNLmx/exec";
 
 // --- GLOBAL STATE ---
-let currentUser = "";
-let globalUserIP = "";
-let activeRole = "";
-let isAdminMode = false;
-let isLocAdmin = false;
-let isEditingActive = false;
-let currentCategory = "home";
+var currentUser = "";
+var globalUserIP = "";
+var activeRole = "";
+var isAdminMode = false;
+var isLocAdmin = false;
+var isEditingActive = false;
+var currentCategory = "home";
 
 // Data Stores
-let database = [];
-let newsData = [];
-let sportsData = [];
-let salesScripts = [];
-let quizQuestions = [];
-let quickDecisionQuestions = [];
-let activeCards = [];
-let adminUserList = [];
-let allEvaluationsData = [];
-let trainingData = [];
-let feedbackLogsData = [];
-let homeBlocks = {};
+var database = [];
+var newsData = [];
+var sportsData = [];
+var salesScripts = [];
+var quizQuestions = [];
+var quickDecisionQuestions = [];
+var activeCards = [];
+var adminUserList = [];
+var allEvaluationsData = [];
+var trainingData = [];
+var feedbackLogsData = [];
+var homeBlocks = {};
 
 // Specialized State
-let wizardStepsData = {};
-let techWizardData = {};
+var wizardStepsData = {};
+var techWizardData = {};
 
 // Chart Instances
-let dashboardChart = null;
-let dashTrendChart = null;
-let dashChannelChart = null;
-let dashScoreDistChart = null;
-let dashGroupAvgChart = null;
+var dashboardChart = null;
+var dashTrendChart = null;
+var dashChannelChart = null;
+var dashScoreDistChart = null;
+var dashGroupAvgChart = null;
+var sessionTimeout = null;
 
 // Constants
-const VALID_CATEGORIES = ['Teknik', 'İkna', 'Kampanya', 'Bilgi'];
-const MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+var VALID_CATEGORIES = ['Teknik', 'İkna', 'Kampanya', 'Bilgi'];
+var MONTH_NAMES = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
 // Barrier for data loading
-let __dataLoadedResolve;
+var __dataLoadedResolve;
 window.__dataLoadedPromise = new Promise(r => { __dataLoadedResolve = r; });
 
 // --- INITIALIZATION ---
@@ -65,13 +67,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(d => { globalUserIP = `${d.ip} [${d.city || '-'}, ${d.region || '-'}]`; })
         .catch(() => { });
 });
-
-// Helper to update flags globally
-function updateGlobalAuthFlags() {
-    activeRole = getMyRole();
-    isLocAdmin = (activeRole === 'locadmin');
-    isAdminMode = hasPermission('canEdit') || isLocAdmin;
-}
 
 // Global error handlers
 window.addEventListener('error', function (e) {
