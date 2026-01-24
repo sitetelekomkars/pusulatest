@@ -547,47 +547,76 @@ async function girisYap() {
             console.error("Login error:", error);
         });
 }
-function checkAdmin(role) {
-    const addCardDropdown = document.getElementById('dropdownAddCard');
-    const imageDropdown = document.getElementById('dropdownImage');
-    const quickEditDropdown = document.getElementById('dropdownQuickEdit');
-
-    activeRole = role;
-    isAdminMode = (role === "admin" || role === "locadmin");
-    isLocAdmin = (role === "locadmin");
-    isEditingActive = false;
-    document.body.classList.remove('editing');
-
-    // Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
-
-
-    if (isAdminMode) {
-        if (addCardDropdown) addCardDropdown.style.display = 'flex';
-        if (imageDropdown) imageDropdown.style.display = 'flex';
-        if (quickEditDropdown) {
-            quickEditDropdown.style.display = 'flex';
-            // Yetki Yönetimi ve Aktif Kullanıcılar (Artık hasPerm/applyPermissionsToUI ile yönetiliyor)
-            const perms = document.getElementById('dropdownPerms');
-            if (perms) perms.style.display = 'flex';
-
-            const activeUsersBtn = document.getElementById('dropdownActiveUsers');
-            if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
-
-            quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
-            quickEditDropdown.classList.remove('active');
+async function forgotPasswordPopup() {
+    const { value: username } = await Swal.fire({
+        title: 'Şifremi Unuttum',
+        input: 'text',
+        inputLabel: 'Kullanıcı Adınızı Giriniz',
+        inputPlaceholder: 'Kullanıcı adı...',
+        showCancelButton: true,
+        confirmButtonText: 'Şifremi Sıfırla',
+        cancelButtonText: 'İptal',
+        inputValidator: (value) => {
+            if (!value) return 'Kullanıcı adı boş olamaz!';
         }
-    } else {
-        if (addCardDropdown) addCardDropdown.style.display = 'none';
-        if (imageDropdown) imageDropdown.style.display = 'none';
-        if (quickEditDropdown) quickEditDropdown.style.display = 'none';
-        const perms = document.getElementById('dropdownPerms');
-        if (perms) perms.style.display = 'none';
-        const activeUsersBtn = document.getElementById('dropdownActiveUsers');
-        if (activeUsersBtn) activeUsersBtn.style.display = 'none';
-    }
+    });
 
-    // RBAC Yetkilerini uygula
-    try { applyPermissionsToUI(); } catch (e) { }
+    if (username) {
+        Swal.fire({
+            title: 'İşlem Yapılıyor...',
+            text: 'Lütfen bekleyin, şifreniz sıfırlanıyor ve e-posta gönderiliyor.',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        apiCall('forgotPassword', { username: username.trim() })
+            .then(data => {
+                if (data.result === 'success') {
+                    Swal.fire('Başarılı!', 'Geçici şifreniz kayıtlı e-posta adresinize gönderildi. Lütfen mailinizi kontrol ediniz.', 'success');
+                } else {
+                    Swal.fire('Hata!', data.message || 'Bir sorun oluştu.', 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Forgot password error:', err);
+                Swal.fire('Hata!', 'Sunucuya bağlanılamadı.', 'error');
+            });
+    }
+}
+isLocAdmin = (role === "locadmin");
+isEditingActive = false;
+document.body.classList.remove('editing');
+
+// Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
+
+
+if (isAdminMode) {
+    if (addCardDropdown) addCardDropdown.style.display = 'flex';
+    if (imageDropdown) imageDropdown.style.display = 'flex';
+    if (quickEditDropdown) {
+        quickEditDropdown.style.display = 'flex';
+        // Yetki Yönetimi ve Aktif Kullanıcılar (Artık hasPerm/applyPermissionsToUI ile yönetiliyor)
+        const perms = document.getElementById('dropdownPerms');
+        if (perms) perms.style.display = 'flex';
+
+        const activeUsersBtn = document.getElementById('dropdownActiveUsers');
+        if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
+
+        quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
+        quickEditDropdown.classList.remove('active');
+    }
+} else {
+    if (addCardDropdown) addCardDropdown.style.display = 'none';
+    if (imageDropdown) imageDropdown.style.display = 'none';
+    if (quickEditDropdown) quickEditDropdown.style.display = 'none';
+    const perms = document.getElementById('dropdownPerms');
+    if (perms) perms.style.display = 'none';
+    const activeUsersBtn = document.getElementById('dropdownActiveUsers');
+    if (activeUsersBtn) activeUsersBtn.style.display = 'none';
+}
+
+// RBAC Yetkilerini uygula
+try { applyPermissionsToUI(); } catch (e) { }
 }
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
