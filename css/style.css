@@ -577,7 +577,7 @@ body {
   white-space: nowrap;
   position: absolute;
   left: 100%;
-  animation: ticker-scroll 30s linear infinite;
+  animation: ticker-scroll 60s linear infinite;
   font-weight: 400;
   font-family: 'Segoe UI', sans-serif;
 }
