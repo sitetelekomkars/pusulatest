@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbwrs9cFAI5uiNJR9ZDduYEyCks52n__A5kBXJs-5Mz-h1QVZqpC3leI26_lawEqWFwN/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxCJNnf5FnZpd7Vk81c7XL3yFuPUwdNkTYTrxojY8gCN6_7t-YlNz1LfmDt_ZJ-u7aT/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -583,40 +583,48 @@ async function forgotPasswordPopup() {
             });
     }
 }
-isLocAdmin = (role === "locadmin");
-isEditingActive = false;
-document.body.classList.remove('editing');
 
-// Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
+function checkAdmin(role) {
+    const addCardDropdown = document.getElementById('dropdownAddCard');
+    const imageDropdown = document.getElementById('dropdownImage');
+    const quickEditDropdown = document.getElementById('dropdownQuickEdit');
+
+    activeRole = role;
+    isAdminMode = (role === "admin" || role === "locadmin");
+    isLocAdmin = (role === "locadmin");
+    isEditingActive = false;
+    document.body.classList.remove('editing');
+
+    // Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
 
 
-if (isAdminMode) {
-    if (addCardDropdown) addCardDropdown.style.display = 'flex';
-    if (imageDropdown) imageDropdown.style.display = 'flex';
-    if (quickEditDropdown) {
-        quickEditDropdown.style.display = 'flex';
-        // Yetki Yönetimi ve Aktif Kullanıcılar (Artık hasPerm/applyPermissionsToUI ile yönetiliyor)
+    if (isAdminMode) {
+        if (addCardDropdown) addCardDropdown.style.display = 'flex';
+        if (imageDropdown) imageDropdown.style.display = 'flex';
+        if (quickEditDropdown) {
+            quickEditDropdown.style.display = 'flex';
+            // Yetki Yönetimi ve Aktif Kullanıcılar (Artık hasPerm/applyPermissionsToUI ile yönetiliyor)
+            const perms = document.getElementById('dropdownPerms');
+            if (perms) perms.style.display = 'flex';
+
+            const activeUsersBtn = document.getElementById('dropdownActiveUsers');
+            if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
+
+            quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
+            quickEditDropdown.classList.remove('active');
+        }
+    } else {
+        if (addCardDropdown) addCardDropdown.style.display = 'none';
+        if (imageDropdown) imageDropdown.style.display = 'none';
+        if (quickEditDropdown) quickEditDropdown.style.display = 'none';
         const perms = document.getElementById('dropdownPerms');
-        if (perms) perms.style.display = 'flex';
-
+        if (perms) perms.style.display = 'none';
         const activeUsersBtn = document.getElementById('dropdownActiveUsers');
-        if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
-
-        quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
-        quickEditDropdown.classList.remove('active');
+        if (activeUsersBtn) activeUsersBtn.style.display = 'none';
     }
-} else {
-    if (addCardDropdown) addCardDropdown.style.display = 'none';
-    if (imageDropdown) imageDropdown.style.display = 'none';
-    if (quickEditDropdown) quickEditDropdown.style.display = 'none';
-    const perms = document.getElementById('dropdownPerms');
-    if (perms) perms.style.display = 'none';
-    const activeUsersBtn = document.getElementById('dropdownActiveUsers');
-    if (activeUsersBtn) activeUsersBtn.style.display = 'none';
-}
 
-// RBAC Yetkilerini uygula
-try { applyPermissionsToUI(); } catch (e) { }
+    // RBAC Yetkilerini uygula
+    try { applyPermissionsToUI(); } catch (e) { }
 }
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
