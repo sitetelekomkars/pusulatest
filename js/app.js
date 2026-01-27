@@ -1,5 +1,3 @@
-
-
 function formatWeekLabel(raw) {
     try {
         if (!raw) return '';
@@ -4148,7 +4146,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 const isSeen = evalItem.isSeen;
                 const agentNote = evalItem.agentNote || '';
                 const managerReply = evalItem.managerReply || '';
-                const status = evalItem.status || '';
+                const status = evalItem.status || 'Tamamlandı';
 
                 // Interaction HTML (V2)
                 let interactionHtml = '';
@@ -4199,7 +4197,6 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 const statusIcon = isSeen ? '<i class="fas fa-check-double"></i>' : '<i class="fas fa-eye-slash"></i>';
                 const statusTitle = isSeen ? 'Görüldü' : 'Henüz Görülmedi';
 
-                const status = evalItem.status || 'Tamamlandı';
                 const statusBadge = status === 'Bekliyor'
                     ? `<span style="background:#fff3e0; color:#e65100; font-size:0.7rem; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:8px; border:1px solid #ffe0b2;">${status}</span>`
                     : (status === 'Kapatıldı' ? `<span style="background:#e3f2fd; color:#1565c0; font-size:0.7rem; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:8px; border:1px solid #bbdefb;">${status}</span>` : '');
