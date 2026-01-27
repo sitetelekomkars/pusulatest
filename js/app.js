@@ -1,3 +1,5 @@
+
+
 function formatWeekLabel(raw) {
     try {
         if (!raw) return '';
@@ -3048,6 +3050,7 @@ function renderDashboardChart(data) {
                 responsive: true,
                 maintainAspectRatio: false,
                 indexAxis: 'y',
+                layout: { padding: { top: 40, right: 35, bottom: 10, left: 10 } },
                 scales: {
                     x: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { font: { size: 10 } } },
                     y: { grid: { display: false }, ticks: { font: { weight: '600', size: 11 } } }
@@ -3094,11 +3097,10 @@ function renderDashboardChart(data) {
             }]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+            layout: { padding: { top: 40, right: 45, bottom: 10, left: 10 } },
             scales: {
-                x: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.04)' } },
+                x: { beginAtZero: true, max: 120, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { display: false } },
                 y: { grid: { display: false }, ticks: { font: { weight: '600' } } }
             },
             plugins: {
@@ -3237,10 +3239,10 @@ function renderDashboardTrendChart(data) {
             }]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            layout: { padding: { top: 40, right: 20, left: 10 } },
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.03)' } },
+                y: { beginAtZero: true, max: 115, grid: { color: 'rgba(0,0,0,0.03)' } },
                 x: { grid: { display: false } }
             },
             plugins: {
@@ -3351,10 +3353,10 @@ function renderDashboardScoreDistributionChart(data) {
             }]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            layout: { padding: { top: 40 } },
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { precision: 0 } },
+                y: { beginAtZero: true, max: 115, grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { precision: 0 } },
                 x: { grid: { display: false } }
             },
             plugins: {
@@ -3416,8 +3418,9 @@ function renderDashboardGroupAvgChart(data) {
             responsive: true,
             maintainAspectRatio: false,
             indexAxis: 'y',
+            layout: { padding: { top: 40, right: 50, bottom: 10, left: 10 } },
             scales: {
-                x: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.03)' } },
+                x: { beginAtZero: true, max: 120, grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { display: false } },
                 y: { grid: { display: false }, ticks: { font: { weight: '600' } } }
             },
             plugins: {
@@ -4634,13 +4637,6 @@ async function logEvaluationPopup() {
                         <option value="Mail">Mail</option>
                     </select>
                 </div>
-                <div class="eval-input-group">
-                    <label>Değerlendirme Durumu</label>
-                    <select id="eval-status" class="eval-input-v2">
-                        <option value="Tamamlandı" selected>Tamamlandı</option>
-                        <option value="Bekliyor">Bekliyor</option>
-                    </select>
-                </div>
             </div>
 
             <div class="eval-input-group">
@@ -4687,9 +4683,9 @@ async function logEvaluationPopup() {
                     }
                     total += val; detailsArr.push({ q: c.text, max: parseInt(c.points), score: val, note: note });
                 }
-                return { agentName, agentGroup, callId, callDate: formattedCallDate, score: total, details: JSON.stringify(detailsArr), feedback: document.getElementById('eval-feedback').value, feedbackType: document.getElementById('feedback-type').value, status: document.getElementById('eval-status').value };
+                return { agentName, agentGroup, callId, callDate: formattedCallDate, score: total, details: JSON.stringify(detailsArr), feedback: document.getElementById('eval-feedback').value, feedbackType: document.getElementById('feedback-type').value, status: 'Tamamlandı' };
             } else {
-                return { agentName, agentGroup, callId, callDate: formattedCallDate, score: parseInt(document.getElementById('eval-manual-score').value), details: document.getElementById('eval-details').value, feedback: document.getElementById('eval-feedback').value, feedbackType: document.getElementById('feedback-type').value, status: document.getElementById('eval-status').value };
+                return { agentName, agentGroup, callId, callDate: formattedCallDate, score: parseInt(document.getElementById('eval-manual-score').value), details: document.getElementById('eval-details').value, feedback: document.getElementById('eval-feedback').value, feedbackType: document.getElementById('feedback-type').value, status: 'Tamamlandı' };
             }
         }
     });
@@ -4791,16 +4787,6 @@ async function editEvaluation(targetCallId) {
         <div class="eval-modal-v2">
             <div class="eval-form-header" style="border-bottom-color:#1976d2;"><div class="eval-form-user"><div class="eval-form-avatar" style="background:#1976d2;">${agentName.charAt(0).toUpperCase()}</div><div><div style="font-size:0.8rem; color:#718096; font-weight:700;">DÜZENLENEN</div><div style="font-size:1.1rem; font-weight:800; color:#1976d2;">${agentName}</div></div></div><div class="eval-form-score-box"><div class="eval-form-score-val" id="v2-live-score">${evalData.score}</div><div class="eval-form-score-label">MEVCUT PUAN</div></div></div>
             <div class="eval-form-grid" style="background:#f0f7ff; border:1px solid #cde4ff;"><div class="eval-input-group"><label>Call ID</label><input id="eval-callid" class="eval-input-v2" value="${evalData.callId}" readonly style="background:#e1efff; cursor:not-allowed;"></div><div class="eval-input-group"><label>Çağrı Tarihi</label><input type="date" id="eval-calldate" class="eval-input-v2" value="${safeDateVal}"></div></div>
-            <div class="eval-form-grid" style="margin-top:10px;">
-                <div class="eval-input-group">
-                    <label>Değerlendirme Durumu</label>
-                    <select id="eval-status" class="eval-input-v2">
-                        <option value="Tamamlandı" ${evalData.status === 'Tamamlandı' ? 'selected' : ''}>Tamamlandı</option>
-                        <option value="Bekliyor" ${evalData.status === 'Bekliyor' ? 'selected' : ''}>Bekliyor</option>
-                        <option value="Kapatıldı" ${evalData.status === 'Kapatıldı' ? 'selected' : ''}>Kapatıldı</option>
-                    </select>
-                </div>
-            </div>
             <div style="margin:15px 0; font-weight:800; font-size:0.9rem; color:#4a5568;"><i class="fas fa-edit" style="color:#1976d2;"></i> KRİTERLERİ GÜNCELLE</div>
             ${isCriteriaBased ? criteriaFieldsHtml : `<div style="padding:20px; background:#f8fafc; border:1px dashed #cbd5e0; border-radius:12px; text-align:center; margin-bottom:20px;"><label style="display:block; margin-bottom:8px; font-weight:700;">Manuel Puan</label><input id="eval-manual-score" type="number" class="eval-input-v2" value="${evalData.score}" min="0" max="100" style="width:80px; text-align:center;"></div><textarea id="eval-details" class="eval-input-v2" style="height:100px;">${typeof evalData.details === 'string' ? evalData.details : ''}</textarea>`}
             <div class="eval-input-group"><label>Revize Feedback / Notlar</label><textarea id="eval-feedback" class="eval-input-v2" style="height:100px;">${evalData.feedback || ''}</textarea></div>
@@ -4826,9 +4812,9 @@ async function editEvaluation(targetCallId) {
                     else { const activeBtn = itemEl.querySelector('.eval-btn-v2.active'); val = activeBtn ? parseInt(activeBtn.getAttribute('data-score')) : 0; }
                     total += val; detailsArr.push({ q: c.text, max: parseInt(c.points), score: val, note: note });
                 }
-                return { agentName, callId, callDate, score: total, details: JSON.stringify(detailsArr), feedback, status: document.getElementById('eval-status').value };
+                return { agentName, callId, callDate, score: total, details: JSON.stringify(detailsArr), feedback, status: evalData.status || 'Tamamlandı' };
             } else {
-                return { agentName, callId, callDate, score: parseInt(document.getElementById('eval-manual-score').value), details: document.getElementById('eval-details').value, feedback, status: document.getElementById('eval-status').value };
+                return { agentName, callId, callDate, score: parseInt(document.getElementById('eval-manual-score').value), details: document.getElementById('eval-details').value, feedback, status: evalData.status || 'Tamamlandı' };
             }
         }
     });
@@ -7304,7 +7290,7 @@ async function openAgentNotePopup(callId, color) {
     if (note) {
         Swal.fire({ title: 'Not Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
         try {
-            const res = await apiCall("submitAgentNote", { callId: callId, username: currentUser, note: note });
+            const res = await apiCall("submitAgentNote", { callId: callId, username: currentUser, note: note, status: 'Bekliyor' });
             if (res.result === 'success') {
                 Swal.fire('Başarılı', 'Görüşünüz yöneticiye iletildi.', 'success');
                 fetchEvaluationsForAgent(currentUser); // Listeyi yenile
