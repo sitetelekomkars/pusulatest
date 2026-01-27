@@ -687,6 +687,7 @@ body {
 .card-text-truncate {
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -4597,32 +4598,47 @@ body.editing .edit-icon {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 24px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .q-dashboard-grid.v2 .q-chart-card {
   grid-column: span 3;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
-.q-dashboard-grid.v2 .q-card-wide {
-  grid-column: span 12;
-}
-
+/* Sol Panel (Skorlar listesi) yan panel gibi olsun */
 .q-dashboard-grid.v2 .q-card-ring {
   grid-column: span 3;
+  grid-row: 1 / span 4;
 }
 
-/* Takım Ortalamaları (Son grafik) genişliği doldursun */
+/* Orta/Sağ Paneldeki Geniş Grafikler */
+.q-dashboard-grid.v2 .q-card-wide {
+  grid-column: span 9;
+}
+
+/* Kanal ve Puan Dağılımı (Kısa olanlar) */
+.q-dashboard-grid.v2 .q-chart-card:nth-child(3) {
+  grid-column: span 4;
+}
+
+.q-dashboard-grid.v2 .q-chart-card:nth-child(4) {
+  grid-column: span 5;
+}
+
+/* En alttaki Takım Ortalamaları */
 .q-dashboard-grid.v2 .q-chart-card:last-child {
   grid-column: span 12;
 }
 
-/* Takım Ortalamaları (Son grafik) genişliği doldursun */
-.q-dashboard-grid.v2 .q-chart-card:last-child {
-  grid-column: span 12;
+.q-chart-wrap {
+  height: 250px;
+  min-height: 250px;
+}
+
+.q-card-wide .q-chart-wrap {
+  height: 300px;
 }
 
 @media (max-width: 1400px) {
