@@ -56,21 +56,29 @@ function showGlobalError(message) {
 let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxCJNnf5FnZpd7Vk81c7XL3yFuPUwdNkTYTrxojY8gCN6_7t-YlNz1LfmDt_ZJ-u7aT/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
-async function apiCall(action, payload = {}) {
+async function apiCall(action, payload = {}, retries = 2) {
     const username = (typeof currentUser !== "undefined" && currentUser) ? currentUser : (localStorage.getItem("sSportUser") || "");
     const token = (typeof getToken === "function" ? getToken() : localStorage.getItem("sSportToken")) || "";
-
-    // IP adresini her API çağrısında gönder
     const ip = globalUserIP || "";
 
-    const res = await fetch(SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, username, token, ip, ...payload })
-    });
-    const json = await res.json();
-    if (json.result !== "success") throw new Error(json.message || json.error || "API error");
-    return json;
+    try {
+        const res = await fetch(SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action, username, token, ip, ...payload })
+        });
+        const json = await res.json();
+        if (json.result !== "success") throw new Error(json.message || json.error || "API error");
+        return json;
+    } catch (err) {
+        const errMsg = String(err.message || err || "").toLowerCase();
+        if (retries > 0 && (errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('failed'))) {
+            console.warn(`[Pusula] Retry ${3 - retries} for ${action}:`, err);
+            await new Promise(r => setTimeout(r, 1000));
+            return apiCall(action, payload, retries - 1);
+        }
+        throw err;
+    }
 }
 
 // SweetAlert2 yoksa minimal yedek (sessiz kırılma olmasın)
@@ -4260,7 +4268,17 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
         }
     } catch (err) {
         console.error(err);
-        if (!silent) listEl.innerHTML = `<p style="color:red; text-align:center; padding:20px;">Hata oluştu: ${err.message}</p>`;
+        if (!silent) {
+            listEl.innerHTML = `
+            <div style="text-align:center; padding:40px; color:#666;">
+                <i class="fas fa-exclamation-triangle" style="font-size:2rem; color:#e53e3e; margin-bottom:15px;"></i>
+                <p style="font-weight:600;">Bağlantı Sorunu</p>
+                <p style="font-size:0.9rem; margin-bottom:15px;">Veriler alınırken bir hata oluştu. Lütfen tekrar deneyin.</p>
+                <button onclick="fetchEvaluationsForAgent()" class="q-btn-v2" style="background:var(--primary); color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-sync"></i> Yeniden Dene
+                </button>
+            </div>`;
+        }
     }
 }
 
@@ -7313,7 +7331,7 @@ async function openAdminReplyPopup(callId, agentName, currentNote) {
         </div>
         <textarea id="swal-manager-reply" class="swal2-textarea" placeholder="Yönetici cevabını yaz..."></textarea>
         <select id="swal-reply-status" class="swal2-input">
-            <option value="Kapatıldı">✅ Yanıtla ve Kapat</option>
+            <option value="Tamamlandı">✅ Yanıtla ve Süreci Tamamla</option>
             <option value="Bekliyor">⏳ İnceleme Devam Ediyor</option>
         </select>
         `,
