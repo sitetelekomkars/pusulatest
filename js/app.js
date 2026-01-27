@@ -53,7 +53,7 @@ function showGlobalError(message) {
 }
 
 // Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxCJNnf5FnZpd7Vk81c7XL3yFuPUwdNkTYTrxojY8gCN6_7t-YlNz1LfmDt_ZJ-u7aT/exec"; // Apps Script Web App URL
+let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbwrs9cFAI5uiNJR9ZDduYEyCks52n__A5kBXJs-5Mz-h1QVZqpC3leI26_lawEqWFwN/exec"; // Apps Script Web App URL
 
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}) {
@@ -161,106 +161,81 @@ let dashGroupAvgChart = null;
 // YENİ: Feedback Log Verisi (Manuel kayıt detayları için)
 let feedbackLogsData = [];
 // ==========================================================
-// --- KALİTE PUANLAMA LOGİĞİ: CHAT (BUTON TABANLI) ---
+// --- KALİTE PUANLAMA LOGİĞİ V2 (PROFESYONEL) ---
 // ==========================================================
-window.setButtonScore = function (index, score, max) {
-    const row = document.getElementById(`row-${index}`);
-    const badge = document.getElementById(`badge-${index}`);
-    const noteInput = document.getElementById(`note-${index}`);
-    const buttons = row.querySelectorAll('.eval-button');
 
+window.v2_setScore = function (index, score, max, type) {
+    const itemEl = document.getElementById(`criteria-${index}`);
+    const noteEl = document.getElementById(`note-${index}`);
+    const buttons = itemEl.querySelectorAll('.eval-btn-v2');
+
+    // Aktif butonu güncelle
     buttons.forEach(b => b.classList.remove('active'));
+    itemEl.querySelector(`.eval-btn-v2.${type}`).classList.add('active');
 
-    const activeBtn = row.querySelector('.eval-button[data-score="' + score + '"]');
-    if (activeBtn) activeBtn.classList.add('active');
-
-    badge.innerText = score;
-
+    // Not alanını göster/gizle
     if (score < max) {
-        noteInput.style.display = 'block';
-        badge.style.background = '#d32f2f';
-        row.style.borderColor = '#ffcdd2';
-        row.style.background = '#fff5f5';
+        noteEl.style.display = 'block';
+        itemEl.classList.add('failed');
     } else {
-        noteInput.style.display = 'none';
-        noteInput.value = '';
-        badge.style.background = '#2e7d32';
-        row.style.borderColor = '#eee';
-        row.style.background = '#fff';
+        noteEl.style.display = 'none';
+        noteEl.value = '';
+        itemEl.classList.remove('failed');
     }
-    window.recalcTotalScore();
-};
-window.recalcTotalScore = function () {
-    let currentTotal = 0;
-    let maxTotal = 0;
 
-    const scoreBadges = document.querySelectorAll('.score-badge');
-    scoreBadges.forEach(b => { currentTotal += parseInt(b.innerText) || 0; });
+    // Buton verisini güncelle
+    itemEl.setAttribute('data-current-score', score);
+    window.v2_recalc();
+}
 
-    const maxScores = document.querySelectorAll('.criteria-row');
-    maxScores.forEach(row => { maxTotal += parseInt(row.getAttribute('data-max-score')) || 0; });
-
-    const liveScoreEl = document.getElementById('live-score');
-    const ringEl = document.getElementById('score-ring');
-
-    if (liveScoreEl) liveScoreEl.innerText = currentTotal;
-    if (ringEl) {
-        let color = '#2e7d32';
-        let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
-        if (ratio < 50) color = '#d32f2f';
-        else if (ratio < 85) color = '#ed6c02';
-        else if (ratio < 95) color = '#fabb00';
-        ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
-    }
-};
-// ==========================================================
-// --- KALİTE PUANLAMA LOGİĞİ: TELE SATIŞ (SLIDER TABANLI) ---
-// ==========================================================
-window.updateRowSliderScore = function (index, max) {
+window.v2_updateSlider = function (index, max) {
+    const itemEl = document.getElementById(`criteria-${index}`);
     const slider = document.getElementById(`slider-${index}`);
-    const badge = document.getElementById(`badge-${index}`);
-    const noteInput = document.getElementById(`note-${index}`);
-    const row = document.getElementById(`row-${index}`);
-    if (!slider) return;
+    const valEl = document.getElementById(`val-${index}`);
+    const noteEl = document.getElementById(`note-${index}`);
     const val = parseInt(slider.value);
-    badge.innerText = val;
+
+    valEl.innerText = `${val} / ${max}`;
 
     if (val < max) {
-        noteInput.style.display = 'block';
-        badge.style.background = '#d32f2f';
-        row.style.borderColor = '#ffcdd2';
-        row.style.background = '#fff5f5';
+        noteEl.style.display = 'block';
+        itemEl.classList.add('failed');
     } else {
-        noteInput.style.display = 'none';
-        noteInput.value = '';
-        badge.style.background = '#2e7d32';
-        row.style.borderColor = '#eee';
-        row.style.background = '#fff';
+        noteEl.style.display = 'none';
+        noteEl.value = '';
+        itemEl.classList.remove('failed');
     }
-    window.recalcTotalSliderScore();
-};
-window.recalcTotalSliderScore = function () {
-    let currentTotal = 0;
-    let maxTotal = 0;
-    const sliders = document.querySelectorAll('.slider-input');
 
-    sliders.forEach(s => {
-        currentTotal += parseInt(s.value) || 0;
-        maxTotal += parseInt(s.getAttribute('max')) || 0;
+    window.v2_recalc();
+}
+
+window.v2_recalc = function () {
+    let total = 0;
+
+    // Butonlu kriterler
+    document.querySelectorAll('.criteria-item-v2').forEach(item => {
+        const slider = item.querySelector('input[type="range"]');
+        if (slider) {
+            total += parseInt(slider.value) || 0;
+        } else {
+            const activeBtn = item.querySelector('.eval-btn-v2.active');
+            if (activeBtn) total += parseInt(activeBtn.getAttribute('data-score')) || 0;
+        }
     });
-    const liveScoreEl = document.getElementById('live-score');
-    const ringEl = document.getElementById('score-ring');
 
-    if (liveScoreEl) liveScoreEl.innerText = currentTotal;
-    if (ringEl) {
-        let color = '#2e7d32';
-        let ratio = maxTotal > 0 ? (currentTotal / maxTotal) * 100 : 0;
-        if (ratio < 50) color = '#d32f2f';
-        else if (ratio < 85) color = '#ed6c02';
-        else if (ratio < 95) color = '#fabb00';
-        ringEl.style.background = `conic-gradient(${color} ${ratio}%, #444 ${ratio}%)`;
+    const scoreEl = document.getElementById('v2-live-score');
+    if (scoreEl) {
+        scoreEl.innerText = total;
+        scoreEl.style.color = total >= 90 ? '#2f855a' : (total >= 75 ? '#ed8936' : '#e53e3e');
     }
-};
+}
+
+// Eski fonksiyonları V2'ye yönlendir (Geriye dönük uyumluluk için)
+window.setButtonScore = (i, s, m) => window.v2_setScore(i, s, m, s === m ? 'good' : (s === 0 ? 'bad' : 'medium'));
+window.recalcTotalScore = () => window.v2_recalc();
+window.updateRowSliderScore = (i, m) => window.v2_updateSlider(i, m);
+window.recalcTotalSliderScore = () => window.v2_recalc();
+
 // --- YARDIMCI FONKSİYONLAR ---
 function getToken() { return localStorage.getItem("sSportToken"); }
 function setHomeWelcomeUser(name) {
@@ -4028,89 +4003,68 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 return;
             }
 
-            let listElBuffer = ""; // Buffer tanımla
+            let listElBuffer = "";
             filteredEvaluations.forEach((evalItem, index) => {
-                const scoreColor = evalItem.score >= 90 ? '#2e7d32' : (evalItem.score >= 70 ? '#ed6c02' : '#d32f2f');
-                let editBtn = isAdminMode ? `<i class="fas fa-pen" style="font-size:1rem; color:#fabb00; cursor:pointer; margin-right:5px;" onclick="event.stopPropagation(); editEvaluation('${evalItem.callId}')"></i>` : '';
-                // İsim iki kez yazılmasın: agent zaten başlıkta var. Eğer agentName gibi ayrı bir alan varsa onu göster.
+                const scoreColor = evalItem.score >= 90 ? '#2f855a' : (evalItem.score >= 70 ? '#ed8936' : '#e53e3e');
+                const scoreBg = evalItem.score >= 90 ? '#f0fff4' : (evalItem.score >= 70 ? '#fffaf0' : '#fff5f5');
+                const scoreCircleColor = evalItem.score >= 90 ? '#48bb78' : (evalItem.score >= 70 ? '#ed8936' : '#f56565');
+
+                let editBtn = isAdminMode ? `<i class="fas fa-pen" style="font-size:0.9rem; color:#718096; cursor:pointer; transition:0.2s;" onmouseover="this.style.color='#3182ce'" onmouseout="this.style.color='#718096'" onclick="event.stopPropagation(); editEvaluation('${evalItem.callId}')"></i>` : '';
+
                 const baseAgent = escapeHtml(evalItem.agent || '');
                 const altNameRaw = (evalItem.agentName != null) ? String(evalItem.agentName).trim() : '';
                 const showAltName = altNameRaw && altNameRaw !== String(evalItem.agent || '').trim();
                 let agentNameDisplay = (targetAgent === 'all' || targetAgent === targetGroup) && showAltName
-                    ? `<span style="font-size:0.8rem; font-weight:bold; color:#555; background:#eee; padding:2px 6px; border-radius:4px; margin-left:10px;">${escapeHtml(altNameRaw)}</span>`
+                    ? `<span style="font-size:0.75rem; font-weight:700; color:#4a5568; background:#edf2f7; padding:2px 8px; border-radius:12px; margin-left:8px;">${escapeHtml(altNameRaw)}</span>`
                     : '';
 
-                // Detay HTML oluşturma
-                let detailHtml = '';
+                // Detay HTML oluşturma (V2)
+                let detailTableHtml = '';
                 try {
-                    // JSON'ı işlerken olası hatalara karşı try-catch
                     const detailObj = JSON.parse(evalItem.details);
-                    detailHtml = '<table style="width:100%; font-size:0.85rem; border-collapse:collapse; margin-top:10px;">';
                     if (Array.isArray(detailObj)) {
+                        detailTableHtml = '<table class="eval-table-v2"><tbody>';
                         detailObj.forEach(item => {
-                            let rowColor = item.score < item.max ? '#ffebee' : '#f9f9f9';
-                            let noteDisplay = item.note ? `<br><em style="color: #d32f2f; font-size:0.8rem;">(Not: ${item.note})</em>` : '';
-                            detailHtml += `<tr style="background:${rowColor}; border-bottom:1px solid #fff;">
-                                <td style="padding:8px; border-radius:4px;">${item.q}${noteDisplay}</td>
-                                <td style="padding:8px; font-weight:bold; text-align:right;">${item.score}/${item.max}</td>
+                            let isFailed = item.score < item.max;
+                            let noteDisplay = item.note ? `<span class="eval-note-v2"><i class="fas fa-sticky-note"></i> ${item.note}</span>` : '';
+                            detailTableHtml += `<tr class="eval-row-v2 ${isFailed ? 'eval-row-failed' : ''}">
+                                <td>${item.q}${noteDisplay}</td>
+                                <td style="color: ${isFailed ? '#e53e3e' : '#48bb78'}">${item.score} / ${item.max}</td>
                             </tr>`;
                         });
+                        detailTableHtml += '</tbody></table>';
                     } else {
-                        // JSON olmasına rağmen array değilse (manuel notlar)
-                        detailHtml = `<p style="white-space:pre-wrap; margin:0; font-size:0.9rem; background:#fff8e1; padding:10px; border-radius:4px;">${evalItem.details}</p>`;
+                        detailTableHtml = `<div class="eval-feedback-box-v2">${evalItem.details}</div>`;
                     }
-                    detailHtml += '</table>';
                 } catch (e) {
-                    // JSON parse hatası veya eski/manuel veri formatı
-                    detailHtml = `<p style="white-space:pre-wrap; margin:0; font-size:0.9rem; background:#fff8e1; padding:10px; border-radius:4px;">${evalItem.details}</p>`;
+                    detailTableHtml = `<div class="eval-feedback-box-v2">${evalItem.details}</div>`;
                 }
 
-                // Geliştirme: Çağrı Tarihi ve Dinlenme Tarihi
                 const callDateDisplay = evalItem.callDate && evalItem.callDate !== 'N/A' ? evalItem.callDate : 'N/A';
                 const listenDateDisplay = evalItem.date || 'N/A';
 
-                // --- YENİ LOGİC: OKUNDU / GERİ BİLDİRİM ARAYÜZÜ ---
                 const isSeen = evalItem.isSeen;
                 const agentNote = evalItem.agentNote || '';
                 const managerReply = evalItem.managerReply || '';
-                const status = evalItem.status || ''; // 'Bekliyor', 'Kapatıldı'
+                const status = evalItem.status || '';
 
-                // Rozetler (Başlık Yanı)
-                let statusBadge = '';
-                if (!isSeen && !isAdminMode) {
-                    statusBadge = `<span id="badge-new-${index}" style="background:#ef5350; color:white; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:bold; margin-left:8px; animation: pulse 2s infinite;">YENİ</span>`;
-                } else if (status === 'Bekliyor') {
-                    statusBadge = `<span style="background:#ff9800; color:white; padding:2px 8px; border-radius:12px; font-size:0.7rem; font-weight:bold; margin-left:8px;">Görüş/Not İnceleniyor</span>`;
-                }
-
-                // Alt Panel (Feedback İşlemleri)
+                // Interaction HTML (V2)
                 let interactionHtml = '';
-
-                // USER MODU
                 if (!isAdminMode) {
                     if (status !== 'Kapatıldı') {
-                        // İşlem Butonu (Sadece Not Ekleme Amaçlı)
-                        let btnText = '💬 Görüş / Not Ekle';
-                        let btnColor = '#f57c00'; // Turuncu (Feedback)
                         interactionHtml += `
-                         <div style="margin-top:15px; text-align:right; border-top:1px solid #eee; pt:10px;">
-                            <button class="x-btn" style="background:${btnColor}; color:white; padding:6px 12px; font-size:0.85rem;" 
-                              onclick="event.stopPropagation(); openAgentNotePopup('${evalItem.callId}', '${scoreColor}', true)">
-                              <i class="fas fa-comment-dots"></i> ${btnText}
+                         <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+                            <button class="eval-action-btn-v2 btn-warning-v2" 
+                              onclick="event.stopPropagation(); openAgentNotePopup('${evalItem.callId}', '${scoreCircleColor}', true)">
+                              <i class="fas fa-comment-dots"></i> Görüş / Not Ekle
                             </button>
                          </div>`;
                     }
                 } else {
-                    // ADMIN MODU
-                    // Okundu bilgisini göster
-                    let seenInfo = isSeen ? '<span style="color:green; font-weight:bold;"><i class="fas fa-check-double"></i> Görüldü</span>' : '<span style="color:red;"><i class="fas fa-eye-slash"></i> Görülmedi</span>';
-                    interactionHtml += `<div style="margin-top:10px; font-size:0.8rem; text-align:right; border-top:1px solid #eee; padding-top:5px;">Durum: ${seenInfo}</div>`;
-
-                    // Bekleyen Not Varsa -> Yönet Butonu
                     if (agentNote && status !== 'Kapatıldı') {
                         interactionHtml += `
-                         <div style="margin-top:10px; text-align:right;">
-                            <button class="x-btn" style="background:#1976d2; color:white; padding:6px 12px; font-size:0.85rem;" 
+                         <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+                            <button class="eval-action-btn-v2 btn-primary-v2" 
                               onclick="event.stopPropagation(); openAdminReplyPopup('${evalItem.callId}', '${escapeHtml(evalItem.agent)}', '${escapeHtml(agentNote)}')">
                               <i class="fas fa-reply"></i> Yanıtla / Kapat
                             </button>
@@ -4118,52 +4072,124 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                     }
                 }
 
-                // Mevcut Notları Göster
+                // Interaction Bubbles (V2)
                 let notesDisplay = '';
-                if (agentNote) {
-                    notesDisplay += `<div style="margin-top:10px; background:#fff3e0; padding:10px; border-radius:6px; border-left:4px solid #ff9800; font-size:0.9rem;">
-                        <strong><i class="fas fa-user-edit"></i> Temsilci Notu:</strong> ${escapeHtml(agentNote)}
-                    </div>`;
-                }
-                if (managerReply) {
-                    notesDisplay += `<div style="margin-top:8px; background:#e8f5e9; padding:10px; border-radius:6px; border-left:4px solid #2e7d32; font-size:0.9rem;">
-                        <strong><i class="fas fa-user-shield"></i> Yönetici Cevabı:</strong> ${escapeHtml(managerReply)}
-                    </div>`;
+                if (agentNote || managerReply) {
+                    notesDisplay += `<div class="eval-section-v2">
+                        <div class="eval-section-title-v2"><i class="fas fa-comments"></i> Mesajlaşma</div>
+                        <div class="eval-interaction-pane">`;
+                    if (agentNote) {
+                        notesDisplay += `<div class="eval-interaction-bubble bubble-agent">
+                            <div class="bubble-header"><i class="fas fa-user-edit"></i> Temsilci Notu</div>
+                            ${escapeHtml(agentNote)}
+                        </div>`;
+                    }
+                    if (managerReply) {
+                        notesDisplay += `<div class="eval-interaction-bubble bubble-manager" style="align-self: flex-end; border-bottom-left-radius: 12px;">
+                            <div class="bubble-header"><i class="fas fa-user-shield"></i> Yönetici Cevabı</div>
+                            ${escapeHtml(managerReply)}
+                        </div>`;
+                    }
+                    notesDisplay += `</div></div>`;
                 }
 
-                // HTML Buffer (Performans için)
+                const statusIconClass = isSeen ? 'seen' : 'unseen';
+                const statusIcon = isSeen ? '<i class="fas fa-check-double"></i>' : '<i class="fas fa-eye-slash"></i>';
+                const statusTitle = isSeen ? 'Görüldü' : 'Henüz Görülmedi';
+
                 listElBuffer += `
-                <div class="evaluation-summary" id="eval-summary-${index}" style="border-left:4px solid ${scoreColor}; padding:15px; margin-bottom:10px; border-radius:8px; background:#fff; cursor:pointer; position:relative;" onclick="toggleEvaluationDetail(${index}, '${evalItem.callId}', ${isSeen}, this)">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <div style="font-weight:700; color:#2c3e50;">${baseAgent} ${agentNameDisplay} ${statusBadge}</div>
-                            <!-- Geliştirme: Çağrı Tarihi ve Dinlenme Tarihi -->
-                            <div class="eval-date-info">
-                                <span><i class="fas fa-phone"></i> Çağrı: ${callDateDisplay}</span>
-                                <span><i class="fas fa-headphones"></i> Dinlenme: ${listenDateDisplay}</span>
+                <div class="eval-card-v2" id="eval-card-${index}" onclick="newToggleEvaluationDetail(${index}, '${evalItem.callId}', ${isSeen}, this)">
+                    <div class="eval-card-main">
+                        <div class="eval-card-left">
+                            <div class="eval-score-orb" style="background:${scoreCircleColor}">
+                                <span class="score-val">${evalItem.score}</span>
+                                <span class="score-label">Puan</span>
                             </div>
-                            <div style="margin-top:5px;">
-                                <span class="eval-id-badge" onclick="event.stopPropagation(); copyText('${escapeHtml(evalItem.callId || '')}')" title="Kopyala"><i class="fas fa-copy"></i> ${escapeHtml(evalItem.callId || '')}</span>
+                            <div class="eval-info-block">
+                                <div class="eval-agent-name">
+                                    ${baseAgent} ${agentNameDisplay}
+                                </div>
+                                <div class="eval-meta-row">
+                                    <div class="eval-meta-item"><i class="fas fa-phone"></i> ${callDateDisplay}</div>
+                                    <div class="eval-meta-item"><i class="fas fa-headphones"></i> ${listenDateDisplay}</div>
+                                    <div class="eval-id-pill" onclick="event.stopPropagation(); copyText('${escapeHtml(evalItem.callId || '')}')" title="Kopyala">
+                                        <i class="fas fa-hashtag"></i> ${escapeHtml(evalItem.callId || '')}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div style="text-align:right;">
-                             ${editBtn} <span style="font-weight:800; font-size:1.6rem; color:${scoreColor};">${evalItem.score}</span>
+                        <div class="eval-card-right">
+                             ${editBtn}
+                             <div class="eval-status-icon ${statusIconClass}" title="${statusTitle}">
+                                ${statusIcon}
+                             </div>
                         </div>
                     </div>
-                    <div class="evaluation-details-content" id="eval-details-${index}">
-                        ${detailHtml}
-                        <div style="margin-top:10px; background:#f8f9fa; padding:10px; border-radius:4px;">
-                            <strong>Feedback:</strong> ${evalItem.feedback || '-'}
+                    <div class="eval-details-pane-v2" id="eval-details-${index}">
+                        <div class="eval-details-inner">
+                            <div class="eval-grid-v2">
+                                <div class="eval-left-col">
+                                    <div class="eval-section-v2">
+                                        <div class="eval-section-title-v2"><i class="fas fa-tasks"></i> Değerlendirme Kriterleri</div>
+                                        ${detailTableHtml}
+                                    </div>
+                                </div>
+                                <div class="eval-right-col">
+                                    <div class="eval-section-v2">
+                                        <div class="eval-section-title-v2"><i class="fas fa-bullhorn"></i> Feedback</div>
+                                        <div class="eval-feedback-box-v2">
+                                            ${evalItem.feedback || 'Geri bildirim belirtilmemiş.'}
+                                        </div>
+                                    </div>
+                                    ${notesDisplay}
+                                    ${interactionHtml}
+                                </div>
+                            </div>
                         </div>
-                        ${notesDisplay}
-                        ${interactionHtml}
                     </div>
                 </div>`;
             });
-            listEl.innerHTML = listElBuffer; // Tek seferde DOM update
+            listEl.innerHTML = listElBuffer;
         }
-    } catch (err) { if (!silent) listEl.innerHTML = `<p style="color:red; text-align:center;">Hata oluştu.</p>`; }
+    } catch (err) {
+        console.error(err);
+        if (!silent) listEl.innerHTML = `<p style="color:red; text-align:center; padding:20px;">Hata oluştu: ${err.message}</p>`;
+    }
 }
+
+// Yeni Toggle Fonksiyonu (V2)
+function newToggleEvaluationDetail(index, callId, isAlreadySeen, element) {
+    const detailEl = document.getElementById(`eval-details-${index}`);
+    const cardEl = document.getElementById(`eval-card-${index}`);
+
+    const isExpanding = !cardEl.classList.contains('expanded');
+
+    // Tüm diğerlerini kapat (Opsiyonel: Akordeon etkisi için)
+    // document.querySelectorAll('.eval-card-v2.expanded').forEach(el => {
+    //    if(el !== cardEl) { ... }
+    // });
+
+    if (isExpanding) {
+        cardEl.classList.add('expanded');
+        detailEl.style.maxHeight = detailEl.scrollHeight + "px";
+
+        // OTOMATİK OKUNDU İŞARETLEME
+        if (!isAlreadySeen && callId && !isAdminMode) {
+            apiCall("markEvaluationSeen", { callId: callId });
+            const statusIcon = cardEl.querySelector('.eval-status-icon');
+            if (statusIcon) {
+                statusIcon.classList.remove('unseen');
+                statusIcon.classList.add('seen');
+                statusIcon.innerHTML = '<i class="fas fa-check-double"></i>';
+                statusIcon.title = 'Görüldü';
+            }
+        }
+    } else {
+        cardEl.classList.remove('expanded');
+        detailEl.style.maxHeight = "0px";
+    }
+}
+
 function updateAgentListBasedOnGroup() {
     const groupSelect = document.getElementById('q-admin-group');
     const agentSelect = document.getElementById('q-admin-agent');
@@ -4412,31 +4438,109 @@ async function logEvaluationPopup() {
     let criteriaFieldsHtml = '';
 
     if (isCriteriaBased) {
-        criteriaFieldsHtml += `<div class="criteria-container">`;
+        criteriaFieldsHtml += `<div class="criteria-list-v2">`;
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0;
             if (pts === 0) return;
-            // Geliştirme: Puan başlığı üstüne gelince tam metin gösterilmesi için title eklendi
             const fullText = escapeForJsString(c.text);
+
             if (isChat) {
                 let mPts = parseInt(c.mediumScore) || 0; let bPts = parseInt(c.badScore) || 0;
-                criteriaFieldsHtml += `<div class="criteria-row" id="row-${i}" data-max-score="${pts}"><div class="criteria-header"><span title="${fullText}">${i + 1}. ${c.text}</span><span style="font-size:0.8rem;">Max: ${pts}</span></div><div class="criteria-controls"><div class="eval-button-group"><button class="eval-button eval-good active" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi (${pts})</button>${mPts > 0 ? `<button class="eval-button eval-medium" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta (${mPts})</button>` : ''}${bPts > 0 ? `<button class="eval-button eval-bad" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü (${bPts})</button>` : ''}</div><span class="score-badge" id="badge-${i}" style="margin-top:8px; display:block; background:#2e7d32;">${pts}</span></div><input type="text" id="note-${i}" class="note-input" placeholder="Not..." style="display:none;"></div>`;
+                criteriaFieldsHtml += `
+                    <div class="criteria-item-v2" id="criteria-${i}" data-max-score="${pts}">
+                        <div class="criteria-top">
+                            <span class="criteria-name" title="${fullText}">${i + 1}. ${c.text}</span>
+                            <span class="criteria-max">Maks: ${pts} Puan</span>
+                        </div>
+                        <div class="criteria-actions">
+                            <div class="eval-btn-group-v2">
+                                <button class="eval-btn-v2 active good" data-score="${pts}" onclick="v2_setScore(${i}, ${pts}, ${pts}, 'good')">İyi</button>
+                                ${mPts > 0 ? `<button class="eval-btn-v2 medium" data-score="${mPts}" onclick="v2_setScore(${i}, ${mPts}, ${pts}, 'medium')">Orta</button>` : ''}
+                                <button class="eval-btn-v2 bad" data-score="${bPts}" onclick="v2_setScore(${i}, ${bPts}, ${pts}, 'bad')">Kötü</button>
+                            </div>
+                            <input type="text" id="note-${i}" class="eval-input-v2" placeholder="Not ekle..." style="display:none; width:150px; height:32px; padding:4px 10px; font-size:0.8rem;">
+                        </div>
+                    </div>`;
             } else if (isTelesatis) {
-                criteriaFieldsHtml += `<div class="criteria-row" id="row-${i}" data-max-score="${pts}"><div class="criteria-header"><span title="${fullText}">${i + 1}. ${c.text}</span><span>Max: ${pts}</span></div><div class="criteria-controls" style="display:flex; align-items:center; gap:15px; background:#f9f9f9;"><input type="range" class="custom-range slider-input" id="slider-${i}" min="0" max="${pts}" value="${pts}" data-index="${i}" oninput="updateRowSliderScore(${i}, ${pts})" style="flex-grow:1;"><span class="score-badge" id="badge-${i}" style="background:#2e7d32;">${pts}</span></div><input type="text" id="note-${i}" class="note-input" placeholder="Not..." style="display:none;"></div>`;
+                criteriaFieldsHtml += `
+                    <div class="criteria-item-v2" id="criteria-${i}" data-max-score="${pts}">
+                        <div class="criteria-top">
+                            <span class="criteria-name" title="${fullText}">${i + 1}. ${c.text}</span>
+                            <span class="criteria-max" id="val-${i}">${pts} / ${pts}</span>
+                        </div>
+                        <div class="criteria-actions">
+                            <input type="range" class="custom-range" id="slider-${i}" min="0" max="${pts}" value="${pts}" 
+                                   oninput="v2_updateSlider(${i}, ${pts})" style="width:100%; margin-right:15px;">
+                            <input type="text" id="note-${i}" class="eval-input-v2" placeholder="Not..." style="display:none; width:100px; height:32px; padding:4px 10px; font-size:0.8rem;">
+                        </div>
+                    </div>`;
             }
         });
         criteriaFieldsHtml += `</div>`;
     }
 
-    // GÜNCELLENMİŞ MODAL: Call ID zorunlu yapıldı
     const contentHtml = `
-        <div class="eval-modal-wrapper">
-            <div class="score-dashboard"><div><div style="font-size:0.9rem;">Değerlendirilen</div><div style="font-size:1.2rem; font-weight:bold; color:#fabb00;">${agentName}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${isCriteriaBased ? '100' : '100'}</div></div></div>
-            <div class="eval-header-card"><div><label>Call ID <span style="color:red;">*</span></label><input id="eval-callid" class="swal2-input" style="height:35px; margin:0; width:100%;" placeholder="Call ID"></div><div><label>Tarih</label><input type="date" id="eval-calldate" class="swal2-input" style="height:35px; margin:0; width:100%;" value="${new Date().toISOString().substring(0, 10)}"></div></div>
-            ${isCriteriaBased ? criteriaFieldsHtml : `<div style="padding:15px; border:1px dashed #ccc; text-align:center;"><label>Manuel Puan</label><br><input id="eval-manual-score" type="number" class="swal2-input" value="100" min="0" max="100" style="width:100px; text-align:center;"></div><textarea id="eval-details" class="swal2-textarea" placeholder="Detaylar..."></textarea>`}
-            <div style="margin-top:15px; padding:10px; background:#fafafa; border:1px solid #eee;"><label>Geri Bildirim Tipi</label><select id="feedback-type" class="swal2-input" style="width:100%; height:40px; margin:0;"><option value="Yok" selected>Yok</option><option value="Sözlü">Sözlü</option><option value="Mail">Mail</option></select></div>
-            <div style="margin-top:15px;"><label>Genel Geri Bildirim</label><textarea id="eval-feedback" class="swal2-textarea" style="margin-top:5px; height:80px;"></textarea></div>
+        <div class="eval-modal-v2">
+            <div class="eval-form-header">
+                <div class="eval-form-user">
+                    <div class="eval-form-avatar">${agentName.charAt(0).toUpperCase()}</div>
+                    <div>
+                        <div style="font-size:0.8rem; color:#718096; font-weight:700;">DEĞERLENDİRİLEN</div>
+                        <div style="font-size:1.1rem; font-weight:800; color:#2d3748;">${agentName}</div>
+                    </div>
+                </div>
+                <div class="eval-form-score-box">
+                    <div class="eval-form-score-val" id="v2-live-score">100</div>
+                    <div class="eval-form-score-label">TOPLAM PUAN</div>
+                </div>
+            </div>
+
+            <div class="eval-form-grid">
+                <div class="eval-input-group">
+                    <label>Call ID <span style="color:#e53e3e">*</span></label>
+                    <input id="eval-callid" class="eval-input-v2" placeholder="Örn: 123456">
+                </div>
+                <div class="eval-input-group">
+                    <label>Çağrı Tarihi</label>
+                    <input type="date" id="eval-calldate" class="eval-input-v2" value="${new Date().toISOString().substring(0, 10)}">
+                </div>
+            </div>
+
+            ${isCriteriaBased ? criteriaFieldsHtml : `
+                <div style="padding:20px; background:#f8fafc; border:1px dashed #cbd5e0; border-radius:12px; text-align:center; margin-bottom:20px;">
+                    <label style="display:block; margin-bottom:8px; font-weight:700;">Manuel Puan</label>
+                    <input id="eval-manual-score" type="number" class="eval-input-v2" value="100" min="0" max="100" style="width:80px; text-align:center; font-size:1.2rem; font-weight:800;">
+                </div>
+                <div class="eval-input-group" style="margin-bottom:20px;">
+                    <label>Değerlendirme Detayları</label>
+                    <textarea id="eval-details" class="eval-input-v2" style="height:100px;" placeholder="Detaylı analizlerinizi buraya yazın..."></textarea>
+                </div>
+            `}
+
+            <div class="eval-form-grid" style="margin-bottom:15px;">
+                <div class="eval-input-group">
+                    <label>Geri Bildirim Tipi</label>
+                    <select id="feedback-type" class="eval-input-v2">
+                        <option value="Yok" selected>Yok</option>
+                        <option value="Sözlü">Sözlü</option>
+                        <option value="Mail">Mail</option>
+                    </select>
+                </div>
+                <div class="eval-input-group">
+                    <label>Durum</label>
+                    <select id="eval-status" class="eval-input-v2">
+                        <option value="Kapatıldı" selected>Tamamlandı</option>
+                        <option value="Bekliyor">İnceleme Bekliyor</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="eval-input-group">
+                <label>Genel Geri Bildirim / Koçluk Notu</label>
+                <textarea id="eval-feedback" class="eval-input-v2" style="height:80px;" placeholder="Temsilciye iletilecek gelişim mesajı..."></textarea>
+            </div>
         </div>`;
+
 
     const { value: formValues } = await Swal.fire({
         html: contentHtml,
@@ -4503,7 +4607,6 @@ async function editEvaluation(targetCallId) {
     const agentName = evalData.agent;
     const agentGroup = evalData.group || 'Genel';
 
-    // Güçlü Normalizasyon
     const cleanGroup = agentGroup.toLowerCase()
         .replace(/i̇/g, 'i').replace(/ı/g, 'i').replace(/ş/g, 's')
         .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c').trim();
@@ -4515,7 +4618,6 @@ async function editEvaluation(targetCallId) {
     if (isChat) criteriaGroup = 'Chat';
     else if (isTelesatis) criteriaGroup = 'Telesatış';
 
-
     Swal.fire({ title: 'İnceleniyor...', didOpen: () => Swal.showLoading() });
     let criteriaList = [];
     if (criteriaGroup && criteriaGroup !== 'Genel') criteriaList = await fetchCriteria(criteriaGroup);
@@ -4524,7 +4626,6 @@ async function editEvaluation(targetCallId) {
     const isCriteriaBased = criteriaList.length > 0;
     let oldDetails = []; try { oldDetails = JSON.parse(evalData.details || "[]"); } catch (e) { oldDetails = []; }
 
-    // Tarihi formatla: dd.MM.yyyy -> yyyy-MM-dd (input type=date için)
     let safeDateVal = "";
     if (evalData.callDate) {
         let parts = evalData.callDate.split('.');
@@ -4532,60 +4633,73 @@ async function editEvaluation(targetCallId) {
         else safeDateVal = evalData.callDate;
     }
 
-    // GÜNCELLENMİŞ MODAL: Call ID gösteriliyor + Tarih Eklendi
-    let contentHtml = `<div class="eval-modal-wrapper" style="border-top:5px solid #1976d2;"><div class="score-dashboard"><div><div style="font-size:0.9rem;">DÜZENLENEN</div><div style="font-size:1.2rem; font-weight:bold; color:#1976d2;">${agentName}</div></div><div class="score-circle-outer" id="score-ring"><div class="score-circle-inner" id="live-score">${evalData.score}</div></div></div><div class="eval-header-card"><div><label>Call ID</label><input id="eval-callid" class="swal2-input" value="${evalData.callId}" readonly style="background:#eee; height:35px; width:100%;"></div><div><label>Çağrı Tarihi</label><input type="date" id="eval-calldate" class="swal2-input" style="height:35px; margin:0; width:100%;" value="${safeDateVal}"></div></div>`;
-
+    let criteriaFieldsHtml = '';
     if (isCriteriaBased) {
-        contentHtml += `<div class="criteria-container">`;
+        criteriaFieldsHtml += `<div class="criteria-list-v2">`;
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0; if (pts === 0) return;
-            let mPts = parseInt(c.mediumScore) || 0; let bPts = parseInt(c.badScore) || 0;
+            const fullText = escapeForJsString(c.text);
             let oldItem = oldDetails.find(d => d.q === c.text) || (oldDetails[i] ? oldDetails[i] : { score: pts, note: '' });
             let cVal = parseInt(oldItem.score); let cNote = oldItem.note || '';
 
-            // Geliştirme: Puan başlığı üstüne gelince tam metin gösterilmesi için title eklendi
-            const fullText = escapeForJsString(c.text);
             if (isChat) {
-                let gAct = cVal === pts ? 'active' : ''; let mAct = (cVal === mPts && mPts !== 0) ? 'active' : ''; let bAct = (cVal === bPts && bPts !== 0) ? 'active' : '';
-                if (cVal === 0 && bPts === 0) bAct = 'active'; else if (cVal === 0 && bPts > 0) { gAct = ''; mAct = ''; bAct = ''; }
-                contentHtml += `<div class="criteria-row" id="row-${i}" data-max-score="${pts}"><div class="criteria-header"><span title="${fullText}">${i + 1}. ${c.text}</span><span>Max: ${pts}</span></div><div class="criteria-controls"><div class="eval-button-group"><button class="eval-button eval-good ${gAct}" data-score="${pts}" onclick="setButtonScore(${i}, ${pts}, ${pts})">İyi</button>${mPts > 0 ? `<button class="eval-button eval-medium ${mAct}" data-score="${mPts}" onclick="setButtonScore(${i}, ${mPts}, ${pts})">Orta</button>` : ''}${bPts > 0 ? `<button class="eval-button eval-bad ${bAct}" data-score="${bPts}" onclick="setButtonScore(${i}, ${bPts}, ${pts})">Kötü</button>` : ''}</div><span class="score-badge" id="badge-${i}">${cVal}</span></div><input type="text" id="note-${i}" class="note-input" value="${cNote}" style="display:${cVal < pts ? 'block' : 'none'}"></div>`;
+                let mPts = parseInt(c.mediumScore) || 0; let bPts = parseInt(c.badScore) || 0;
+                let gAct = cVal === pts ? 'active' : '';
+                let mAct = (cVal === mPts && mPts !== 0) ? 'active' : '';
+                let bAct = (cVal === bPts || (cVal === 0 && bPts === 0)) ? 'active' : '';
+                criteriaFieldsHtml += `
+                    <div class="criteria-item-v2 ${cVal < pts ? 'failed' : ''}" id="criteria-${i}" data-max-score="${pts}">
+                        <div class="criteria-top"><span class="criteria-name" title="${fullText}">${i + 1}. ${c.text}</span><span class="criteria-max">Maks: ${pts} Puan</span></div>
+                        <div class="criteria-actions">
+                            <div class="eval-btn-group-v2">
+                                <button type="button" class="eval-btn-v2 ${gAct} good" data-score="${pts}" onclick="v2_setScore(${i}, ${pts}, ${pts}, 'good')">İyi</button>
+                                ${mPts > 0 ? `<button type="button" class="eval-btn-v2 ${mAct} medium" data-score="${mPts}" onclick="v2_setScore(${i}, ${mPts}, ${pts}, 'medium')">Orta</button>` : ''}
+                                <button type="button" class="eval-btn-v2 ${bAct} bad" data-score="${bPts}" onclick="v2_setScore(${i}, ${bPts}, ${pts}, 'bad')">Kötü</button>
+                            </div>
+                            <input type="text" id="note-${i}" class="eval-input-v2" value="${cNote}" placeholder="Not ekle..." style="display:${cVal < pts ? 'block' : 'none'}; width:150px; height:32px; padding:4px 10px; font-size:0.8rem;">
+                        </div>
+                    </div>`;
             } else if (isTelesatis) {
-                contentHtml += `<div class="criteria-row" id="row-${i}" data-max-score="${pts}"><div class="criteria-header"><span title="${fullText}">${i + 1}. ${c.text}</span><span>Max: ${pts}</span></div><div class="criteria-controls" style="display:flex; background:#f9f9f9;"><input type="range" class="custom-range slider-input" id="slider-${i}" min="0" max="${pts}" value="${cVal}" data-index="${i}" oninput="updateRowSliderScore(${i}, ${pts})" style="flex-grow:1;"><span class="score-badge" id="badge-${i}">${cVal}</span></div><input type="text" id="note-${i}" class="note-input" value="${cNote}" style="display:${cVal < pts ? 'block' : 'none'}"></div>`;
+                criteriaFieldsHtml += `
+                    <div class="criteria-item-v2 ${cVal < pts ? 'failed' : ''}" id="criteria-${i}" data-max-score="${pts}">
+                        <div class="criteria-top"><span class="criteria-name" title="${fullText}">${i + 1}. ${c.text}</span><span class="criteria-max" id="val-${i}">${cVal} / ${pts}</span></div>
+                        <div class="criteria-actions">
+                            <input type="range" class="custom-range" id="slider-${i}" min="0" max="${pts}" value="${cVal}" oninput="v2_updateSlider(${i}, ${pts})" style="width:100%; margin-right:15px;">
+                            <input type="text" id="note-${i}" class="eval-input-v2" value="${cNote}" placeholder="Not..." style="display:${cVal < pts ? 'block' : 'none'}; width:100px; height:32px; padding:4px 10px; font-size:0.8rem;">
+                        </div>
+                    </div>`;
             }
         });
-        contentHtml += `</div>`;
-    } else {
-        contentHtml += `<div style="padding:15px; border:1px dashed #ccc; text-align:center;"><label>Manuel Puan</label><br><input id="eval-manual-score" type="number" class="swal2-input" value="${evalData.score}" min="0" max="100" style="width:100px;"></div><textarea id="eval-details" class="swal2-textarea">${typeof evalData.details === 'string' ? evalData.details : ''}</textarea>`;
+        criteriaFieldsHtml += `</div>`;
     }
-    contentHtml += `<div><label>Revize Feedback</label><textarea id="eval-feedback" class="swal2-textarea">${evalData.feedback || ''}</textarea></div></div>`;
+
+    const contentHtml = `
+        <div class="eval-modal-v2">
+            <div class="eval-form-header" style="border-bottom-color:#1976d2;"><div class="eval-form-user"><div class="eval-form-avatar" style="background:#1976d2;">${agentName.charAt(0).toUpperCase()}</div><div><div style="font-size:0.8rem; color:#718096; font-weight:700;">DÜZENLENEN</div><div style="font-size:1.1rem; font-weight:800; color:#1976d2;">${agentName}</div></div></div><div class="eval-form-score-box"><div class="eval-form-score-val" id="v2-live-score">${evalData.score}</div><div class="eval-form-score-label">MEVCUT PUAN</div></div></div>
+            <div class="eval-form-grid" style="background:#f0f7ff; border:1px solid #cde4ff;"><div class="eval-input-group"><label>Call ID</label><input id="eval-callid" class="eval-input-v2" value="${evalData.callId}" readonly style="background:#e1efff; cursor:not-allowed;"></div><div class="eval-input-group"><label>Çağrı Tarihi</label><input type="date" id="eval-calldate" class="eval-input-v2" value="${safeDateVal}"></div></div>
+            <div style="margin:15px 0; font-weight:800; font-size:0.9rem; color:#4a5568;"><i class="fas fa-edit" style="color:#1976d2;"></i> KRİTERLERİ GÜNCELLE</div>
+            ${isCriteriaBased ? criteriaFieldsHtml : `<div style="padding:20px; background:#f8fafc; border:1px dashed #cbd5e0; border-radius:12px; text-align:center; margin-bottom:20px;"><label style="display:block; margin-bottom:8px; font-weight:700;">Manuel Puan</label><input id="eval-manual-score" type="number" class="eval-input-v2" value="${evalData.score}" min="0" max="100" style="width:80px; text-align:center;"></div><textarea id="eval-details" class="eval-input-v2" style="height:100px;">${typeof evalData.details === 'string' ? evalData.details : ''}</textarea>`}
+            <div class="eval-input-group"><label>Revize Feedback / Notlar</label><textarea id="eval-feedback" class="eval-input-v2" style="height:100px;">${evalData.feedback || ''}</textarea></div>
+        </div>`;
 
     const { value: formValues } = await Swal.fire({
-        html: contentHtml,
-        width: '600px',
-        showCancelButton: true,
-        confirmButtonText: ' 💾  Güncelle',
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        didOpen: () => { if (isTelesatis) window.recalcTotalSliderScore(); else if (isChat) window.recalcTotalScore(); },
+        html: contentHtml, width: '600px', showCancelButton: true, confirmButtonText: ' 💾  Değişiklikleri Kaydet', allowOutsideClick: false, allowEscapeKey: false,
+        didOpen: () => { window.v2_recalc(); },
         preConfirm: () => {
             const callId = document.getElementById('eval-callid').value;
-            // Tarihi geri topla
             const rawDate = document.getElementById('eval-calldate').value;
             let callDate = rawDate;
-            if (rawDate.includes('-')) {
-                const p = rawDate.split('-');
-                if (p.length === 3) callDate = `${p[2]}.${p[1]}.${p[0]}`;
-            }
-
+            if (rawDate.includes('-')) { const p = rawDate.split('-'); if (p.length === 3) callDate = `${p[2]}.${p[1]}.${p[0]}`; }
             const feedback = document.getElementById('eval-feedback').value;
             if (isCriteriaBased) {
                 let total = 0; let detailsArr = [];
                 for (let i = 0; i < criteriaList.length; i++) {
                     const c = criteriaList[i]; if (parseInt(c.points) === 0) continue;
                     let val = 0; let note = document.getElementById(`note-${i}`).value;
-                    if (isChat) val = parseInt(document.getElementById(`badge-${i}`).innerText) || 0;
-                    else if (isTelesatis) val = parseInt(document.getElementById(`slider-${i}`).value) || 0;
-                    else val = parseInt(c.points);
+                    const itemEl = document.getElementById(`criteria-${i}`);
+                    const slider = itemEl.querySelector('input[type="range"]');
+                    if (slider) val = parseInt(slider.value) || 0;
+                    else { const activeBtn = itemEl.querySelector('.eval-btn-v2.active'); val = activeBtn ? parseInt(activeBtn.getAttribute('data-score')) : 0; }
                     total += val; detailsArr.push({ q: c.text, max: parseInt(c.points), score: val, note: note });
                 }
                 return { agentName, callId, callDate, score: total, details: JSON.stringify(detailsArr), feedback };
@@ -4594,26 +4708,24 @@ async function editEvaluation(targetCallId) {
             }
         }
     });
+
     if (formValues) {
         Swal.fire({ title: 'Güncelleniyor...', didOpen: () => Swal.showLoading() });
         fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ action: "updateEvaluation", username: currentUser, token: getToken(), ...formValues })
-        })
-            .then(r => r.json()).then(d => {
-                if (d.result === "success") {
-                    Swal.fire({ icon: 'success', title: 'Güncellendi', timer: 1500, showConfirmButton: false });
-                    // DÜZELTME: Güncelleme sonrası hem evaluations hem de feedback logs güncellenmeli
-                    fetchEvaluationsForAgent(agentName);
-                    fetchFeedbackLogs().then(() => {
-                        loadFeedbackList();
-                    });
-                }
-                else { Swal.fire('Hata', d.message, 'error'); }
-            });
+        }).then(r => r.json()).then(d => {
+            if (d.result === "success") {
+                Swal.fire({ icon: 'success', title: 'Güncellendi', timer: 1500, showConfirmButton: false });
+                fetchEvaluationsForAgent(agentName);
+                fetchFeedbackLogs().then(() => { loadFeedbackList(); });
+            } else { Swal.fire('Hata', d.message, 'error'); }
+        });
     }
 }
+
+
+
 
 /* =========================================================
    ANA SAYFA + TEKNİK + TELESATIŞ (FULLSCREEN) GÜNCELLEMESİ
