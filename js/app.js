@@ -3416,20 +3416,20 @@ function renderDashboardGroupAvgChart(data) {
             datasets: [{
                 label: 'Ortalama',
                 data: values,
-                backgroundColor: 'rgba(14, 27, 66, 0.8)',
+                backgroundColor: '#1e293b',
                 hoverBackgroundColor: '#CF0A2C',
                 borderRadius: 4,
-                barThickness: 20
+                barThickness: 16
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             indexAxis: 'y',
-            layout: { padding: { top: 45, right: 85, bottom: 10, left: 10 } },
+            layout: { padding: { top: 35, right: 90, bottom: 5, left: 10 } },
             scales: {
-                x: { beginAtZero: true, max: 140, grid: { color: 'rgba(0,0,0,0.03)' }, ticks: { display: false } },
-                y: { grid: { display: false }, ticks: { font: { weight: '700', size: 12 } } }
+                x: { beginAtZero: true, max: 140, grid: { display: false }, ticks: { display: false } },
+                y: { grid: { display: false }, ticks: { font: { weight: '800', size: 13, family: '"Inter", sans-serif' }, color: '#1e293b' } }
             },
             plugins: {
                 legend: { display: false },
@@ -4129,21 +4129,27 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                     ? `<span style="font-size:0.75rem; font-weight:700; color:#4a5568; background:#edf2f7; padding:2px 8px; border-radius:12px; margin-left:8px;">${escapeHtml(altNameRaw)}</span>`
                     : '';
 
-                // Detay HTML oluşturma (V2)
+                // Detay HTML oluşturma (V2 Compact Grid)
                 let detailTableHtml = '';
                 try {
                     const detailObj = JSON.parse(evalItem.details);
                     if (Array.isArray(detailObj)) {
-                        detailTableHtml = '<table class="eval-table-v2"><tbody>';
+                        detailTableHtml = '<div class="eval-row-grid-v2">';
                         detailObj.forEach(item => {
                             let isFailed = item.score < item.max;
-                            let noteDisplay = item.note ? `<span class="eval-note-v2"><i class="fas fa-sticky-note"></i> ${item.note}</span>` : '';
-                            detailTableHtml += `<tr class="eval-row-v2 ${isFailed ? 'eval-row-failed' : ''}">
-                                <td>${item.q}${noteDisplay}</td>
-                                <td style="color: ${isFailed ? '#e53e3e' : '#48bb78'}">${item.score} / ${item.max}</td>
-                            </tr>`;
+                            let noteDisplay = item.note ? `<div class="eval-note-v2" style="margin-top:4px; font-size:0.75rem;"><i class="fas fa-sticky-note"></i> ${item.note}</div>` : '';
+                            detailTableHtml += `
+                            <div class="eval-crit-card-v2 ${isFailed ? 'failed' : 'success'}">
+                                <div class="eval-crit-text-v2">
+                                    ${item.q}
+                                    ${noteDisplay}
+                                </div>
+                                <div class="eval-crit-val-v2" style="color: ${isFailed ? '#ef4444' : '#10b981'}">
+                                    ${item.score} / ${item.max}
+                                </div>
+                            </div>`;
                         });
-                        detailTableHtml += '</tbody></table>';
+                        detailTableHtml += '</div>';
                     } else {
                         detailTableHtml = `<div class="eval-feedback-box-v2">${evalItem.details}</div>`;
                     }
