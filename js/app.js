@@ -55,6 +55,11 @@ function showGlobalError(message) {
 // Apps Script URL'si
 let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxCJNnf5FnZpd7Vk81c7XL3yFuPUwdNkTYTrxojY8gCN6_7t-YlNz1LfmDt_ZJ-u7aT/exec"; // Apps Script Web App URL
 
+// --- SUPABASE BAĞLANTISI ---
+const SUPABASE_URL = "https://psauvjohywldldgppmxz.supabase.co";
+const SUPABASE_KEY = "sb_publishable_ITFx76ndmOc3UJkNbHOSlQ_kD91kq45";
+const supabase = typeof supabase !== 'undefined' ? supabase : (window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null);
+
 // ---- API CALL helper (Menu/Yetki vs için gerekli) ----
 async function apiCall(action, payload = {}, retries = 2) {
     const username = (typeof currentUser !== "undefined" && currentUser) ? currentUser : (localStorage.getItem("sSportUser") || "");
@@ -454,90 +459,91 @@ function checkSession() {
 }
 function enterBas(e) { if (e.key === "Enter") girisYap(); }
 async function girisYap() {
-    const uName = document.getElementById("usernameInput").value.trim();
+    const uName = document.getElementById("usernameInput").value.trim().toLowerCase();
     const uPass = document.getElementById("passInput").value.trim();
     const loadingMsg = document.getElementById("loading-msg");
     const errorMsg = document.getElementById("error-msg");
     if (!uName || !uPass) { errorMsg.innerText = "Lütfen bilgileri giriniz."; errorMsg.style.display = "block"; return; }
 
     loadingMsg.style.display = "block";
-    loadingMsg.innerText = "Doğrulanıyor...";
+    loadingMsg.innerText = "Supabase ile doğrulanıyor...";
     errorMsg.style.display = "none";
     document.querySelector('.login-btn').disabled = true;
 
-    // IP adresini al (henüz alınmadıysa)
     if (!globalUserIP) {
         try {
             const ipResponse = await fetch('https://ipapi.co/json/');
             const ipData = await ipResponse.json();
             globalUserIP = `${ipData.ip} [${ipData.city || '-'}, ${ipData.region || '-'}]`;
-        } catch (e) {
-            // IP alınamazsa boş bırak
-            globalUserIP = "";
-        }
+        } catch (e) { globalUserIP = ""; }
     }
 
-    const hashedPass = CryptoJS.SHA256(uPass).toString();
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "login", username: uName, password: hashedPass, ip: globalUserIP || "" })
-    }).then(response => response.json())
-        .then(data => {
-            loadingMsg.style.display = "none";
-            document.querySelector('.login-btn').disabled = false;
+    try {
+        const hashedPass = CryptoJS.SHA256(uPass).toString();
 
-            if (data.result === "success") {
-                currentUser = data.username;
-                localStorage.setItem("sSportUser", currentUser);
-                localStorage.setItem("sSportToken", data.token);
-                localStorage.setItem("sSportRole", data.role);
-                if (data.group) localStorage.setItem("sSportGroup", data.group);
-                // ✅ Oturum zaman damgası (ertesi gün otomatik çıkış için)
-                localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
-                localStorage.setItem("sSportLoginAt", String(Date.now()));
+        // --- SUPABASE LOGIN ---
+        const { data, error } = await supabase
+            .from('Users')
+            .select('*')
+            .eq('Username', uName)
+            .eq('Password', hashedPass)
+            .single();
 
-                if (data.forceChange === true) {
-                    localStorage.setItem("sSportForceChange", "true"); // Bayrağı sakla
-                    Swal.fire({
-                        icon: 'warning', title: ' ⚠️  Güvenlik Uyarısı',
-                        text: 'İlk girişiniz. Lütfen şifrenizi değiştirin.',
-                        allowOutsideClick: false, allowEscapeKey: false, confirmButtonText: 'Şifremi Değiştir'
-                    }).then(() => { changePasswordPopup(true); });
-                } else {
-                    localStorage.removeItem("sSportForceChange"); // Tedbir amaçlı sil
-                    document.getElementById("login-screen").style.display = "none";
-                    document.getElementById("user-display").innerText = currentUser;
-                    setHomeWelcomeUser(currentUser);
-                    const savedGroup = data.group || localStorage.getItem('sSportGroup') || '';
-                    checkAdmin(data.role); // ✅ DÜZELTME: savedRole yerine data.role kullanıldı
-                    startSessionTimer();
+        loadingMsg.style.display = "none";
+        document.querySelector('.login-btn').disabled = false;
 
-                    if (BAKIM_MODU) {
-                        document.getElementById("maintenance-screen").style.display = "flex";
-                    } else {
-                        document.getElementById("main-app").style.display = "block";
-                        // Menü yetkilerini ve ana sayfa bloklarını login sonrası yükle
-                        // ✅ YENİ: Veri yüklemeden önce yetkileri yükle ve bekle
-                        loadPermissionsOnStartup().then(() => {
-                            loadHomeBlocks();
-                            loadContentData();
-                            loadWizardData();
-                            loadTechWizardData();
-                        });
-                    }
-                }
-            } else {
-                errorMsg.innerText = data.message || "Hatalı giriş!";
-                errorMsg.style.display = "block";
-            }
-        }).catch(error => {
-            loadingMsg.style.display = "none";
-            document.querySelector('.login-btn').disabled = false;
-            errorMsg.innerText = "Bağlantı sorunu veya sunucu hatası! Lütfen internetinizi kontrol edip sayfayı yenileyin.";
+        if (error || !data) {
+            errorMsg.innerText = "Hatalı Kullanıcı Adı veya Şifre!";
             errorMsg.style.display = "block";
-            console.error("Login error:", error);
-        });
+            return;
+        }
+
+        // Oturum Verilerini Kaydet
+        currentUser = data.Username;
+        localStorage.setItem("sSportUser", currentUser);
+        localStorage.setItem("sSportToken", "sb_" + Math.random().toString(36).substr(2)); // Geçici Supabase token
+        localStorage.setItem("sSportRole", data.Role);
+        if (data.Group) localStorage.setItem("sSportGroup", data.Group);
+        localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
+        localStorage.setItem("sSportLoginAt", String(Date.now()));
+
+        // Zorunlu Şifre Değişimi
+        if (data.ForceChange == "0.0" || data.ForceChange == 0) {
+            localStorage.setItem("sSportForceChange", "true");
+            Swal.fire({
+                icon: 'warning', title: ' ⚠️  Güvenlik Uyarısı',
+                text: 'İlk girişiniz. Lütfen şifrenizi değiştirin.',
+                allowOutsideClick: false, confirmButtonText: 'Şifremi Değiştir'
+            }).then(() => { changePasswordPopup(true); });
+        } else {
+            localStorage.removeItem("sSportForceChange");
+            document.getElementById("login-screen").style.display = "none";
+            document.getElementById("user-display").innerText = currentUser;
+            setHomeWelcomeUser(currentUser);
+            checkAdmin(data.Role);
+            startSessionTimer();
+
+            if (BAKIM_MODU) {
+                document.getElementById("maintenance-screen").style.display = "flex";
+            } else {
+                document.getElementById("main-app").style.display = "block";
+                loadPermissionsOnStartup().then(() => {
+                    loadHomeBlocks();
+                    loadContentData(); // Artık Supabase'den çekecek
+                    loadWizardData();
+                    loadTechWizardData();
+                });
+            }
+
+            // Loglama (Arka planda Apps Script'e bildirebiliriz veya Supabase'e kalsın)
+            apiCall('logLogin', { ip: globalUserIP }).catch(() => { });
+        }
+    } catch (err) {
+        loadingMsg.style.display = "none";
+        document.querySelector('.login-btn').disabled = false;
+        errorMsg.innerText = "Sistem Hatası: " + err.message;
+        errorMsg.style.display = "block";
+    }
 }
 async function forgotPasswordPopup() {
     const { value: username } = await Swal.fire({
@@ -684,7 +690,32 @@ async function changePasswordPopup(isMandatory = false) {
         }).catch(err => { Swal.fire('Hata', 'Sunucu hatası.', 'error'); if (isMandatory) changePasswordPopup(true); });
     } else if (isMandatory) { changePasswordPopup(true); }
 }
-// --- DATA FETCHING ---
+// --- DATA FETCHING (Supabase Optimized) ---
+async function loadContentData() {
+    try {
+        console.log("[Pusula] Fetching data from Supabase...");
+        const { data, error } = await supabase
+            .from('Data')
+            .select('*');
+
+        if (error) throw error;
+
+        processRawData(data || []);
+        console.log("[Pusula] Data loaded successfully.");
+
+        // Barrier resolve
+        if (typeof __dataLoadedResolve === "function") __dataLoadedResolve();
+
+        // Post-render
+        if (typeof filterContent === "function") filterContent();
+        if (typeof startTicker === "function") startTicker();
+
+    } catch (err) {
+        console.error("[Pusula] Supabase Fetch Error:", err);
+        // Fallback to Apps Script if Supabase fails
+        apiCall("getData").then(res => processRawData(res.data)).catch(() => { });
+    }
+}
 // --- DATA PROCESSING (Refactored for Cache Support) ---
 function processRawData(rawData) {
     if (!Array.isArray(rawData)) return;
