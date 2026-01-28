@@ -3538,6 +3538,9 @@ body.editing .edit-icon {
   display: grid;
   gap: 8px;
   text-align: left;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 5px;
 }
 
 .q-dash-agent-scores .das-item {
