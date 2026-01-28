@@ -70,7 +70,7 @@ async function apiCall(action, params = {}) {
                 const { data, error } = await sb.from('RolePermissions').select('*');
                 if (error) throw error;
                 // Grupları (rolleri) benzersiz şekilde ayıkla
-                const groups = [...new Set(data.map(p => p.role))];
+                const groups = [...new Set(data.map(p => p.Role))];
                 return { result: "success", permissions: data, groups: groups };
             }
             case "setRolePermissions": {
@@ -79,18 +79,18 @@ async function apiCall(action, params = {}) {
                 // Daha verimli olması için her resource bazında tek tek upsert:
                 for (const p of perms) {
                     await sb.from('RolePermissions').upsert({
-                        role: role,
-                        resource: p.resource,
-                        permission: p.permission,
-                        value: p.value
-                    }, { onConflict: 'role,resource' });
+                        Role: role,
+                        Resource: p.resource,
+                        Permission: p.permission,
+                        Value: p.value
+                    }, { onConflict: 'Role,Resource,Permission' });
                 }
                 return { result: "success" };
             }
             case "fetchEvaluations": {
                 let query = sb.from('Evaluations').select('*');
                 if (params.targetAgent && params.targetAgent !== 'all') {
-                    query = query.eq('agent', params.targetAgent);
+                    query = query.eq('AgentName', params.targetAgent);
                 }
                 const { data, error } = await query.order('id', { ascending: false });
                 if (error) throw error;
@@ -98,35 +98,35 @@ async function apiCall(action, params = {}) {
             }
             case "logEvaluation": {
                 const { data, error } = await sb.from('Evaluations').insert([{
-                    agent: params.agentName,
-                    evaluator: currentUser,
-                    callId: params.callId,
-                    callDate: params.callDate,
-                    score: params.score,
-                    details: params.details,
-                    feedback: params.feedback,
-                    feedbackType: params.feedbackType,
-                    group: params.agentGroup,
-                    date: new Date().toLocaleDateString('tr-TR'),
-                    isSeen: false,
-                    status: params.status || 'Tamamlandı'
+                    AgentName: params.agentName,
+                    Evaluator: currentUser,
+                    CallID: params.callId,
+                    CallDate: params.callDate,
+                    Score: params.score,
+                    Details: params.details,
+                    Feedback: params.feedback,
+                    FeedbackType: params.feedbackType,
+                    Group: params.agentGroup,
+                    Date: new Date().toLocaleString('tr-TR'),
+                    Okundu: 0,
+                    Durum: params.status || 'Tamamlandı'
                 }]);
                 if (error) throw error;
                 return { result: "success" };
             }
             case "updateEvaluation": {
                 const { error } = await sb.from('Evaluations').update({
-                    callDate: params.callDate,
-                    score: params.score,
-                    details: params.details,
-                    feedback: params.feedback,
-                    status: params.status
-                }).eq('callId', params.callId);
+                    CallDate: params.callDate,
+                    Score: params.score,
+                    Details: params.details,
+                    Feedback: params.feedback,
+                    Durum: params.status
+                }).eq('CallID', params.callId);
                 if (error) throw error;
                 return { result: "success" };
             }
             case "markEvaluationSeen": {
-                const { error } = await sb.from('Evaluations').update({ isSeen: true }).eq('callId', params.callId);
+                const { error } = await sb.from('Evaluations').update({ Okundu: 1 }).eq('CallID', params.callId);
                 return { result: error ? "error" : "success" };
             }
             case "getTrainings": {
@@ -156,7 +156,7 @@ async function apiCall(action, params = {}) {
                     startDate: params.startDate,
                     endDate: params.endDate,
                     duration: params.duration,
-                    date: new Date().toLocaleDateString('tr-TR'),
+                    Date: new Date().toLocaleString('tr-TR'),
                     isCompleted: false
                 }]);
                 if (error) throw error;
@@ -199,53 +199,52 @@ async function apiCall(action, params = {}) {
                 return { result: "success", feedbackLogs: data };
             }
             case "getTelesalesOffers": {
-                const { data, error } = await sb.from('TelesalesOffers').select('*');
+                const { data, error } = await sb.from('Telesatis_DataTeklifleri').select('*');
                 return { result: "success", data: data || [] };
             }
             case "saveAllTelesalesOffers": {
                 // Mevcut tüm teklifleri tek seferde değiştiren bir yapı (dikkatli kullanilmali)
-                await sb.from('TelesalesOffers').delete().neq('id', 0); // Hepsini sil
-                const { error } = await sb.from('TelesalesOffers').insert(params.offers);
+                await sb.from('Telesatis_DataTeklifleri').delete().neq('id', 0); // Hepsini sil
+                const { error } = await sb.from('Telesatis_DataTeklifleri').insert(params.offers);
                 return { result: error ? "error" : "success" };
             }
             case "getTelesalesScripts": {
-                const { data, error } = await sb.from('TelesalesScripts').select('*');
+                const { data, error } = await sb.from('Telesatis_Scripts').select('*');
                 return { result: "success", items: data || [] };
             }
             case "saveTelesalesScripts": {
-                await sb.from('TelesalesScripts').delete().neq('id', 0);
-                const { error } = await sb.from('TelesalesScripts').insert(params.scripts);
+                await sb.from('Telesatis_Scripts').delete().neq('id', 0);
+                const { error } = await sb.from('Telesatis_Scripts').insert(params.scripts);
                 return { result: error ? "error" : "success" };
             }
             case "getTechDocs": {
-                const { data, error } = await sb.from('TechDocs').select('*');
+                const { data, error } = await sb.from('Teknik_Dokumanlar').select('*');
                 return { result: "success", data: data || [] };
             }
             case "getTechDocCategories": {
-                const { data, error } = await sb.from('TechDocs').select('Kategori');
+                const { data, error } = await sb.from('Teknik_Dokumanlar').select('Kategori');
                 const cats = [...new Set(data.filter(x => x.Kategori).map(x => x.Kategori))];
                 return { result: "success", categories: cats };
             }
             case "upsertTechDoc": {
-                const { error } = await sb.from('TechDocs').upsert({
+                const payload = {
                     Kategori: params.kategori,
                     Başlık: params.baslik,
                     İçerik: params.icerik,
-                    Adım: params.adim,
-                    Not: params.not,
-                    Link: params.link,
-                    Resim: params.image,
-                    Durum: params.durum
-                }, { onConflict: 'Başlık' });
+                    Görsel: params.image || null
+                };
+                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: 'Başlık' });
                 return { result: error ? "error" : "success" };
             }
             case "updateHomeBlock": {
                 const { error } = await sb.from('HomeBlocks').upsert({
-                    BlockId: params.key,
+                    Key: params.key,
                     Title: params.title,
                     Content: params.content,
-                    VisibleGroups: params.visibleGroups
-                }, { onConflict: 'BlockId' });
+                    VisibleGroups: params.visibleGroups,
+                    UpdatedAt: new Date().toISOString(),
+                    UpdatedBy: currentUser || null
+                }, { onConflict: 'Key' });
                 return { result: error ? "error" : "success" };
             }
             case "getActiveUsers": {
@@ -258,7 +257,7 @@ async function apiCall(action, params = {}) {
                 return { result: "success", notifications: { pendingFeedbackCount: 0, unseenCount: 0 } };
             }
             case "getBroadcastFlow": {
-                const { data, error } = await sb.from('BroadcastFlow').select('*');
+                const { data, error } = await sb.from('YayinAkisi').select('*');
                 if (error) {
                     console.warn("[Pusula] BroadcastFlow fetch error:", error);
                     return { result: "success", items: [] };
@@ -266,7 +265,7 @@ async function apiCall(action, params = {}) {
                 return { result: "success", items: data || [] };
             }
             case "deleteTechDoc": {
-                const { error } = await sb.from('TechDocs').delete().match({
+                const { error } = await sb.from('Teknik_Dokumanlar').delete().match({
                     Kategori: params.keyKategori,
                     Başlık: params.keyBaslik
                 });
@@ -4476,10 +4475,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
             listEl.innerHTML = '';
 
             // Sadece normal değerlendirmeleri filtrele ve göster
-            const normalEvaluations = allEvaluationsData.filter(e => {
-                const cid = e.callId || e.callid || '';
-                return !String(cid).toUpperCase().startsWith('MANUEL-');
-            });
+            const normalEvaluations = allEvaluationsData.filter(e => !String(e.callId).toUpperCase().startsWith('MANUEL-'));
 
             // Dönem filtresini uygula (seçili ay / yıl)
             let filteredEvaluations = normalEvaluations;
