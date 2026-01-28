@@ -541,25 +541,27 @@ async function girisYap() {
             Username: user.Username || user.username,
             Role: user.Role || user.role,
             Group: user.Group || user.group,
-            ForceChange: user.ForceChange ?? user.forcechange ?? user.Forcechange
+            ForceChange: user.ForceChange ?? user.forcechange
         };
 
         // Oturum Verilerini Kaydet
         currentUser = data.Username;
         localStorage.setItem("sSportUser", currentUser);
-        localStorage.setItem("sSportToken", "sb_" + Math.random().toString(36).substr(2)); // Geçici Supabase token
+        localStorage.setItem("sSportToken", "sb_" + Math.random().toString(36).substr(2));
         localStorage.setItem("sSportRole", data.Role);
         if (data.Group) localStorage.setItem("sSportGroup", data.Group);
         localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
         localStorage.setItem("sSportLoginAt", String(Date.now()));
 
-        // Zorunlu Şifre Değişimi
-        if (data.ForceChange == "0.0" || data.ForceChange == 0) {
+        // Zorunlu Şifre Değişimi (Sadece değer tam olarak 0 ise)
+        const needsForceChange = (data.ForceChange === 0 || data.ForceChange === "0" || data.ForceChange === "0.0");
+
+        if (needsForceChange) {
             localStorage.setItem("sSportForceChange", "true");
             Swal.fire({
                 icon: 'warning', title: ' ⚠️  Güvenlik Uyarısı',
-                text: 'İlk girişiniz. Lütfen şifrenizi değiştirin.',
-                allowOutsideClick: false, confirmButtonText: 'Şifremi Değiştir'
+                text: 'Yeni sistem için şifrenizi bir kez güncellemeniz gerekmektedir.',
+                allowOutsideClick: false, confirmButtonText: 'Şifremi Güncelle'
             }).then(() => { changePasswordPopup(true); });
         } else {
             localStorage.removeItem("sSportForceChange");
@@ -575,22 +577,22 @@ async function girisYap() {
                 document.getElementById("main-app").style.display = "block";
                 loadPermissionsOnStartup().then(() => {
                     loadHomeBlocks();
-                    loadContentData(); // Artık Supabase'den çekecek
+                    loadContentData();
                     loadWizardData();
                     loadTechWizardData();
                 });
             }
-
-            // Loglama (Arka planda Apps Script'e bildirebiliriz veya Supabase'e kalsın)
             apiCall('logLogin', { ip: globalUserIP }).catch(() => { });
         }
     } catch (err) {
+        console.error("Login Error:", err);
         loadingMsg.style.display = "none";
         document.querySelector('.login-btn').disabled = false;
-        errorMsg.innerText = "Sistem Hatası: " + err.message;
+        errorMsg.innerText = "Giriş yapılamadı: " + err.message;
         errorMsg.style.display = "block";
     }
 }
+
 async function forgotPasswordPopup() {
     const { value: username } = await Swal.fire({
         title: 'Şifremi Unuttum',
