@@ -52,9 +52,6 @@ function showGlobalError(message) {
     } catch (e) { }
 }
 
-// Apps Script URL'si
-let SCRIPT_URL = localStorage.getItem("PUSULA_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycbxCJNnf5FnZpd7Vk81c7XL3yFuPUwdNkTYTrxojY8gCN6_7t-YlNz1LfmDt_ZJ-u7aT/exec"; // Apps Script Web App URL
-
 // --- SUPABASE BAĞLANTISI ---
 const SUPABASE_URL = "https://psauvjohywldldgppmxz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_ITFx76ndmOc3UJkNbHOSlQ_kD91kq45";
@@ -62,25 +59,7 @@ const sb = (window.supabase && typeof window.supabase.createClient === 'function
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
     : null;
 
-// ---- API CALL helper (Menu/Yetki vs için gerekli) ----
-async function apiCall(action, payload = {}, retries = 2) {
-    const username = (typeof currentUser !== "undefined" && currentUser) ? currentUser : (localStorage.getItem("sSportUser") || "");
-    const token = (typeof getToken === "function" ? getToken() : localStorage.getItem("sSportToken")) || "";
-    const ip = globalUserIP || "";
-
-    try {
-        const res = await fetch(SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action, username, token, ip, ...payload })
-        });
-        const json = await res.json();
-        return json;
-    } catch (err) {
-        console.warn("[Pusula] apiCall (GAS) sessizce başarısız oldu:", err);
-        return { result: "error", message: "GAS offline" };
-    }
-}
+// SCRIPT_URL ve apiCall kaldırıldı. Tüm işlemler Supabase üzerinden yürütülmektedir.
 
 // SweetAlert2 yoksa minimal yedek (sessiz kırılma olmasın)
 if (typeof Swal === "undefined") {
@@ -598,45 +577,7 @@ async function girisYap() {
 }
 
 async function forgotPasswordPopup() {
-    const { value: username } = await Swal.fire({
-        title: 'Şifremi Unuttum',
-        input: 'text',
-        inputLabel: 'Kullanıcı Adınızı Giriniz',
-        inputPlaceholder: 'Kullanıcı adı...',
-        showCancelButton: true,
-        confirmButtonText: 'Şifremi Sıfırla',
-        cancelButtonText: 'İptal',
-        inputValidator: (value) => {
-            if (!value) return 'Kullanıcı adı boş olamaz!';
-        }
-    });
-
-    if (username) {
-        Swal.fire({
-            title: 'İşlem Yapılıyor...',
-            text: 'Lütfen bekleyin, şifreniz sıfırlanıyor ve e-posta gönderiliyor.',
-            allowOutsideClick: false,
-            didOpen: () => { Swal.showLoading(); }
-        });
-
-        console.log("Forgot Password Request Started (v1.1)");
-        apiCall('forgotPassword', { username: username.trim() })
-            .then(data => {
-                // apiCall result !== success ise zaten catch'e düşecek, burası sadece success içindir.
-                Swal.fire('Başarılı!', 'Geçici şifreniz kayıtlı e-posta adresinize gönderildi. Lütfen mailinizi kontrol ediniz.', 'success');
-            })
-            .catch(err => {
-                console.error('Forgot password error:', err);
-                const errorMsg = (err && err.message) ? err.message : String(err);
-
-                if (errorMsg.includes("Failed to fetch") || errorMsg === "TypeError: Failed to fetch") {
-                    Swal.fire('Bağlantı Hatası', 'Sunucuya ulaşılamıyor. Lütfen Apps Script Deploy işlemini (Yeni sürüm) yaptığınızdan emin olun.', 'error');
-                } else {
-                    // Backend'den gelen "Kullanıcı bulunamadı" gibi mesajlar buraya düşecek
-                    Swal.fire('Hata!', errorMsg, 'error');
-                }
-            });
-    }
+    Swal.fire('Bilgi', 'Şifre sıfırlama işlemi için lütfen yöneticinizle irtibata geçiniz. Supabase geçişi nedeniyle bu özellik geçici olarak devre dışıdır.', 'info');
 }
 
 function checkAdmin(role) {
@@ -871,7 +812,7 @@ function processRawData(rawData) {
     try { updateSearchResultCount(activeCards.length || database.length, database.length); } catch (e) { }
 }
 
-function loadContentData() {
+async function loadContentData() {
     const CACHE_KEY = "sSportContentCache";
     let loadedFromCache = false;
 
@@ -887,40 +828,29 @@ function loadContentData() {
                 loadedFromCache = true;
             }
         }
-    } catch (e) { console.warn("Cache read error:", e); }
+    } catch (e) { }
 
-    // If no cache, show loader
     if (!loadedFromCache) {
         document.getElementById('loading').style.display = 'block';
     }
 
-    // 2. Fetch Fresh Data (Optimized with apiCall)
-    apiCall('fetchData', { limit: 1000 }).then(data => {
+    // 2. Fetch Fresh Data (Strictly Supabase)
+    try {
+        const { data, error } = await sb.from('Data').select('*');
+        if (error) throw error;
+
         if (!loadedFromCache) document.getElementById('loading').style.display = 'none';
 
-        if (data.result === "success") {
-            // Update Cache
-            try { localStorage.setItem(CACHE_KEY, JSON.stringify(data.data)); } catch (e) { }
-            // Render
-            processRawData(data.data);
-
-            // Background load the rest if total > limit (optional but good for future)
-            if (data.total > 1000) {
-                apiCall('fetchData', { offset: 1000 }).then(moreData => {
-                    if (moreData.result === 'success') {
-                        const fullDB = data.data.concat(moreData.data);
-                        database = fullDB.filter(item => VALID_CATEGORIES.includes(item.category));
-                        // Cache update optional
-                        try { localStorage.setItem(CACHE_KEY, JSON.stringify(fullDB)); } catch (e) { }
-                    }
-                });
-            }
-        } else {
-            if (!loadedFromCache) document.getElementById('loading').innerHTML = `Veriler alınamadı: ${data.message || 'Bilinmeyen Hata'}`;
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        processRawData(data);
+    } catch (err) {
+        console.error("[Pusula] Supabase Load error:", err);
+        if (!loadedFromCache) {
+            document.getElementById('loading').innerHTML = 'Veriler yüklenirken bir hata oluştu: ' + err.message;
         }
-    }).catch(error => {
-        if (!loadedFromCache) document.getElementById('loading').innerHTML = 'Bağlantı Hatası! Sunucuya ulaşılamıyor.';
-    }).finally(() => { try { __dataLoadedResolve && __dataLoadedResolve(); } catch (e) { } });
+    } finally {
+        if (typeof __dataLoadedResolve === "function") __dataLoadedResolve();
+    }
 }
 // --- WIZARD İŞLEMLERİ (Supabase) ---
 async function loadWizardData() {
@@ -1190,17 +1120,23 @@ function toggleEditMode() {
     if (document.getElementById('sales-modal').style.display === 'flex') openSales();
     if (document.getElementById('news-modal').style.display === 'flex') openNews();
 }
-function sendUpdate(o, c, v, t = 'card') {
+async function sendUpdate(o, c, v, t = 'card') {
     if (!Swal.isVisible()) Swal.fire({ title: 'Kaydediliyor...', didOpen: () => { Swal.showLoading() } });
-    fetch(SCRIPT_URL, {
-        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: "updateContent", title: o, column: c, value: v, type: t, originalText: o, username: currentUser, token: getToken() })
-    }).then(r => r.json()).then(data => {
-        if (data.result === "success") {
-            Swal.fire({ icon: 'success', title: 'Başarılı', timer: 1500, showConfirmButton: false });
-            setTimeout(loadContentData, 1600);
-        } else { Swal.fire('Hata', 'Kaydedilemedi: ' + (data.message || 'Bilinmeyen Hata'), 'error'); }
-    }).catch(err => Swal.fire('Hata', 'Sunucu hatası.', 'error'));
+
+    try {
+        const { error } = await sb
+            .from('Data')
+            .update({ [c]: v })
+            .eq('Title', o);
+
+        if (error) throw error;
+
+        Swal.fire({ icon: 'success', title: 'Başarılı', timer: 1500, showConfirmButton: false });
+        setTimeout(loadContentData, 1600);
+    } catch (err) {
+        console.error("Update error:", err);
+        Swal.fire('Hata', 'Kaydedilemedi: ' + err.message, 'error');
+    }
 }
 // --- CRUD OPERASYONLARI (ADMIN) ---
 async function addNewCardPopup() {
@@ -1323,15 +1259,36 @@ async function addNewCardPopup() {
     if (formValues) {
         if (!formValues.title) { Swal.fire('Hata', 'Başlık zorunlu!', 'error'); return; }
         Swal.fire({ title: 'Ekleniyor...', didOpen: () => { Swal.showLoading() } });
-        fetch(SCRIPT_URL, {
-            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: "addCard", username: currentUser, token: getToken(), ...formValues })
-        }).then(response => response.json()).then(data => {
-            if (data.result === "success") {
-                Swal.fire({ icon: 'success', title: 'Başarılı', text: 'İçerik eklendi.', timer: 2000, showConfirmButton: false });
-                setTimeout(loadContentData, 3500);
-            } else { Swal.fire('Hata', data.message || 'Eklenemedi.', 'error'); }
-        }).catch(err => Swal.fire('Hata', 'Sunucu hatası: ' + err, 'error'));
+
+        try {
+            const { error } = await sb
+                .from('Data')
+                .insert([{
+                    Type: formValues.cardType,
+                    Category: formValues.category,
+                    Title: formValues.title,
+                    Text: formValues.text,
+                    Script: formValues.script,
+                    Code: formValues.code,
+                    Status: formValues.status,
+                    Link: formValues.link,
+                    Tip: formValues.tip,
+                    Detail: formValues.detail,
+                    Pronunciation: formValues.pronunciation,
+                    Icon: formValues.icon,
+                    Date: new Date(),
+                    QuizOptions: formValues.quizOptions,
+                    QuizAnswer: formValues.quizAnswer
+                }]);
+
+            if (error) throw error;
+
+            Swal.fire({ icon: 'success', title: 'Başarılı', text: 'İçerik eklendi.', timer: 2000, showConfirmButton: false });
+            setTimeout(loadContentData, 3500);
+        } catch (err) {
+            console.error("Add content error:", err);
+            Swal.fire('Hata', err.message || 'Eklenemedi.', 'error');
+        }
     }
 }
 async function editContent(index) {
@@ -2204,7 +2161,7 @@ function startGameFromLobby() {
     startPenaltySession();
 }
 
-function fetchLeaderboard() {
+async function fetchLeaderboard() {
     const tbody = document.getElementById('leaderboard-body');
     const loader = document.getElementById('leaderboard-loader');
     const table = document.getElementById('leaderboard-table');
@@ -2215,39 +2172,33 @@ function fetchLeaderboard() {
     loader.style.display = 'block';
     table.style.display = 'none';
 
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getLeaderboard" })
-    })
-        .then(r => r.json())
-        .then(data => {
-            loader.style.display = 'none';
-            if (data.result !== "success") {
-                loader.innerText = "Yüklenemedi.";
-                loader.style.display = 'block';
-                return;
-            }
+    try {
+        // Not: Leaderboard tablosu Supabase'de henüz yoksa boş döner. 
+        // Burada Logs tablosundan veya varsa Scoreboard tablosundan çekilebilir.
+        const { data, error } = await sb.from('Scoreboard').select('*').order('Average', { ascending: false }).limit(10);
 
-            table.style.display = 'table';
-            let html = '';
+        loader.style.display = 'none';
+        if (error) throw error;
 
-            if (!data.leaderboard || data.leaderboard.length === 0) {
-                html = '<tr><td colspan="4" style="text-align:center;">Henüz maç yapılmadı.</td></tr>';
-            } else {
-                data.leaderboard.forEach((u, i) => {
-                    const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `<span class="rank-badge">${i + 1}</span>`));
-                    const bgStyle = (u.username === currentUser) ? 'background:rgba(250, 187, 0, 0.1);' : '';
-                    html += `<tr style="${bgStyle}"><td>${medal}</td><td>${u.username}</td><td>${u.games}</td><td>${u.average}</td></tr>`;
-                });
-            }
-            tbody.innerHTML = html;
-        })
-        .catch(() => {
-            loader.style.display = 'none';
-            loader.innerText = "Bağlantı hatası.";
-            loader.style.display = 'block';
-        });
+        table.style.display = 'table';
+        let html = '';
+
+        if (!data || data.length === 0) {
+            html = '<tr><td colspan="4" style="text-align:center;">Henüz maç yapılmadı veya tablo boş.</td></tr>';
+        } else {
+            data.forEach((u, i) => {
+                const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `<span class="rank-badge">${i + 1}</span>`));
+                const bgStyle = (u.Username === currentUser) ? 'background:rgba(250, 187, 0, 0.1);' : '';
+                html += `<tr style="${bgStyle}"><td>${medal}</td><td>${u.Username}</td><td>${u.Games}</td><td>${u.Average}</td></tr>`;
+            });
+        }
+        tbody.innerHTML = html;
+    } catch (err) {
+        console.warn("Leaderboard fetch error:", err);
+        loader.style.display = 'none';
+        loader.innerText = "Yüklenemedi (Tablo eksik olabilir).";
+        loader.style.display = 'block';
+    }
 }
 
 function buildQuestionQueue() {
