@@ -1,3 +1,5 @@
+
+
 function formatWeekLabel(raw) {
     try {
         if (!raw) return '';
@@ -112,20 +114,25 @@ let globalUserIP = "";
 // -------------------- HomeBlocks (Ana Sayfa blok içerikleri) --------------------
 let homeBlocks = {}; // { quote:{...}, ... }
 
-function loadHomeBlocks() {
-    // herkes için okunabilir (sheet'ten)
-    return apiCall("getHomeBlocks", {}).then(res => {
-        homeBlocks = (res && res.blocks) ? res.blocks : {};
-        // local fallback cache
+async function loadHomeBlocks() {
+    try {
+        const { data, error } = await supabase.from('HomeBlocks').select('*');
+        if (error) throw error;
+
+        homeBlocks = {};
+        data.forEach(row => {
+            if (row.BlockId) homeBlocks[row.BlockId] = row;
+        });
+
         try { localStorage.setItem('homeBlocksCache', JSON.stringify(homeBlocks || {})); } catch (e) { }
         try { renderHomePanels(); } catch (e) { }
         return homeBlocks;
-    }).catch(e => {
-        // sessiz fallback
+    } catch (err) {
+        console.error("[Pusula] HomeBlocks Fetch Error:", err);
         try { homeBlocks = JSON.parse(localStorage.getItem('homeBlocksCache') || '{}') || {}; } catch (_) { homeBlocks = {}; }
         try { renderHomePanels(); } catch (_) { }
         return homeBlocks;
-    });
+    }
 }
 
 function normalizeRole(v) {
@@ -596,7 +603,21 @@ function checkAdmin(role) {
     isEditingActive = false;
     document.body.classList.remove('editing');
 
-    // Eski qusers manual logic kaldırıldı (Artık hasPerm/applyPermissionsToUI kullanılıyor)
+    async function loadPermissionsOnStartup() {
+        try {
+            const { data, error } = await supabase.from('RolePermissions').select('*');
+            if (error) throw error;
+
+            // Rol bazlı filtrele ve UI uygula
+            const myRole = getMyRole();
+            const perms = data.filter(p => !p.Role || normalizeRole(p.Role) === myRole);
+
+            // Global'de sakla gerekiyorsa veya direkt uygula
+            applyPermissionsToUI(perms);
+        } catch (err) {
+            console.error("[Pusula] Permissions Fetch Error:", err);
+        }
+    }
 
 
     if (isAdminMode) {
@@ -1400,8 +1421,14 @@ function openNews() {
 // ✅ Yayın Akışı (E-Tablo'dan)
 // =========================
 async function fetchBroadcastFlow() {
-    const d = await apiCall("getBroadcastFlow");
-    return d.items || [];
+    try {
+        const { data, error } = await supabase.from('YayinAkisi').select('*');
+        if (error) throw error;
+        return data || [];
+    } catch (err) {
+        console.error("[Pusula] YayinAkisi Fetch Error:", err);
+        return [];
+    }
 }
 
 async function openBroadcastFlow() {
@@ -2885,26 +2912,48 @@ async function fetchEvaluationsForDashboard() {
         targetGroup = groupSelect ? groupSelect.value : 'all';
     }
 
-    try {
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-                action: "fetchEvaluations",
-                targetAgent: targetAgent,
-                targetGroup: targetGroup,
-                username: currentUser,
-                token: getToken()
-            })
-        });
-        const data = await response.json();
-        if (data.result === "success") {
-            allEvaluationsData = (data.evaluations || []).reverse();
-        } else {
+    async function fetchEvaluationsForDashboard() {
+        try {
+            console.log("[Pusula] Fetching evaluations from Supabase...");
+            const { data, error } = await supabase
+                .from('Evaluations')
+                .select('*');
+
+            if (error) throw error;
+
+            // Apps Script formatıyla eşitlemek için kolon isimlerini düzeltiyoruz
+            allEvaluationsData = (data || []).map(e => ({
+                id: e.id,
+                date: e.Date,
+                callDate: e.CallDate,
+                evaluator: e.Evaluator,
+                agent: e.AgentName,
+                group: e.Group,
+                callId: e.CallID,
+                score: e.Score,
+                details: e.Details,
+                feedbackStatus: e.FeedbackStatus,
+                feedbackNote: e.FeedbackNote
+            })).reverse();
+
+            console.log(`[Pusula] ${allEvaluationsData.length} evaluations loaded.`);
+        } catch (err) {
+            console.error("[Pusula] Evaluations Fetch Error:", err);
             allEvaluationsData = [];
         }
-    } catch (e) {
-        allEvaluationsData = [];
+    }
+
+    function safeParseDetails(details) {
+        if (!details) return [];
+        if (Array.isArray(details)) return details;
+        try {
+            if (typeof details === 'string') {
+                return JSON.parse(details);
+            }
+        } catch (e) {
+            console.warn("Details parse error:", e);
+        }
+        return [];
     }
 }
 function loadQualityDashboard() {
