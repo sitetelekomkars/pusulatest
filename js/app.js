@@ -83,17 +83,21 @@ const sb = (window.supabase && typeof window.supabase.createClient === 'function
 // ✅ YENİ: Mail Bildirim Ayarları (Google Apps Script Web App URL buraya gelecek)
 const GAS_MAIL_URL = "https://script.google.com/macros/s/AKfycbwZZbRVksffgpu_WvkgCoZehIBVTTTm5j5SEqffwheCU44Q_4d9b64kSmf40wL1SR8/exec"; // Burayı kendi Web App URL'niz ile güncelleyin
 
-async function sendMailNotification(to, subject, body) {
+async function sendMailNotification(to, subject, body, cc = null, bcc = null) {
     if (!GAS_MAIL_URL || GAS_MAIL_URL.includes("X0X0")) {
         console.warn("[Pusula Mail] Mail servisi URL'si ayarlanmamış.");
         return;
     }
     try {
+        const payload = { action: "sendEmail", to, subject, body };
+        if (cc) payload.cc = cc;
+        if (bcc) payload.bcc = bcc;
+
         await fetch(GAS_MAIL_URL, {
             method: 'POST',
-            mode: 'no-cors', // Apps Script için no-cors gerekebilir
+            mode: 'no-cors',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: "sendEmail", to, subject, body })
+            body: JSON.stringify(payload)
         });
         console.log("[Pusula Mail] Gönderim tetiklendi:", to);
     } catch (e) { console.error("[Pusula Mail] Hata:", e); }
@@ -331,7 +335,12 @@ async function apiCall(action, params = {}) {
                         if (userData && userData.Email) {
                             const subject = `Yeni Kalite Değerlendirmesi: ${params.callId}`;
                             const body = `Merhaba ${params.agentName},\n\nYeni bir kalite değerlendirmesi kaydedildi.\n\nÇağrı ID: ${params.callId}\nPuan: ${params.score}\nGeri Bildirim: ${params.feedback}\n\nDetayları Pusula üzerinden inceleyebilirsin.\nİyi çalışmalar.\nS Sport Plus Kalite Ekibi`;
-                            sendMailNotification(userData.Email, subject, body);
+
+                            // Kalite değerlendirmeleri için CC ve BCC ekle
+                            const cc = "kalite@ssportplus.com";
+                            const bcc = "dogus.yalcinkaya@sitetelekom.com.tr";
+
+                            sendMailNotification(userData.Email, subject, body, cc, bcc);
                         }
                     } catch (e) { }
                 })();
@@ -1415,10 +1424,23 @@ async function girisYap() {
 
         // Oturum Verilerini Kaydet
         currentUser = data.Username;
+        const sessionToken = "sb_" + Math.random().toString(36).substr(2) + Date.now().toString(36);
+
         localStorage.setItem("sSportUser", currentUser);
-        localStorage.setItem("sSportToken", "sb_" + Math.random().toString(36).substr(2));
+        localStorage.setItem("sSportToken", sessionToken);
         localStorage.setItem("sSportRole", data.Role);
         if (data.Group) localStorage.setItem("sSportGroup", data.Group);
+
+        // ✅ Tokens tablosuna kaydet (Single Session & Force Kick Altyapısı)
+        try {
+            await sb.from('Tokens').upsert({
+                Username: currentUser,
+                Token: sessionToken,
+                Role: data.Role,
+                IP: globalUserIP || '-',
+                CreatedAt: new Date().toISOString()
+            }, { onConflict: 'Username' });
+        } catch (e) { console.warn("Token upsert failed", e); }
         localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
         localStorage.setItem("sSportLoginAt", String(Date.now()));
 
@@ -1607,7 +1629,7 @@ let heartbeatInterval; // Yeni Heartbeat Timer
 async function sendHeartbeat() {
     if (!currentUser) return;
     try {
-        // Heartbeat gönderirken aynı zamanda force_logout kontrolü yap
+        // 1. Heartbeat gönderirken aynı zamanda force_logout kontrolü yap
         const { data, error } = await sb.from('Users')
             .update({ last_seen: new Date().toISOString() })
             .eq('Username', currentUser)
@@ -1615,17 +1637,28 @@ async function sendHeartbeat() {
             .single();
 
         if (data && data.force_logout === true) {
-            // Eğer atıldıysa, flag'i false yap ve çıkışa zorla
             await sb.from('Users').update({ force_logout: false }).eq('Username', currentUser);
             Swal.fire({
-                icon: 'error',
-                title: 'Oturum Sonlandırıldı',
+                icon: 'error', title: 'Oturum Sonlandırıldı',
                 text: 'Yönetici tarafından sistemden çıkarıldınız.',
-                allowOutsideClick: false,
-                confirmButtonText: 'Tamam'
-            }).then(() => {
-                logout();
-            });
+                allowOutsideClick: false, confirmButtonText: 'Tamam'
+            }).then(() => { logout(); });
+            return;
+        }
+
+        // 2. Token Kontrolü (Single Session Enforcement)
+        const localToken = localStorage.getItem("sSportToken");
+        const { data: tokenData } = await sb.from('Tokens')
+            .select('Token')
+            .eq('Username', currentUser)
+            .maybeSingle();
+
+        if (!tokenData || tokenData.Token !== localToken) {
+            Swal.fire({
+                icon: 'warning', title: 'Oturum Kesildi',
+                text: 'Oturumunuz başka bir cihazda açılmış veya sonlandırılmış olabilir.',
+                allowOutsideClick: false, confirmButtonText: 'Tamam'
+            }).then(() => { logout(); });
         }
 
     } catch (e) { console.warn("Heartbeat failed", e); }
@@ -8206,8 +8239,9 @@ async function kickUser(username, token) {
 
     if (isConfirmed) {
         try {
-            // force_logout flag'ini true yap
+            // force_logout flag'ini true yap (ve Token'ı temizle)
             const { error } = await sb.from('Users').update({ force_logout: true }).eq('Username', username);
+            await sb.from('Tokens').delete().eq('Username', username); // Token siliyoruz ki anında düşsün
 
             if (error) throw error;
 
