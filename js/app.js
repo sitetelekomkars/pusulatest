@@ -123,73 +123,73 @@ function normalizeKeys(obj) {
 
         // Yayın Akışı (Special table keys)
         // Yayın Akışı – normalize edilmiş anahtarlar
-const kk = String(k || '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toUpperCase();
+        const kk = String(k || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toUpperCase();
 
-// DATE
-if (kk === 'DATE' || kk === 'TARİH' || kk === 'TARIH') {
-  n.date = obj[k];
-  n.dateISO = obj[k];
-}
+        // DATE
+        if (kk === 'DATE' || kk === 'TARİH' || kk === 'TARIH') {
+            n.date = obj[k];
+            n.dateISO = obj[k];
+        }
 
-// EVENT / MATCH
-if (
-  kk === 'EVENT NAME - TURKISH' ||
-  kk === 'MAC' ||
-  kk === 'EVENT' ||
-  kk === 'TITLE' ||
-  kk === 'BAŞLIK' ||
-  kk === 'BASLIK'
-) {
-  n.match = obj[k];
-  n.event = obj[k];
-}
+        // EVENT / MATCH
+        if (
+            kk === 'EVENT NAME - TURKISH' ||
+            kk === 'MAC' ||
+            kk === 'EVENT' ||
+            kk === 'TITLE' ||
+            kk === 'BAŞLIK' ||
+            kk === 'BASLIK'
+        ) {
+            n.match = obj[k];
+            n.event = obj[k];
+        }
 
-// TIME / START TIME / TSİ
-if (
-  kk === 'SAAT' ||
-  kk === 'TIME' ||
-  kk === 'START_TIME_TSI' ||
-  kk === 'START TIME TSI' ||
-  (kk.includes('START') && kk.includes('TIME'))
-) {
-  n.time = obj[k];
-}
+        // TIME / START TIME / TSİ
+        if (
+            kk === 'SAAT' ||
+            kk === 'TIME' ||
+            kk === 'START_TIME_TSI' ||
+            kk === 'START TIME TSI' ||
+            (kk.includes('START') && kk.includes('TIME'))
+        ) {
+            n.time = obj[k];
+        }
 
-// ANNOUNCER / PLATFORM
-if (
-  kk === 'ANNOUNCER' ||
-  kk === 'KANAL' ||
-  kk === 'PLATFORM'
-) {
-  n.channel = obj[k];
-  n.announcer = obj[k];
-}
+        // ANNOUNCER / PLATFORM
+        if (
+            kk === 'ANNOUNCER' ||
+            kk === 'KANAL' ||
+            kk === 'PLATFORM'
+        ) {
+            n.channel = obj[k];
+            n.announcer = obj[k];
+        }
 
-// StartEpoch hesaplama (Yayın Akışı için)
-const dVal = n.date || n.dateISO;
-const tVal = n.time;
+        // StartEpoch hesaplama (Yayın Akışı için)
+        const dVal = n.date || n.dateISO;
+        const tVal = n.time;
 
-if (dVal && tVal) {
-  try {
-    const datePart = String(dVal).includes('.')
-      ? String(dVal).split('.').reverse().join('-')
-      : String(dVal).split(' ')[0];
+        if (dVal && tVal) {
+            try {
+                const datePart = String(dVal).includes('.')
+                    ? String(dVal).split('.').reverse().join('-')
+                    : String(dVal).split(' ')[0];
 
-    const timePart = String(tVal).trim().length === 5
-      ? `${String(tVal).trim()}:00`
-      : String(tVal).trim();
+                const timePart = String(tVal).trim().length === 5
+                    ? `${String(tVal).trim()}:00`
+                    : String(tVal).trim();
 
-    const isoStr = `${datePart}T${timePart}`;
-    const dt = new Date(isoStr);
+                const isoStr = `${datePart}T${timePart}`;
+                const dt = new Date(isoStr);
 
-    if (!isNaN(dt.getTime())) {
-      n.startEpoch = dt.getTime();
-    }
-  } catch (e) {}
-}
+                if (!isNaN(dt.getTime())) {
+                    n.startEpoch = dt.getTime();
+                }
+            } catch (e) { }
+        }
 
 
         // Notlar / Detaylar
@@ -242,6 +242,9 @@ async function apiCall(action, params = {}) {
                 let query = sb.from('Evaluations').select('*');
                 if (params.targetAgent && params.targetAgent !== 'all') {
                     query = query.eq('AgentName', params.targetAgent);
+                } else if (params.targetGroup && params.targetGroup !== 'all') {
+                    // ✅ GRUP FİLTRESİ (Bug 4 Fix)
+                    query = query.eq('Group', params.targetGroup);
                 }
                 // En yeni kayıtlar her zaman en üstte gelsin (ID descending)
                 const { data, error } = await query.order('id', { ascending: false });
@@ -270,9 +273,7 @@ async function apiCall(action, params = {}) {
                 // Sütun isimleri için robust mapping (Data tablosu)
                 const payload = {
                     Type: params.type,
-                    type: params.type,
                     Category: params.category,
-                    category: params.category,
                     Title: params.title,
                     title: params.title,
                     Text: params.text,
@@ -323,15 +324,11 @@ async function apiCall(action, params = {}) {
                     Name: fullName,
                     "Tam İsim": fullName,
                     "İsim": fullName,
-                    Role: role,
-                    role: role,
-                    Group: group,
-                    group: group
+                    Group: group
                 };
                 if (password) {
                     const hashed = CryptoJS.SHA256(password).toString();
                     payload.Password = hashed;
-                    payload.password = hashed;
                     payload.ForceChange = '1';
                 }
 
@@ -680,14 +677,23 @@ async function apiCall(action, params = {}) {
                 // Aktif kullanıcı tanımı: Tokens.CreatedAt son 12 saat içinde olanlar
                 const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
+                // Robust query for createdat or CreatedAt
                 const { data: tData, error: tErr } = await sb
                     .from('Tokens')
                     .select('*')
-                    .or(`CreatedAt.gte.${since},createdat.gte.${since}`) // Her iki casing versiyonunu da ara
-                    .order('id', { ascending: false }); // id her zaman vardır
-                if (tErr) throw tErr;
+                    .or(`CreatedAt.gte.${since},createdat.gte.${since}`)
+                    .order('id', { ascending: false });
 
-                const tokens = (tData || []).map(normalizeKeys);
+                if (tErr) {
+                    console.error("[Pusula] getActiveUsers Tokens error:", tErr);
+                    // Fallback: created_at
+                    const { data: tData2, error: tErr2 } = await sb.from('Tokens').select('*').gte('created_at', since);
+                    if (tErr2) throw tErr2;
+                    var tokens = (tData2 || []).map(normalizeKeys);
+                } else {
+                    var tokens = (tData || []).map(normalizeKeys);
+                }
+
                 const usernames = [...new Set(tokens.map(t => t.Username || t.username).filter(Boolean))];
 
                 // Kullanıcı bilgileri (rol/grup)
@@ -695,7 +701,7 @@ async function apiCall(action, params = {}) {
                 if (usernames.length) {
                     const { data: uData, error: uErr } = await sb.from('Users').select('*').in('Username', usernames);
                     if (uErr) throw uErr;
-                    (uData || []).forEach(u => { uMap[String(u.Username)] = u; });
+                    (uData || []).forEach(u => { uMap[String(u.Username || u.username)] = u; });
                 }
 
                 // IP bilgisi (opsiyonel) - Logs tablosundan en son IP
@@ -707,23 +713,23 @@ async function apiCall(action, params = {}) {
                             .select('*')
                             .in('Username', usernames)
                             .order('Date', { ascending: false })
-                            .limit(2000);
+                            .limit(1000);
                         if (!lErr && Array.isArray(lData)) {
                             for (const row of lData) {
-                                const un = row.Username;
+                                const un = row.Username || row.username;
                                 if (!un || ipMap[un]) continue;
                                 const ip = row['İP ADRESİ'] || row['IP'] || row['Ip'] || row['ip'] || row.IPAddress || row.IpAddress;
                                 if (ip) ipMap[un] = ip;
                             }
                         }
                     }
-                } catch (e) { /* sessiz */ }
+                } catch (e) { }
 
                 const users = tokens
                     .map(t => {
                         const un = String(t.Username || t.username || '').trim();
                         const u = uMap[un] || {};
-                        const created = t.CreatedAt || t.createdat || '';
+                        const created = t.CreatedAt || t.createdat || t.created_at || '';
                         return {
                             username: un,
                             token: t.Token || t.token || '',
@@ -737,37 +743,34 @@ async function apiCall(action, params = {}) {
 
                 return { result: "success", users: users };
             }
-            case "kickUser": {
-                // Tokens tablosundan ilgili oturumu sil
-                const { targetUsername, targetToken } = params || {};
-                if (!targetUsername) return { result: 'error', message: 'Kullanıcı adı boş' };
-
-                let q = sb.from('Tokens').delete().eq('Username', targetUsername);
-                if (targetToken) q = q.eq('Token', targetToken);
-
-                const { error } = await q;
-                if (error) throw error;
-                return { result: 'success' };
-            }
-            case "logQuiz": {
-                const payload = {
+            case "logAction": {
+                // Bug 7 Fix: Sistem logları
+                const { error } = await sb.from('Logs').insert([{
                     Username: params.username || currentUser,
-                    Score: params.score,
-                    TotalQuestions: params.total,
-                    // Desteklenen tüm kolon adlarını (SuccessRate, Successrate, Success, Başarı) kapsamak için:
-                    SuccessRate: params.successRate || params.average || "0%",
-                    Successrate: params.successRate || params.average || "0%",
+                    Action: params.action,
+                    Details: params.details,
+                    "İP ADRESİ": params.ip || '-',
                     Date: new Date().toISOString()
-                };
-                const { error } = await sb.from('QuizResults').insert([payload]);
-                if (error) throw error;
-                return { result: 'success' };
+                }]);
+                return { result: error ? "error" : "success" };
             }
-            case "getQualityNotifications": {
-                // Şimdilik sıfır dönelim
-                return { result: "success", notifications: { pendingFeedbackCount: 0, unseenCount: 0 } };
+            case "submitAgentNote": {
+                // Bug 6 Fix: Not ekleme
+                const { error } = await sb.from('Evaluations').update({
+                    AgentNote: params.note,
+                    Durum: params.status || 'Bekliyor'
+                }).eq('CallID', params.callId);
+                return { result: error ? "error" : "success" };
+            }
+            case "resolveAgentFeedback": {
+                const { error } = await sb.from('Evaluations').update({
+                    ManagerReply: params.reply,
+                    Durum: params.status || 'Tamamlandı'
+                }).eq('CallID', params.callId);
+                return { result: error ? "error" : "success" };
             }
             case "getBroadcastFlow": {
+                // ...existing...
                 const { data, error } = await sb.from('YayinAkisi').select('*');
                 if (error) {
                     console.warn("[Pusula] BroadcastFlow fetch error:", error);
@@ -1429,7 +1432,7 @@ async function changePasswordPopup(isMandatory = false) {
             // 1. Önce eski şifreyi doğrula (Supabase'den tekrar çekerek)
             const { data: userRecord, error: checkError } = await sb
                 .from('Users')
-                .select('Password, password')
+                .select('*')
                 .ilike('Username', currentUser)
                 .single();
 
@@ -1444,10 +1447,12 @@ async function changePasswordPopup(isMandatory = false) {
             // 2. Yeni şifreyi güncelle (Hangi kolon varsa onu güncelle)
             const updatePayload = {};
             if ("Password" in userRecord) updatePayload.Password = newHashed;
-            else updatePayload.password = newHashed;
+            else if ("password" in userRecord) updatePayload.password = newHashed;
+            else updatePayload.Password = newHashed; // Fallback to PascalCase
 
-            if ("ForceChange" in userRecord) updatePayload.ForceChange = '1';
-            else updatePayload.forcechange = '1';
+            if ("ForceChange" in userRecord) updatePayload.ForceChange = '0';
+            else if ("forcechange" in userRecord) updatePayload.forcechange = '0';
+            else updatePayload.ForceChange = '0';
 
             const { error: updateError } = await sb
                 .from('Users')
