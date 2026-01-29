@@ -122,28 +122,75 @@ function normalizeKeys(obj) {
         if (k === 'Duration') { n.duration = obj[k]; }
 
         // Yayın Akışı (Special table keys)
-        if (k === 'DATE' || k === 'Tarih' || k === 'tarih') { n.date = obj[k]; n.dateISO = obj[k]; }
-        if (k === 'EVENT NAME - Turkish' || k === 'Mac' || k === 'mac' || k === 'Event' || k === 'event' || k === 'Title' || k === 'Başlık') { n.match = obj[k]; n.event = obj[k]; }
-        if (k === 'Saat' || k === 'saat' || k === 'Time' || k === 'time') n.time = obj[k];
-        // Yayın Akışı saat kolon adı bazen satır sonu/boşluk içeriyor: "KO/ START TIME \n TSİ"
-        try {
-            const kk = String(k || '').replace(/\s+/g, ' ').trim().toUpperCase();
-            if (!n.time && kk.includes('KO/') && kk.includes('START TIME')) n.time = obj[k];
-        } catch (e) { }
-        if (k === 'ANNOUNCER' || k === 'Kanal' || k === 'kanal' || k === 'Platform' || k === 'platform') { n.channel = obj[k]; n.announcer = obj[k]; }
+    // Yayın Akışı – normalize edilmiş anahtarlar
+const kk = String(k || '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toUpperCase();
 
-        // StartEpoch hesaplama (Yayın Akışı için)
-        const dVal = n.date || n.dateISO;
-        const tVal = n.time;
-        if (dVal && tVal) {
-            try {
-                const datePart = String(dVal).includes('.') ? dVal.split('.').reverse().join('-') : dVal;
-                // datePart might be "dd.mm.yyyy" if not handled correctly, but reverse.join('-') handles it
-                const isoStr = `${String(datePart).split(' ')[0]}T${String(tVal).trim()}`;
-                const dt = new Date(isoStr);
-                if (!isNaN(dt.getTime())) n.startEpoch = dt.getTime();
-            } catch (e) { }
-        }
+// DATE
+if (kk === 'DATE' || kk === 'TARİH' || kk === 'TARIH') {
+  n.date = obj[k];
+  n.dateISO = obj[k];
+}
+
+// EVENT / MATCH
+if (
+  kk === 'EVENT NAME - TURKISH' ||
+  kk === 'MAC' ||
+  kk === 'EVENT' ||
+  kk === 'TITLE' ||
+  kk === 'BAŞLIK' ||
+  kk === 'BASLIK'
+) {
+  n.match = obj[k];
+  n.event = obj[k];
+}
+
+// TIME / START TIME / TSİ
+if (
+  kk === 'SAAT' ||
+  kk === 'TIME' ||
+  kk === 'START_TIME_TSI' ||
+  kk === 'START TIME TSI' ||
+  (kk.includes('START') && kk.includes('TIME'))
+) {
+  n.time = obj[k];
+}
+
+// ANNOUNCER / PLATFORM
+if (
+  kk === 'ANNOUNCER' ||
+  kk === 'KANAL' ||
+  kk === 'PLATFORM'
+) {
+  n.channel = obj[k];
+  n.announcer = obj[k];
+}
+
+// StartEpoch hesaplama (Yayın Akışı için)
+const dVal = n.date || n.dateISO;
+const tVal = n.time;
+
+if (dVal && tVal) {
+  try {
+    const datePart = String(dVal).includes('.')
+      ? String(dVal).split('.').reverse().join('-')
+      : String(dVal).split(' ')[0];
+
+    const timePart = String(tVal).trim().length === 5
+      ? `${String(tVal).trim()}:00`
+      : String(tVal).trim();
+
+    const isoStr = `${datePart}T${timePart}`;
+    const dt = new Date(isoStr);
+
+    if (!isNaN(dt.getTime())) {
+      n.startEpoch = dt.getTime();
+    }
+  } catch (e) {}
+}
+
 
         // Notlar / Detaylar
         if (k === 'Details' || k === 'Detay') n.details = obj[k];
