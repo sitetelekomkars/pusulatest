@@ -321,12 +321,12 @@ body {
   position: absolute;
   right: 0;
   top: 110%;
-  background-color: #1c2438;
-  min-width: 180px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 3001;
+  background-color: #1c2438 !important; /* Opak arka plan */
+  min-width: 200px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 9999; /* En üstte olmasını garanti et */
   overflow: hidden;
   animation: fadeInDropdown 0.2s ease;
 }
