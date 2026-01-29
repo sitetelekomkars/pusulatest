@@ -5459,7 +5459,11 @@ async function editEvaluation(targetCallId) {
     Swal.close();
 
     const isCriteriaBased = criteriaList.length > 0;
-    let oldDetails = []; try { oldDetails = JSON.parse(evalData.details || "[]"); } catch (e) { oldDetails = []; }
+    let oldDetails = evalData.details;
+    if (typeof oldDetails === 'string') {
+        try { oldDetails = JSON.parse(oldDetails || "[]"); } catch (e) { oldDetails = []; }
+    }
+    if (!Array.isArray(oldDetails)) oldDetails = [];
 
     let safeDateVal = "";
     if (evalData.callDate) {
@@ -5474,8 +5478,15 @@ async function editEvaluation(targetCallId) {
         criteriaList.forEach((c, i) => {
             let pts = parseInt(c.points) || 0; if (pts === 0) return;
             const fullText = escapeForJsString(c.text);
-            let oldItem = oldDetails.find(d => d.q === c.text) || (oldDetails[i] ? oldDetails[i] : { score: pts, note: '' });
-            let cVal = parseInt(oldItem.score); let cNote = oldItem.note || '';
+            const currentCriterionText = String(c.text || '').trim().toLowerCase();
+            let oldItem = oldDetails.find(d => String(d.q || d.text || '').trim().toLowerCase() === currentCriterionText)
+                || (oldDetails[i] ? oldDetails[i] : { score: pts, note: '' });
+
+            // cVal'ın sayı olduğundan emin olalım, eğer bulunamazsa veya hatalıysa varsayılan (max) puanı verelim
+            let savedScore = oldItem.score !== undefined ? oldItem.score : (oldItem.points !== undefined ? oldItem.points : pts);
+            let cVal = parseInt(savedScore);
+            if (isNaN(cVal)) cVal = pts;
+            let cNote = oldItem.note || '';
 
             if (isChat) {
                 let mPts = parseInt(c.mediumScore) || 0; let bPts = parseInt(c.badScore) || 0;
