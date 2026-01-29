@@ -275,9 +275,7 @@ async function apiCall(action, params = {}) {
                     Type: params.type,
                     Category: params.category,
                     Title: params.title,
-                    title: params.title,
                     Text: params.text,
-                    text: params.text,
                     Script: params.script,
                     Code: params.code,
                     Status: params.status,
@@ -298,16 +296,12 @@ async function apiCall(action, params = {}) {
             case "editCard": {
                 const { error } = await sb.from('Data').update({
                     Category: params.category,
-                    category: params.category,
                     Title: params.title,
-                    title: params.title,
                     Text: params.text,
-                    text: params.text,
                     Script: params.script,
                     Code: params.code,
                     Link: params.link,
-                    Image: params.image,
-                    image: params.image
+                    Image: params.image
                 }).eq('id', params.id);
                 return { result: error ? "error" : "success" };
             }
@@ -319,7 +313,6 @@ async function apiCall(action, params = {}) {
                 const { id, username, fullName, role, group, password } = params;
                 const payload = {
                     Username: username,
-                    username: username,
                     FullName: fullName,
                     Name: fullName,
                     "Tam İsim": fullName,
