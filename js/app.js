@@ -200,7 +200,12 @@ async function apiCall(action, params = {}) {
                 return { result: "success", evaluations: data.map(normalizeKeys) };
             }
             case "logEvaluation": {
+                // Eğer tablo auto-increment değilse manuel ID üret
+                const { data: maxIdData } = await sb.from('Evaluations').select('id').order('id', { ascending: false }).limit(1);
+                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+
                 const { data, error } = await sb.from('Evaluations').insert([{
+                    id: nextId,
                     AgentName: params.agentName,
                     Evaluator: currentUser,
                     CallID: params.callId,
@@ -567,8 +572,12 @@ async function apiCall(action, params = {}) {
                 return { result: 'success' };
             }
             case "logQuiz": {
-                // Quiz sonuçlarını Supabase QuizResults tablosuna yaz
+                // Proaktif: Eğer QuizResults da auto-increment değilse manuel ID üret
+                const { data: maxIdData } = await sb.from('QuizResults').select('id').order('id', { ascending: false }).limit(1);
+                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+
                 const payload = {
+                    id: nextId,
                     Username: params.username || currentUser,
                     Score: params.score,
                     TotalQuestions: params.total,
