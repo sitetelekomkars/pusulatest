@@ -175,7 +175,7 @@ async function apiCall(action, params = {}) {
                 if (params.targetAgent && params.targetAgent !== 'all') {
                     query = query.eq('AgentName', params.targetAgent);
                 }
-                // ID veya Tarihe göre sırala (Tarih bazlı sıralama isteği)
+                // En yeni kayıtlar her zaman en üstte gelsin (ID descending)
                 const { data, error } = await query.order('id', { ascending: false });
                 if (error) throw error;
                 return { result: "success", evaluations: data.map(normalizeKeys) };
@@ -453,9 +453,12 @@ async function loadHomeBlocks() {
         homeBlocks = {};
         data.forEach(row => {
             const normalized = normalizeKeys(row);
-            const id = normalized.key || row.Key || normalized.blockId || row.BlockId;
+            // blockId veya key/Key alanını tespit et
+            const id = normalized.key || row.Key || normalized.blockId || row.BlockId || row.id;
             if (id) homeBlocks[id] = normalized;
         });
+
+        console.log("[Pusula] HomeBlocks yüklendi:", Object.keys(homeBlocks));
 
         try { localStorage.setItem('homeBlocksCache', JSON.stringify(homeBlocks || {})); } catch (e) { }
         try { renderHomePanels(); } catch (e) { }
@@ -4557,8 +4560,8 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
         });
 
         if (data.result === "success") {
-            // En yeni en üstte olması için ters çevir
-            allEvaluationsData = data.evaluations.reverse();
+            // Server'dan zaten descending (en yeni en üstte) geliyor, reverse() gereksiz veya hataya sebep olabilir
+            allEvaluationsData = data.evaluations;
             if (silent) return; // Silent mode ise burada bitir (veri yüklendi)
             listEl.innerHTML = '';
 
@@ -5595,6 +5598,47 @@ async function syncTelesalesScriptsToSheet(arr) {
     } catch (e) {
         // sessiz fallback
     }
+}
+
+// --- KALİTE YÖNETİMİ ALANI ---
+async function openQualityArea() {
+    const wrap = document.getElementById('quality-fullscreen');
+    if (!wrap) return;
+
+    // Menü yetkisi: quality
+    try {
+        const perm = (typeof menuPermissions !== "undefined" && menuPermissions) ? menuPermissions["quality"] : null;
+        if (perm && !isAllowedByPerm(perm)) {
+            Swal.fire("Yetkisiz", "Kalite ekranına erişimin yok.", "warning");
+            return;
+        }
+    } catch (e) { }
+
+    wrap.style.display = 'flex';
+    document.body.classList.add('fs-open');
+    document.body.style.overflow = 'hidden';
+
+    // Sidebar profil
+    const av = document.getElementById('q-side-avatar');
+    const nm = document.getElementById('q-side-name');
+    const rl = document.getElementById('q-side-role');
+    if (av) av.innerText = (currentUser || 'U').trim().slice(0, 1).toUpperCase();
+    if (nm) nm.innerText = currentUser || 'Kullanıcı';
+    if (rl) rl.innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
+
+    if (adminUserList.length === 0) {
+        Swal.fire({ title: 'Temsilci Listesi Yükleniyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
+        await fetchUserListForAdmin();
+        Swal.close();
+    }
+
+    // Filtreleri doldur
+    populateDashboardFilters();
+    populateFeedbackFilters();
+    populateFeedbackMonthFilter();
+    populateMonthFilterFull();
+
+    switchQualityTab('dashboard');
 }
 
 async function openTelesalesArea() {
