@@ -80,6 +80,25 @@ const sb = (window.supabase && typeof window.supabase.createClient === 'function
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
     : null;
 
+// ✅ YENİ: Mail Bildirim Ayarları (Google Apps Script Web App URL buraya gelecek)
+const GAS_MAIL_URL = "https://script.google.com/macros/s/AKfycbwZZbRVksffgpu_WvkgCoZehIBVTTTm5j5SEqffwheCU44Q_4d9b64kSmf40wL1SR8/exec"; // Burayı kendi Web App URL'niz ile güncelleyin
+
+async function sendMailNotification(to, subject, body) {
+    if (!GAS_MAIL_URL || GAS_MAIL_URL.includes("X0X0")) {
+        console.warn("[Pusula Mail] Mail servisi URL'si ayarlanmamış.");
+        return;
+    }
+    try {
+        await fetch(GAS_MAIL_URL, {
+            method: 'POST',
+            mode: 'no-cors', // Apps Script için no-cors gerekebilir
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: "sendEmail", to, subject, body })
+        });
+        console.log("[Pusula Mail] Gönderim tetiklendi:", to);
+    } catch (e) { console.error("[Pusula Mail] Hata:", e); }
+}
+
 // ⚠️ KRİTİK FIX: Supabase PascalCase/Türkçe → Frontend camelCase dönüşümü
 function normalizeKeys(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -286,8 +305,21 @@ async function apiCall(action, params = {}) {
                     Date: new Date().toISOString(),
                     Okundu: 0,
                     Durum: params.status || 'Tamamlandı'
-                }]);
+                }]).select('id').single();
                 if (error) throw error;
+
+                // ✅ MAİL BİLDİRİMİ TETİKLE
+                (async () => {
+                    try {
+                        const { data: userData } = await sb.from('Users').select('Email').ilike('Username', params.agentName).maybeSingle();
+                        if (userData && userData.Email) {
+                            const subject = `Yeni Kalite Değerlendirmesi: ${params.callId}`;
+                            const body = `Merhaba ${params.agentName},\n\nYeni bir kalite değerlendirmesi kaydedildi.\n\nÇağrı ID: ${params.callId}\nPuan: ${params.score}\nGeri Bildirim: ${params.feedback}\n\nDetayları Pusula üzerinden inceleyebilirsin.\nİyi çalışmalar.\nS Sport Plus Kalite Ekibi`;
+                            sendMailNotification(userData.Email, subject, body);
+                        }
+                    } catch (e) { }
+                })();
+
                 return { result: "success" };
             }
             case "logCard": {
@@ -1397,7 +1429,66 @@ async function girisYap() {
 }
 
 async function forgotPasswordPopup() {
-    Swal.fire('Bilgi', 'Şifre sıfırlama işlemi için lütfen yöneticinizle irtibata geçiniz. Supabase geçişi nedeniyle bu özellik geçici olarak devre dışıdır.', 'info');
+    const { value: username } = await Swal.fire({
+        title: 'Şifremi Unuttum',
+        input: 'text',
+        inputLabel: 'Kullanıcı Adınız',
+        inputPlaceholder: 'Örn: ahmet.yilmaz',
+        showCancelButton: true,
+        confirmButtonText: 'Şifre Gönder',
+        cancelButtonText: 'İptal',
+        inputValidator: (value) => {
+            if (!value) return 'Lütfen kullanıcı adınızı giriniz!';
+        }
+    });
+
+    if (username) {
+        Swal.fire({ title: 'İşleniyor...', didOpen: () => { Swal.showLoading() } });
+
+        try {
+            // 1. Kullanıcıyı ve Email adresini bul
+            const { data: user, error: fetchErr } = await sb.from('Users')
+                .select('*')
+                .ilike('Username', username.trim())
+                .maybeSingle();
+
+            if (fetchErr || !user) {
+                Swal.fire('Hata', 'Kullanıcı bulunamadı.', 'error');
+                return;
+            }
+
+            const email = user.Email || user.email;
+            if (!email || !email.includes('@')) {
+                Swal.fire('Bilgi', 'Hesabınıza tanımlı e-posta bulunamadı. Lütfen yöneticinizle irtibata geçin.', 'warning');
+                return;
+            }
+
+            // 2. Geçici Şifre Oluştur
+            const tempPass = Math.floor(100000 + Math.random() * 900000).toString();
+            const hashedPass = CryptoJS.SHA256(tempPass).toString();
+
+            // 3. Veritabanını Güncelle
+            const { error: updErr } = await sb.from('Users')
+                .update({
+                    Password: hashedPass,
+                    ForceChange: true,
+                    forcechange: true
+                })
+                .ilike('Username', username.trim());
+
+            if (updErr) throw updErr;
+
+            // 4. Mail Gönder
+            const subject = "Pusula - Şifre Sıfırlama";
+            const body = `Merhaba ${username},\n\nSistem giriş şifreniz sıfırlandı.\n\nGeçici Şifreniz: ${tempPass}\n\nLütfen giriş yaptıktan sonra şifrenizi değiştirmeyi unutmayın.`;
+            await sendMailNotification(email, subject, body);
+
+            Swal.fire('Başarılı', 'Geçici şifreniz e-posta adresinize gönderildi. Lütfen gelen kutunuzu kontrol edin.', 'success');
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Hata', 'İşlem sırasında bir sorun oluştu.', 'error');
+        }
+    }
 }
 
 function checkAdmin(role) {
