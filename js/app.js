@@ -185,13 +185,13 @@ async function apiCall(action, params = {}) {
                 if (params.targetAgent && params.targetAgent !== 'all') {
                     query = query.eq('AgentName', params.targetAgent);
                 }
-                // En yeni kayıtlar her zaman en üstte gelsin (ID descending)
+                // Order by id descending as a baseline
                 const { data, error } = await query.order('id', { ascending: false });
                 if (error) throw error;
                 return { result: "success", evaluations: data.map(normalizeKeys) };
             }
             case "logEvaluation": {
-                const { data, error } = await sb.from('Evaluations').insert([{
+                const { error } = await sb.from('Evaluations').insert([{
                     AgentName: params.agentName,
                     Evaluator: currentUser,
                     CallID: params.callId,
@@ -204,6 +204,16 @@ async function apiCall(action, params = {}) {
                     Date: new Date().toLocaleString('tr-TR'),
                     Okundu: 0,
                     Durum: params.status || 'Tamamlandı'
+                }]);
+                if (error) throw error;
+                return { result: "success" };
+            }
+            case "logQuiz": {
+                const { error } = await sb.from('Quiz_Logs').insert([{
+                    Username: params.username || currentUser,
+                    Score: params.score,
+                    Total: params.total,
+                    Date: new Date().toISOString()
                 }]);
                 if (error) throw error;
                 return { result: "success" };
@@ -450,7 +460,11 @@ async function apiCall(action, params = {}) {
                     Kategori: params.kategori,
                     Başlık: params.baslik,
                     İçerik: params.icerik,
-                    Görsel: params.image || null
+                    Adım: params.adim || null,
+                    Not: params.not || null,
+                    Link: params.link || null,
+                    Görsel: params.image || null,
+                    Durum: params.durum || 'Aktif'
                 };
                 const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: 'Başlık' });
                 return { result: error ? "error" : "success" };
@@ -2991,14 +3005,12 @@ function finishPenaltyGame() {
     if (restartBtn) restartBtn.style.display = 'block';
 
     // Leaderboard log (mevcut backend uyumu)
-    fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "logQuiz", username: currentUser, token: getToken(), score: pScore * 10, total: 100 })
-    }).finally(() => {
-        // lobby tablosunu güncel tut
-        setTimeout(fetchLeaderboard, 600);
-    });
+    // Leaderboard log (apiCall migration)
+    apiCall("logQuiz", { score: pScore * 10, total: 100 })
+        .finally(() => {
+            // lobby tablosunu güncel tut
+            setTimeout(fetchLeaderboard, 600);
+        });
 }
 
 
@@ -4658,8 +4670,18 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
         });
 
         if (data.result === "success") {
-            // Server'dan zaten descending (en yeni en üstte) geliyor, reverse() gereksiz veya hataya sebep olabilir
-            allEvaluationsData = data.evaluations;
+            // --- CHRONOLOGICAL SORTING FIX ---
+            // CallDate is "DD.MM.YYYY" string. We need to sort descending (newest first).
+            allEvaluationsData = data.evaluations.sort((a, b) => {
+                const parseDate = (d) => {
+                    if (!d) return 0;
+                    const p = String(d).split('.');
+                    if (p.length === 3) return new Date(p[2], p[1] - 1, p[0]).getTime();
+                    return new Date(d).getTime() || 0;
+                };
+                return parseDate(b.callDate) - parseDate(a.callDate);
+            });
+
             if (silent) return; // Silent mode ise burada bitir (veri yüklendi)
             listEl.innerHTML = '';
 
@@ -7275,12 +7297,11 @@ async function editTechDoc(tabKey, baslik) {
 
     Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
     try {
-        const r = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'upsertTechDoc', username: currentUser, token: getToken(), keyKategori: it.kategori, keyBaslik: it.baslik, ...v })
+        const d = await apiCall("upsertTechDoc", {
+            keyKategori: it.kategori,
+            keyBaslik: it.baslik,
+            ...v
         });
-        const d = await r.json();
         if (d.result === 'success') {
             Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1200, showConfirmButton: false });
             await loadTechDocsIfNeeded(true);
@@ -7308,12 +7329,12 @@ function deleteTechDoc(tabKey, baslik) {
             const all = await loadTechDocsIfNeeded(false);
             const it = all.find(x => x.categoryKey === tabKey && (x.baslik || '') === baslik);
             const keyKategori = it ? it.kategori : tabKey;
-            const r = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'deleteTechDoc', username: currentUser, token: getToken(), keyKategori: keyKategori, keyBaslik: baslik })
+
+            const d = await apiCall("deleteTechDoc", {
+                keyKategori: keyKategori,
+                keyBaslik: baslik
             });
-            const d = await r.json();
+
             if (d.result === 'success') {
                 await loadTechDocsIfNeeded(true);
                 filterTechDocList(tabKey);
