@@ -1611,12 +1611,18 @@ function checkAdmin(role) {
         if (imageDropdown) imageDropdown.style.display = 'flex';
         if (quickEditDropdown) {
             quickEditDropdown.style.display = 'flex';
-            // Yetki Yönetimi ve Aktif Kullanıcılar (Artık hasPerm/applyPermissionsToUI ile yönetiliyor)
+            // Yetki Yönetimi, Aktif Kullanıcılar, Kullanıcı Yönetimi, Loglar
             const perms = document.getElementById('dropdownPerms');
             if (perms) perms.style.display = 'flex';
 
             const activeUsersBtn = document.getElementById('dropdownActiveUsers');
             if (activeUsersBtn) activeUsersBtn.style.display = 'flex';
+
+            const userMgmtBtn = document.getElementById('dropdownUserMgmt');
+            if (userMgmtBtn) userMgmtBtn.style.display = 'flex';
+
+            const logsBtn = document.getElementById('dropdownLogs');
+            if (logsBtn) logsBtn.style.display = 'flex';
 
             quickEditDropdown.innerHTML = '<i class="fas fa-pen" style="color:var(--secondary);"></i> Düzenlemeyi Aç';
             quickEditDropdown.classList.remove('active');
@@ -1625,10 +1631,11 @@ function checkAdmin(role) {
         if (addCardDropdown) addCardDropdown.style.display = 'none';
         if (imageDropdown) imageDropdown.style.display = 'none';
         if (quickEditDropdown) quickEditDropdown.style.display = 'none';
-        const perms = document.getElementById('dropdownPerms');
-        if (perms) perms.style.display = 'none';
-        const activeUsersBtn = document.getElementById('dropdownActiveUsers');
-        if (activeUsersBtn) activeUsersBtn.style.display = 'none';
+
+        ['dropdownPerms', 'dropdownActiveUsers', 'dropdownUserMgmt', 'dropdownLogs'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
     }
 
     // RBAC Yetkilerini uygula
@@ -3586,15 +3593,13 @@ function finishPenaltyGame() {
     if (optionsEl) optionsEl.style.display = 'none';
     if (restartBtn) restartBtn.style.display = 'block';
 
-    // Leaderboard log (mevcut backend uyumu)
+    // Leaderboard log
     apiCall('logQuiz', {
         username: currentUser,
-        token: (typeof getToken === 'function' ? getToken() : ''),
         score: pScore * 10,
-        total: 10,  // Toplam 10 top
+        total: 10,
         successRate: acc + '%'
     }).finally(() => {
-        // lobby tablosunu güncel tut
         setTimeout(fetchLeaderboard, 600);
     });
 }
@@ -3613,7 +3618,11 @@ function renderStep(k) {
     const s = wizardStepsData[k];
     if (!s) { document.getElementById('wizard-body').innerHTML = `<h2 style="color:red;">HATA: Adım ID (${k}) yok.</h2>`; return; }
     const b = document.getElementById('wizard-body');
-    let h = `<h2 style="color:var(--primary);">${s.title || ''}</h2>`;
+
+    // Admin için Edit Butonu
+    let editBtn = isAdminMode ? `<button class="btn-edit-wizard" onclick="openWizardEditor('WizardSteps', '${k}')" style="float:right; background:none; border:none; color:#999; cursor:pointer;" title="Bu adımı düzenle"><i class="fas fa-edit"></i></button>` : '';
+
+    let h = `${editBtn}<h2 style="color:var(--primary);">${s.title || ''}</h2>`;
     if (s.result) {
         let i = s.result === 'red' ? ' 🛑 ' : (s.result === 'green' ? ' ✅ ' : ' ⚠️ ');
         let c = s.result === 'red' ? 'res-red' : (s.result === 'green' ? 'res-green' : 'res-yellow');
@@ -3638,7 +3647,8 @@ function twRenderStep() {
     const stepData = techWizardData[twState.currentStep];
     if (twState.history.length > 0) backBtn.style.display = 'block'; else backBtn.style.display = 'none';
     if (!stepData) { contentDiv.innerHTML = `<div class="alert" style="color:red;">Hata: Adım bulunamadı (${twState.currentStep}).</div>`; return; }
-    let html = `<div class="tech-step-title">${stepData.title || ''}</div>`;
+    let editBtn = isAdminMode ? `<button class="btn-edit-wizard" onclick="openWizardEditor('TechWizardSteps', '${twState.currentStep}')" style="float:right; background:none; border:none; color:#eee; cursor:pointer;" title="Bu adımı düzenle"><i class="fas fa-edit"></i></button>` : '';
+    let html = `${editBtn}<div class="tech-step-title">${stepData.title || ''}</div>`;
     if (stepData.text) html += `<p style="font-size:1rem; margin-bottom:15px;">${stepData.text}</p>`;
     if (stepData.script) {
         const safeScript = encodeURIComponent(stepData.script);
