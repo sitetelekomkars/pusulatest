@@ -99,6 +99,19 @@ async function sendMailNotification(to, subject, body) {
     } catch (e) { console.error("[Pusula Mail] Hata:", e); }
 }
 
+async function saveLog(action, details) {
+    if (!sb) return;
+    try {
+        await sb.from('Logs').insert([{
+            Username: currentUser || localStorage.getItem("sSportUser") || '-',
+            Action: action,
+            Details: details,
+            "İP ADRESİ": globalUserIP || '-',
+            Date: new Date().toISOString()
+        }]);
+    } catch (e) { console.error("[Pusula Log] Hata:", e); }
+}
+
 // ⚠️ KRİTİK FIX: Supabase PascalCase/Türkçe → Frontend camelCase dönüşümü
 function normalizeKeys(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -276,6 +289,7 @@ async function apiCall(action, params = {}) {
                         Value: (typeof p.value !== 'undefined') ? p.value : p.Value
                     }, { onConflict: 'Role,Resource,Permission' });
                 }
+                saveLog("Yetki Güncelleme", `${role} rolü için yetkiler güncellendi.`);
                 return { result: "success" };
             }
             case "fetchEvaluations": {
@@ -307,6 +321,8 @@ async function apiCall(action, params = {}) {
                     Durum: params.status || 'Tamamlandı'
                 }]).select('id').single();
                 if (error) throw error;
+
+                saveLog("Değerlendirme Kaydı", `${params.agentName} | ${params.callId} | ${params.score}`);
 
                 // ✅ MAİL BİLDİRİMİ TETİKLE
                 (async () => {
@@ -343,6 +359,7 @@ async function apiCall(action, params = {}) {
                 };
                 const { error } = await sb.from('Data').insert([payload]);
                 if (error) throw error;
+                saveLog("Yeni Kart Ekleme", `${params.title} (${params.type})`);
                 return { result: "success" };
             }
             case "addCard": return await apiCall("logCard", params);
@@ -356,11 +373,15 @@ async function apiCall(action, params = {}) {
                     Link: params.link,
                     Image: params.image
                 }).eq('id', params.id);
-                return { result: error ? "error" : "success" };
+                if (error) throw error;
+                saveLog("Kart Düzenleme", `${params.title} (ID: ${params.id})`);
+                return { result: "success" };
             }
             case "deleteCard": {
                 const { error } = await sb.from('Data').delete().eq('id', params.id);
-                return { result: error ? "error" : "success" };
+                if (error) throw error;
+                saveLog("Kart Silme", `ID: ${params.id}`);
+                return { result: "success" };
             }
             case "saveUser": {
                 const { id, username, fullName, role, group, password } = params;
@@ -381,15 +402,20 @@ async function apiCall(action, params = {}) {
                 let res;
                 if (id) {
                     res = await sb.from('Users').update(payload).eq('id', id);
+                    if (res.error) throw res.error;
+                    saveLog("Kullanıcı Güncelleme", `${username} (ID: ${id})`);
                 } else {
                     res = await sb.from('Users').insert([payload]);
+                    if (res.error) throw res.error;
+                    saveLog("Yeni Kullanıcı Ekleme", `${username}`);
                 }
-                if (res.error) throw res.error;
                 return { result: "success" };
             }
             case "deleteUser": {
                 const { error } = await sb.from('Users').delete().eq('id', params.id);
-                return { result: error ? "error" : "success" };
+                if (error) throw error;
+                saveLog("Kullanıcı Silme", `ID: ${params.id}`);
+                return { result: "success" };
             }
             case "exportEvaluations": {
                 // Rapor için verileri çek ve formatla
@@ -500,11 +526,14 @@ async function apiCall(action, params = {}) {
                     Durum: params.status
                 }).eq('CallID', params.callId);
                 if (error) throw error;
+                saveLog("Değerlendirme Güncelleme", `CallID: ${params.callId}`);
                 return { result: "success" };
             }
             case "markEvaluationSeen": {
                 const { error } = await sb.from('Evaluations').update({ Okundu: 1 }).eq('CallID', params.callId);
-                return { result: error ? "error" : "success" };
+                if (error) throw error;
+                saveLog("Değerlendirme Okundu İşaretleme", `CallID: ${params.callId}`);
+                return { result: "success" };
             }
             case "getTrainings": {
                 const username = localStorage.getItem("sSportUser") || "";
@@ -585,6 +614,7 @@ async function apiCall(action, params = {}) {
                 }], { onConflict: 'TrainingID,Username' });
 
                 if (error) throw error;
+                saveLog("Eğitim Başlatma", `ID: ${params.trainingId}`);
                 return { result: "success" };
             }
             case "completeTraining": {
@@ -599,6 +629,7 @@ async function apiCall(action, params = {}) {
                 }], { onConflict: 'TrainingID,Username' });
 
                 if (error) throw error;
+                saveLog("Eğitim Tamamlama", `ID: ${params.trainingId}`);
                 return { result: "success" };
             }
             case "assignTraining": {
@@ -618,6 +649,7 @@ async function apiCall(action, params = {}) {
                 };
                 const { error } = await sb.from('Trainings').insert([payload]);
                 if (error) throw error;
+                saveLog("Eğitim Atama", `${params.title} -> ${params.target}`);
                 return { result: "success" };
             }
             case "getUserList": {
@@ -675,6 +707,7 @@ async function apiCall(action, params = {}) {
                     timestamp: new Date().toISOString()
                 }]);
                 if (error) throw error;
+                saveLog("Vardiya Talebi Gönderme", `${currentUser} -> ${params.date} ${params.shift}`);
                 return { result: "success" };
             }
             case "fetchFeedbackLogs": {
@@ -699,6 +732,7 @@ async function apiCall(action, params = {}) {
                     Görsel: o.image || ''
                 }));
                 const { error } = await sb.from('Telesatis_DataTeklifleri').insert(dbOffers);
+                saveLog("Telesatış Teklifleri Güncelleme", `${dbOffers.length} teklif kaydedildi.`);
                 return { result: error ? "error" : "success" };
             }
             case "getTelesalesScripts": {
@@ -717,6 +751,7 @@ async function apiCall(action, params = {}) {
                     UpdatedAt: new Date().toISOString(),
                     UpdatedBy: (localStorage.getItem("sSportUser") || '')
                 })));
+                saveLog("Telesatış Script Güncelleme", `${scripts.length} script kaydedildi.`);
                 return { result: error ? "error" : "success" };
             }
             case "getTechDocs": {
@@ -762,6 +797,7 @@ async function apiCall(action, params = {}) {
                     console.error("[Pusula] upsertTechDoc error:", error);
                     return { result: "error", message: error.message };
                 }
+                saveLog("Teknik Döküman Kayıt", `${params.baslik} (${params.kategori})`);
                 return { result: "success" };
             }
             case "updateHomeBlock": {
@@ -772,6 +808,8 @@ async function apiCall(action, params = {}) {
                     Content: params.content,
                     VisibleGroups: params.visibleGroups
                 }, { onConflict: 'Key' });
+                if (error) throw error;
+                saveLog("Blok İçerik Güncelleme", `${params.key}`);
                 return { result: error ? "error" : "success" };
             }
             case "updateDoc": {
@@ -862,6 +900,7 @@ async function apiCall(action, params = {}) {
                 if (error) throw error;
 
                 const { data: publicURL } = sb.storage.from('pusula').getPublicUrl(filePath);
+                saveLog("Dosya Yükleme", `${fileName} (${folder})`);
                 return { result: "success", url: publicURL.publicUrl };
             }
             case "deleteTechDoc": {
@@ -870,6 +909,7 @@ async function apiCall(action, params = {}) {
                     console.error("[Pusula] deleteTechDoc error:", error);
                     return { result: "error", message: error.message };
                 }
+                saveLog("Teknik Döküman Silme", `ID: ${params.id}`);
                 return { result: "success" };
             }
             default:
@@ -1357,10 +1397,13 @@ async function girisYap() {
         // Şifre kontrolü
         if (user.Password !== hashedPass && user.password !== hashedPass) {
             console.warn("[Pusula Login] Şifre eşleşmedi.");
+            saveLog("Giriş Denemesi (Hatalı Şifre)", uName);
             errorMsg.innerText = "Kullanıcı Adı veya Şifre Hatalı!";
             errorMsg.style.display = "block";
             return;
         }
+
+        saveLog("Sisteme Giriş", uName);
 
         // Veri eşleme (Geriye uyumluluk için büyük harf/küçük harf karmaşasını çöz)
         const data = {
@@ -1482,6 +1525,7 @@ async function forgotPasswordPopup() {
             const subject = "Pusula - Şifre Sıfırlama";
             const body = `Merhaba ${username},\n\nSistem giriş şifreniz sıfırlandı.\n\nGeçici Şifreniz: ${tempPass}\n\nLütfen giriş yaptıktan sonra şifrenizi değiştirmeyi unutmayın.`;
             await sendMailNotification(email, subject, body);
+            saveLog("Şifremi Unuttum", `${username} için geçici şifre gönderildi.`);
 
             Swal.fire('Başarılı', 'Geçici şifreniz e-posta adresinize gönderildi. Lütfen gelen kutunuzu kontrol edin.', 'success');
         } catch (e) {
@@ -1650,6 +1694,8 @@ async function changePasswordPopup(isMandatory = false) {
                 .ilike('Username', currentUser);
 
             if (updateError) throw updateError;
+
+            saveLog("Şifre Değiştirme", `${currentUser} şifresini güncelledi.`);
 
             localStorage.removeItem("sSportForceChange"); // Başarılı olunca bayrağı kaldır
             Swal.fire('Başarılı!', 'Şifreniz güncellendi. Yeniden giriş yapınız.', 'success').then(() => { logout(); });
@@ -5122,12 +5168,6 @@ async function addManualFeedbackPopup() {
             if (d.result === "success") {
                 Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1500, showConfirmButton: false });
 
-                // Bug 13: Log kaydı ekle
-                apiCall("logAction", {
-                    action: "Değerlendirme Kaydı",
-                    details: `${formValues.agentName} | ${formValues.callId} | ${formValues.score}`
-                });
-
                 fetchEvaluationsForAgent(formValues.agentName);
                 fetchFeedbackLogs().then(() => { loadFeedbackList(); });
             } else {
@@ -8166,6 +8206,7 @@ async function kickUser(username, token) {
 
             if (error) throw error;
 
+            saveLog("Kullanıcıyı Sistemden Atma", username);
             Swal.fire('Başarılı', 'Kullanıcıya çıkış komutu gönderildi (max 30sn).', 'success');
             // Listeyi yenile
             openActiveUsersPanel();
