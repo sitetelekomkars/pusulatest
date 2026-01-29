@@ -203,8 +203,9 @@ async function apiCall(action, params = {}) {
             }
             case "logEvaluation": {
                 // Eğer tablo auto-increment değilse manuel ID üret
-                const { data: maxIdData } = await sb.from('Evaluations').select('id').order('id', { ascending: false }).limit(1);
-                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+                const { data: maxIdData } = await sb.from('Evaluations').select('*').order('id', { ascending: false }).limit(1);
+                const lastRow = maxIdData && maxIdData.length > 0 ? normalizeKeys(maxIdData[0]) : null;
+                const nextId = lastRow ? (parseInt(lastRow.id || lastRow.ID || 0) + 1) : 1;
 
                 const { data, error } = await sb.from('Evaluations').insert([{
                     id: nextId,
@@ -226,10 +227,11 @@ async function apiCall(action, params = {}) {
             }
             case "logCard": {
                 // Data tablosu auto-increment değilse manuel ID üret
-                const { data: maxIdData } = await sb.from('Data').select('id').order('id', { ascending: false }).limit(1);
-                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+                const { data: maxData } = await sb.from('Data').select('*').order('id', { ascending: false }).limit(1);
+                const lastRow = maxData && maxData.length > 0 ? normalizeKeys(maxData[0]) : null;
+                const nextId = lastRow ? (parseInt(lastRow.id || lastRow.ID || 0) + 1) : 1;
 
-                const { data, error } = await sb.from('Data').insert([{
+                const payload = {
                     id: nextId,
                     Type: params.type,
                     Category: params.category,
@@ -246,7 +248,8 @@ async function apiCall(action, params = {}) {
                     Date: params.date || new Date(),
                     QuizOptions: params.quizOptions,
                     QuizAnswer: params.quizAnswer
-                }]);
+                };
+                const { error } = await sb.from('Data').insert([payload]);
                 if (error) throw error;
                 return { result: "success" };
             }
@@ -491,27 +494,41 @@ async function apiCall(action, params = {}) {
                 // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel, Adım, Not, Link
                 let targetId = params.id;
 
-                // Eğer ID yoksa (yeni kayıt), manuel ID üret (tablo auto-inc değilse diye)
+                // Dinamik kolon tespiti ve güvenli ID üretimi
+                const { data: sampleData } = await sb.from('Teknik_Dokumanlar').select('*').order('id', { ascending: false }).limit(1);
+                const lastRow = sampleData && sampleData.length > 0 ? normalizeKeys(sampleData[0]) : null;
+                const dbCols = sampleData && sampleData[0] ? Object.keys(sampleData[0]) : [];
+
                 if (!targetId) {
-                    const { data: maxIdData } = await sb.from('Teknik_Dokumanlar').select('id').order('id', { ascending: false }).limit(1);
-                    targetId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+                    targetId = lastRow ? (parseInt(lastRow.id || lastRow.ID || lastRow.Id || 0) + 1) : 1;
                 }
 
-                const payload = {
-                    id: targetId,
-                    Kategori: params.kategori,
-                    Başlık: params.baslik,
-                    İçerik: params.icerik,
-                    Adım: params.adim || '',
-                    Not: params.not || '',
-                    Link: params.link || '',
-                    Görsel: params.image || null,
-                    Durum: params.durum || 'Aktif'
+                // Kolon ismi eşleştirme yardımcısı
+                const findCol = (choices) => {
+                    for (let c of choices) {
+                        const found = dbCols.find(x => x.toLowerCase() === c.toLowerCase());
+                        if (found) return found;
+                    }
+                    return choices[0]; // fallback
                 };
 
-                // ID bazlı upsert en güvenlisidir. 
-                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: 'id' });
-                return { result: error ? "error" : "success" };
+                const payload = {};
+                payload[findCol(['id', 'ID'])] = targetId;
+                payload[findCol(['Kategori', 'Category'])] = params.kategori;
+                payload[findCol(['Başlık', 'Baslik', 'Title'])] = params.baslik;
+                payload[findCol(['İçerik', 'Icerik', 'Content'])] = params.icerik;
+                payload[findCol(['Adım', 'Adim', 'Step'])] = params.adim || '';
+                payload[findCol(['Not', 'Note'])] = params.not || '';
+                payload[findCol(['Link'])] = params.link || '';
+                payload[findCol(['Görsel', 'Gorsel', 'Image', 'Resim'])] = params.image || null;
+                payload[findCol(['Durum', 'Status'])] = params.durum || 'Aktif';
+
+                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: findCol(['id', 'ID']) });
+                if (error) {
+                    console.error("[Pusula] upsertTechDoc error:", error);
+                    return { result: "error", message: error.message };
+                }
+                return { result: "success" };
             }
             case "updateHomeBlock": {
                 // Supabase'de kolon adı 'Key' (Görüntülerden teyit edildi)
@@ -638,7 +655,11 @@ async function apiCall(action, params = {}) {
             }
             case "deleteTechDoc": {
                 const { error } = await sb.from('Teknik_Dokumanlar').delete().eq('id', params.id);
-                return { result: error ? "error" : "success" };
+                if (error) {
+                    console.error("[Pusula] deleteTechDoc error:", error);
+                    return { result: "error", message: error.message };
+                }
+                return { result: "success" };
             }
             default:
                 console.warn(`[Pusula] Bilinmeyen apiCall action: ${action}`);
