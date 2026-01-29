@@ -8420,8 +8420,6 @@ async function openUserManagementPanel() {
             }
         };
 
-    }
-
 async function openLogsPanel() {
         try {
             Swal.fire({ title: 'Günlükler yükleniyor...', didOpen: () => { Swal.showLoading() } });
