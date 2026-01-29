@@ -2614,44 +2614,59 @@ function startGameFromLobby() {
     startPenaltySession();
 }
 
-async function fetchLeaderboard() {
-    const tbody = document.getElementById('leaderboard-body');
-    const loader = document.getElementById('leaderboard-loader');
-    const table = document.getElementById('leaderboard-table');
+async function fetchLeaderboard(targetTbodyId = 'leaderboard-body', targetLoaderId = 'leaderboard-loader', targetTableId = 'leaderboard-table') {
+    const tbody = document.getElementById(targetTbodyId);
+    const loader = document.getElementById(targetLoaderId);
+    const table = document.getElementById(targetTableId);
 
-    if (!tbody || !loader || !table) return;
+    if (!tbody) return;
 
+    if (loader) loader.style.display = 'block';
+    if (table) table.style.display = 'none';
     tbody.innerHTML = '';
-    loader.style.display = 'block';
-    table.style.display = 'none';
 
     try {
-        // Not: Leaderboard tablosu Supabase'de henüz yoksa boş döner. 
-        // Burada Logs tablosundan veya varsa Scoreboard tablosundan çekilebilir.
-        const { data, error } = await sb.from('Scoreboard').select('*').order('Average', { ascending: false }).limit(10);
+        const { data, error } = await sb.from('Scoreboard').select('*').order('Average', { ascending: false }).limit(targetTbodyId === 'home-leaderboard-body' ? 5 : 10);
 
-        loader.style.display = 'none';
+        if (loader) loader.style.display = 'none';
         if (error) throw error;
 
-        table.style.display = 'table';
+        if (table) table.style.display = 'table';
         let html = '';
 
         if (!data || data.length === 0) {
-            html = '<tr><td colspan="4" style="text-align:center;">Henüz maç yapılmadı veya tablo boş.</td></tr>';
+            html = `<tr><td colspan="4" style="text-align:center; padding:20px; color:#999;">Henüz maç yapılmadı.</td></tr>`;
         } else {
-            data.forEach((u, i) => {
+            const normalizedData = normalizeKeys(data);
+            normalizedData.forEach((u, i) => {
                 const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `<span class="rank-badge">${i + 1}</span>`));
-                const bgStyle = (u.Username === currentUser) ? 'background:rgba(250, 187, 0, 0.1);' : '';
-                html += `<tr style="${bgStyle}"><td>${medal}</td><td>${u.Username}</td><td>${u.Games}</td><td>${u.Average}</td></tr>`;
+                const name = u.username || u.agent || u.name || 'Anonim';
+                const games = u.games || 0;
+                const avg = u.average || 0;
+                const isMe = (name === currentUser);
+                const bgStyle = isMe ? 'background:rgba(250, 187, 0, 0.15);' : '';
+                const textColor = isMe ? '#fabb00' : (targetTbodyId === 'home-leaderboard-body' ? '#333' : '#eee');
+
+                html += `<tr style="${bgStyle} border-bottom:1px solid rgba(0,0,0,0.05);">
+                    <td style="padding:8px 5px; text-align:center;">${medal}</td>
+                    <td style="padding:8px 5px; font-weight:${isMe ? '800' : '600'}; color:${textColor}">${escapeHtml(name)}</td>
+                    <td style="padding:8px 5px; text-align:center; color:${textColor}">${games}</td>
+                    <td style="padding:8px 5px; text-align:center; font-weight:800; color:${textColor}">${avg}</td>
+                </tr>`;
             });
         }
         tbody.innerHTML = html;
     } catch (err) {
         console.warn("Leaderboard fetch error:", err);
-        loader.style.display = 'none';
-        loader.innerText = "Yüklenemedi (Tablo eksik olabilir).";
-        loader.style.display = 'block';
+        if (loader) {
+            loader.innerText = "Yüklenemedi.";
+            loader.style.display = 'block';
+        }
     }
+}
+
+function renderHomeLeaderboard() {
+    fetchLeaderboard('home-leaderboard-body', 'home-leaderboard-loader', 'home-leaderboard-table');
 }
 
 function buildQuestionQueue() {
@@ -5506,9 +5521,26 @@ function renderHomePanels() {
     // --- GÜNÜN SÖZÜ (HomeBlocks -> e-tabla) ---
     const quoteEl = document.getElementById('home-quote');
     if (quoteEl) {
-        const q = String((homeBlocks && homeBlocks.quote && homeBlocks.quote.content) ? homeBlocks.quote.content : (localStorage.getItem('homeQuote') || '')).trim();
-        quoteEl.innerHTML = q ? escapeHtml(q) : '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
+        const qObj = (homeBlocks && homeBlocks.quote) ? homeBlocks.quote : null;
+        const content = (qObj?.content || localStorage.getItem('homeQuote') || '').trim();
+        const author = qObj?.title || '';
+
+        if (content) {
+            quoteEl.innerHTML = `
+                <div class="home-quote-content">
+                    <i class="fas fa-quote-left quote-icon-start"></i>
+                    <p class="quote-text">${escapeHtml(content)}</p>
+                    ${author ? `<p class="quote-author">— ${escapeHtml(author)}</p>` : ''}
+                </div>
+            `;
+            quoteEl.style.display = '';
+        } else {
+            quoteEl.innerHTML = '<span style="color:#999">Bugün için bir söz eklenmemiş.</span>';
+        }
     }
+
+    // --- LİDERLİK TABLOSU (Home-Screen) ---
+    try { renderHomeLeaderboard(); } catch (e) { }
 
     // Admin: edit butonlarını aç
     try {
