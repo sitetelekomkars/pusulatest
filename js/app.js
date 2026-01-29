@@ -1432,15 +1432,25 @@ async function girisYap() {
         if (data.Group) localStorage.setItem("sSportGroup", data.Group);
 
         // ✅ Tokens tablosuna kaydet (Single Session & Force Kick Altyapısı)
-        try {
-            await sb.from('Tokens').upsert({
-                Username: currentUser,
-                Token: sessionToken,
-                Role: data.Role,
-                IP: globalUserIP || '-',
-                CreatedAt: new Date().toISOString()
-            }, { onConflict: 'Username' });
-        } catch (e) { console.warn("Token upsert failed", e); }
+        const { error: tokenError } = await sb.from('Tokens').upsert({
+            Username: currentUser,
+            Token: sessionToken,
+            Role: data.Role,
+            IP: globalUserIP || '-',
+            CreatedAt: new Date().toISOString()
+        }, { onConflict: 'Username' });
+
+        if (tokenError) {
+            console.error("[Pusula Token Sync] Hata:", tokenError);
+            // Eğer upsert hata veriyorsa, muhtemelen RLS veya Constraint hatasıdır.
+            // Kritik bir hata olduğu için kullanıcıyı uyaralım.
+            Swal.fire({
+                icon: 'warning',
+                title: 'Oturum Senkronizasyon Hatası',
+                text: 'Token tablosuna yazılamadı. Lütfen RLS politikalarını veya tablo izinlerini kontrol edin. Hata: ' + tokenError.message,
+                confirmButtonText: 'Devam Et'
+            });
+        }
         localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
         localStorage.setItem("sSportLoginAt", String(Date.now()));
 
