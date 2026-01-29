@@ -869,10 +869,10 @@ async function apiCall(action, params = {}) {
                 return { result: error ? "error" : "success" };
             }
             case "submitAgentNote": {
-                // Bug 6 Fix: Not ekleme (Geliştirilmiş Eşleşme)
+                // Bug 6 Fix: Not ekleme (Görseldeki kolon isimlerine göre: "Temsilci Notu")
                 const { error } = await sb.from('Evaluations').update({
-                    AgentNote: params.note,
-                    Durum: params.status || 'Bekliyor'
+                    "Temsilci Notu": params.note,
+                    "Durum": params.status || 'Bekliyor'
                 }).ilike('CallID', String(params.callId).replace('#', '').trim());
 
                 if (error) console.error("[Pusula Note Error]", error);
@@ -900,9 +900,9 @@ async function apiCall(action, params = {}) {
             }
             case "resolveAgentFeedback": {
                 const { error } = await sb.from('Evaluations').update({
-                    ManagerReply: params.reply,
-                    Durum: params.status || 'Tamamlandı'
-                }).eq('CallID', params.callId);
+                    "Yönetici Cevabı": params.reply,
+                    "Durum": params.status || 'Tamamlandı'
+                }).ilike('CallID', String(params.callId).replace('#', '').trim());
                 return { result: error ? "error" : "success" };
             }
             case "bulkUpdateBroadcast": {
@@ -6976,6 +6976,17 @@ async function openShiftArea(tab) {
                 if (isLocAdmin || hasPerm('Reports')) rptBtn.style.display = '';
                 else rptBtn.style.display = 'none';
             }
+            // Vardiya Yapıştır Butonu
+            if (isLocAdmin && !document.getElementById('btn-bulk-shift')) {
+                const b = document.createElement('button');
+                b.id = 'btn-bulk-shift';
+                b.className = 'admin-btn';
+                b.style.margin = '4px';
+                b.style.background = 'var(--secondary)';
+                b.innerHTML = '<i class="fas fa-paste"></i> Vardiya Yapıştır';
+                b.onclick = openBulkUpdateShiftsPopup;
+                adminFilters.appendChild(b);
+            }
             const addBtn = adminFilters.querySelector('.add-btn');
             if (addBtn) {
                 if (isLocAdmin || hasPerm('AddContent')) addBtn.style.display = '';
@@ -8447,7 +8458,6 @@ async function openUserManagementPanel() {
                 }
             }
         };
-
     } catch (e) {
         Swal.fire("Hata", e.message, "error");
     }
@@ -9026,4 +9036,98 @@ function checkQualityNotifications() {
                 }
             }
         }).catch(e => console.log('Notif check error', e));
+}
+
+// ==========================================================
+// --- TOPLU GÜNCELLEME ARAÇLARI (Excel/Sheets Destekli) ---
+// ==========================================================
+
+function parseTSV(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+
+    // Headerları temizle (Türkçe karakter ve boşlukları normalize et)
+    const headers = lines[0].split('\t').map(h => h.trim());
+
+    return lines.slice(1).map(line => {
+        const values = line.split('\t');
+        const obj = {};
+        headers.forEach((h, i) => {
+            let val = (values[i] || "").trim();
+            // Sayısal değerleri çevir
+            if (val !== "" && !isNaN(val) && !val.includes('-')) {
+                if (/^[0-9.,]+$/.test(val)) {
+                    val = Number(val.replace(',', '.'));
+                }
+            }
+            obj[h] = val;
+        });
+        return obj;
+    });
+}
+
+async function openBulkUpdateBroadcastPopup() {
+    const { value: text } = await Swal.fire({
+        title: '📺 Yayın Akışı Toplu Güncelle',
+        html: `
+            <div style="text-align:left; font-size:0.85rem; color:#666; margin-bottom:10px;">
+                Excel veya Google Sheets'ten kopyaladığınız tabloyu buraya yapıştırın.<br>
+                <b>Sütun Başlıkları:</b> Saat, Program, Kanal, Tarih
+            </div>
+            <textarea id="bulk-tsv" class="swal2-textarea" style="height:200px;" placeholder="Excel'den kopyalayıp buraya yapıştırın..."></textarea>
+        `,
+        width: 600, showCancelButton: true, confirmButtonText: 'Veriyi İşle',
+        preConfirm: () => document.getElementById('bulk-tsv').value
+    });
+
+    if (text) {
+        const items = parseTSV(text);
+        if (items.length === 0) { Swal.fire('Hata', 'Geçerli bir tablo verisi bulunamadı.', 'error'); return; }
+
+        const confirmed = await Swal.fire({
+            title: 'Onaylıyor musunuz?',
+            text: `${items.length} adet yayın kaydı eklenecek. MEVCUT TÜM AKIŞ SİLİNECEKTİR.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Evet, Hepsini Değiştir'
+        });
+
+        if (confirmed.isConfirmed) {
+            Swal.fire({ title: 'Güncelleniyor...', didOpen: () => Swal.showLoading() });
+            const res = await apiCall("bulkUpdateBroadcast", { items });
+            if (res.result === "success") {
+                Swal.fire('Başarılı', 'Yayın akışı güncellendi.', 'success').then(() => openBroadcastFlow());
+            } else {
+                Swal.fire('Hata', res.message || 'İşlem başarısız.', 'error');
+            }
+        }
+    }
+}
+
+async function openBulkUpdateShiftsPopup() {
+    const { value: text } = await Swal.fire({
+        title: '📅 Vardiya Toplu Yapıştır',
+        html: `
+            <div style="text-align:left; font-size:0.85rem; color:#666; margin-bottom:10px;">
+                Tarih başlıkları (YYYY-MM-DD) olan vardiya tablonuzu yapıştırın.<br>
+                <b>İlk Sütun:</b> Temsilci
+            </div>
+            <textarea id="bulk-tsv-shift" class="swal2-textarea" style="height:200px;" placeholder="Excel tablosunu buraya yapıştırın..."></textarea>
+        `,
+        width: 800, showCancelButton: true, confirmButtonText: 'Vardiyaları Güncelle',
+        preConfirm: () => document.getElementById('bulk-tsv-shift').value
+    });
+
+    if (text) {
+        const items = parseTSV(text);
+        if (items.length === 0) { Swal.fire('Hata', 'Veri bulunamadı.', 'error'); return; }
+
+        Swal.fire({ title: 'Vardiyalar İşleniyor...', didOpen: () => Swal.showLoading() });
+        const res = await apiCall("bulkUpdateShifts", { items });
+        if (res.result === "success") {
+            Swal.fire('Başarılı', 'Vardiya tablosu güncellendi.', 'success').then(() => openShiftArea());
+        } else {
+            Swal.fire('Hata', res.message || 'Güncellenemedi.', 'error');
+        }
+    }
 }
