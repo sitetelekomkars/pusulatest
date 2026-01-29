@@ -462,21 +462,29 @@ async function apiCall(action, params = {}) {
                 return { result: "success", categories: cats };
             }
             case "upsertTechDoc": {
-                // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel
-                // Başlık değiştiyse: eski kaydı sil (aksi halde yeni kayıt oluşur)
-                try {
-                    if (params.keyBaslik && params.baslik && String(params.keyBaslik) !== String(params.baslik)) {
-                        await sb.from('Teknik_Dokumanlar').delete().match({ Başlık: params.keyBaslik });
-                    }
-                } catch (e) { /* sessiz */ }
+                // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel, Adım, Not, Link
+                let targetId = params.id;
+
+                // Eğer ID yoksa (yeni kayıt), manuel ID üret (tablo auto-inc değilse diye)
+                if (!targetId) {
+                    const { data: maxIdData } = await sb.from('Teknik_Dokumanlar').select('id').order('id', { ascending: false }).limit(1);
+                    targetId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+                }
 
                 const payload = {
+                    id: targetId,
                     Kategori: params.kategori,
                     Başlık: params.baslik,
                     İçerik: params.icerik,
-                    Görsel: params.image || null
+                    Adım: params.adim || '',
+                    Not: params.not || '',
+                    Link: params.link || '',
+                    Görsel: params.image || null,
+                    Durum: params.durum || 'Aktif'
                 };
-                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: 'Başlık' });
+
+                // ID bazlı upsert en güvenlisidir. 
+                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: 'id' });
                 return { result: error ? "error" : "success" };
             }
             case "updateHomeBlock": {
@@ -603,10 +611,7 @@ async function apiCall(action, params = {}) {
                 return { result: "success", items: (data || []).map(normalizeKeys) };
             }
             case "deleteTechDoc": {
-                const { error } = await sb.from('Teknik_Dokumanlar').delete().match({
-                    Kategori: params.keyKategori,
-                    Başlık: params.keyBaslik
-                });
+                const { error } = await sb.from('Teknik_Dokumanlar').delete().eq('id', params.id);
                 return { result: error ? "error" : "success" };
             }
             default:
@@ -7273,6 +7278,7 @@ async function __fetchTechDocs() {
             not: (r.Not || "").toString(),
             link: (r.Link || "").toString(),
             image: (r.Resim || r.Image || r.Görsel || r.Gorsel || "").toString(),
+            id: r.id,
             durum: (r.Durum || "").toString()
         }))
         .filter(x => x.categoryKey && x.baslik);
@@ -7511,7 +7517,7 @@ async function editTechDoc(tabKey, baslik) {
 
     Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
     try {
-        const d = await apiCall('upsertTechDoc', { keyKategori: it.kategori, keyBaslik: it.baslik, ...v, username: currentUser, token: getToken() });
+        const d = await apiCall('upsertTechDoc', { id: it.id, keyKategori: it.kategori, keyBaslik: it.baslik, ...v, username: currentUser, token: getToken() });
         if (d.result === 'success') {
             Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1200, showConfirmButton: false });
             await loadTechDocsIfNeeded(true);
@@ -7539,7 +7545,7 @@ function deleteTechDoc(tabKey, baslik) {
             const all = await loadTechDocsIfNeeded(false);
             const it = all.find(x => x.categoryKey === tabKey && (x.baslik || '') === baslik);
             const keyKategori = it ? it.kategori : tabKey;
-            const d = await apiCall('deleteTechDoc', { keyKategori: keyKategori, keyBaslik: baslik, username: currentUser, token: getToken() });
+            const d = await apiCall('deleteTechDoc', { id: it.id, username: currentUser, token: getToken() });
             if (d.result === 'success') {
                 await loadTechDocsIfNeeded(true);
                 filterTechDocList(tabKey);
