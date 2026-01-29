@@ -224,6 +224,32 @@ async function apiCall(action, params = {}) {
                 if (error) throw error;
                 return { result: "success" };
             }
+            case "logCard": {
+                // Data tablosu auto-increment değilse manuel ID üret
+                const { data: maxIdData } = await sb.from('Data').select('id').order('id', { ascending: false }).limit(1);
+                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
+
+                const { data, error } = await sb.from('Data').insert([{
+                    id: nextId,
+                    Type: params.type,
+                    Category: params.category,
+                    Title: params.title,
+                    Text: params.text,
+                    Script: params.script,
+                    Code: params.code,
+                    Status: params.status,
+                    Link: params.link,
+                    Tip: params.tip,
+                    Detail: params.detail,
+                    Pronunciation: params.pronunciation,
+                    Icon: params.icon,
+                    Date: params.date || new Date(),
+                    QuizOptions: params.quizOptions,
+                    QuizAnswer: params.quizAnswer
+                }]);
+                if (error) throw error;
+                return { result: "success" };
+            }
             case "updateEvaluation": {
                 const { error } = await sb.from('Evaluations').update({
                     CallDate: params.callDate,
@@ -1889,27 +1915,25 @@ async function addNewCardPopup() {
         Swal.fire({ title: 'Ekleniyor...', didOpen: () => { Swal.showLoading() } });
 
         try {
-            const { error } = await sb
-                .from('Data')
-                .insert([{
-                    Type: formValues.cardType,
-                    Category: formValues.category,
-                    Title: formValues.title,
-                    Text: formValues.text,
-                    Script: formValues.script,
-                    Code: formValues.code,
-                    Status: formValues.status,
-                    Link: formValues.link,
-                    Tip: formValues.tip,
-                    Detail: formValues.detail,
-                    Pronunciation: formValues.pronunciation,
-                    Icon: formValues.icon,
-                    Date: new Date(),
-                    QuizOptions: formValues.quizOptions,
-                    QuizAnswer: formValues.quizAnswer
-                }]);
+            const d = await apiCall("logCard", {
+                type: formValues.cardType,
+                category: formValues.category,
+                title: formValues.title,
+                text: formValues.text,
+                script: formValues.script,
+                code: formValues.code,
+                status: formValues.status,
+                link: formValues.link,
+                tip: formValues.tip,
+                detail: formValues.detail,
+                pronunciation: formValues.pronunciation,
+                icon: formValues.icon,
+                date: new Date(),
+                quizOptions: formValues.quizOptions,
+                quizAnswer: formValues.quizAnswer
+            });
 
-            if (error) throw error;
+            if (d.result !== "success") throw new Error(d.message || "Eklenemedi");
 
             Swal.fire({ icon: 'success', title: 'Başarılı', text: 'İçerik eklendi.', timer: 2000, showConfirmButton: false });
             setTimeout(loadContentData, 3500);
