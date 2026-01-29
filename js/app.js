@@ -202,13 +202,7 @@ async function apiCall(action, params = {}) {
                 return { result: "success", evaluations: data.map(normalizeKeys) };
             }
             case "logEvaluation": {
-                // Eğer tablo auto-increment değilse manuel ID üret
-                const { data: maxIdData } = await sb.from('Evaluations').select('*').order('id', { ascending: false }).limit(1);
-                const lastRow = maxIdData && maxIdData.length > 0 ? normalizeKeys(maxIdData[0]) : null;
-                const nextId = lastRow ? (parseInt(lastRow.id || lastRow.ID || 0) + 1) : 1;
-
                 const { data, error } = await sb.from('Evaluations').insert([{
-                    id: nextId,
                     AgentName: params.agentName,
                     Evaluator: currentUser,
                     CallID: params.callId,
@@ -226,13 +220,7 @@ async function apiCall(action, params = {}) {
                 return { result: "success" };
             }
             case "logCard": {
-                // Data tablosu auto-increment değilse manuel ID üret
-                const { data: maxData } = await sb.from('Data').select('*').order('id', { ascending: false }).limit(1);
-                const lastRow = maxData && maxData.length > 0 ? normalizeKeys(maxData[0]) : null;
-                const nextId = lastRow ? (parseInt(lastRow.id || lastRow.ID || 0) + 1) : 1;
-
                 const payload = {
-                    id: nextId,
                     Type: params.type,
                     Category: params.category,
                     Title: params.title,
@@ -492,28 +480,22 @@ async function apiCall(action, params = {}) {
             }
             case "upsertTechDoc": {
                 // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel, Adım, Not, Link
-                let targetId = params.id;
-
-                // Dinamik kolon tespiti ve güvenli ID üretimi
-                const { data: sampleData } = await sb.from('Teknik_Dokumanlar').select('*').order('id', { ascending: false }).limit(1);
-                const lastRow = sampleData && sampleData.length > 0 ? normalizeKeys(sampleData[0]) : null;
+                const { data: sampleData } = await sb.from('Teknik_Dokumanlar').select('*').limit(1);
                 const dbCols = sampleData && sampleData[0] ? Object.keys(sampleData[0]) : [];
 
-                if (!targetId) {
-                    targetId = lastRow ? (parseInt(lastRow.id || lastRow.ID || lastRow.Id || 0) + 1) : 1;
-                }
-
-                // Kolon ismi eşleştirme yardımcısı
                 const findCol = (choices) => {
                     for (let c of choices) {
                         const found = dbCols.find(x => x.toLowerCase() === c.toLowerCase());
                         if (found) return found;
                     }
-                    return choices[0]; // fallback
+                    return choices[0];
                 };
 
                 const payload = {};
-                payload[findCol(['id', 'ID'])] = targetId;
+                // Sadece ID varsa payload'a ekle (Düzenleme modu).
+                // Yoksa ekleme, DB (identity) otomatik üretecek.
+                if (params.id) payload[findCol(['id', 'ID'])] = params.id;
+
                 payload[findCol(['Kategori', 'Category'])] = params.kategori;
                 payload[findCol(['Başlık', 'Baslik', 'Title'])] = params.baslik;
                 payload[findCol(['İçerik', 'Icerik', 'Content'])] = params.icerik;
@@ -625,12 +607,7 @@ async function apiCall(action, params = {}) {
                 return { result: 'success' };
             }
             case "logQuiz": {
-                // Proaktif: Eğer QuizResults da auto-increment değilse manuel ID üret
-                const { data: maxIdData } = await sb.from('QuizResults').select('id').order('id', { ascending: false }).limit(1);
-                const nextId = (maxIdData && maxIdData.length > 0) ? (parseInt(maxIdData[0].id) + 1) : 1;
-
                 const payload = {
-                    id: nextId,
                     Username: params.username || currentUser,
                     Score: params.score,
                     TotalQuestions: params.total,
