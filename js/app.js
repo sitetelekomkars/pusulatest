@@ -559,12 +559,9 @@ async function apiCall(action, params = {}) {
                     CreatedBy: params.creator || (localStorage.getItem("sSportUser") || ''),
                     StartDate: params.startDate || '',
                     EndDate: params.endDate || '',
-                    // Supabase 'date' kolonları için YYYY-MM-DD garantisi
-                    start_date: params.startDate || '',
-                    end_date: params.endDate || '',
                     Duration: params.duration || '',
                     Status: 'Aktif',
-                    Date: new Date().toLocaleString('tr-TR')
+                    Date: new Date().toISOString()
                 };
                 const { error } = await sb.from('Trainings').insert([payload]);
                 if (error) throw error;
