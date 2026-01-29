@@ -122,75 +122,28 @@ function normalizeKeys(obj) {
         if (k === 'Duration') { n.duration = obj[k]; }
 
         // Yayın Akışı (Special table keys)
-    // Yayın Akışı – normalize edilmiş anahtarlar
-const kk = String(k || '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toUpperCase();
+        if (k === 'DATE' || k === 'Tarih' || k === 'tarih') { n.date = obj[k]; n.dateISO = obj[k]; }
+        if (k === 'EVENT NAME - Turkish' || k === 'Mac' || k === 'mac' || k === 'Event' || k === 'event' || k === 'Title' || k === 'Başlık') { n.match = obj[k]; n.event = obj[k]; }
+        if (k === 'Saat' || k === 'saat' || k === 'Time' || k === 'time') n.time = obj[k];
+        // Yayın Akışı saat kolon adı bazen satır sonu/boşluk içeriyor: "KO/ START TIME \n TSİ"
+        try {
+            const kk = String(k || '').replace(/\s+/g, ' ').trim().toUpperCase();
+            if (!n.time && kk.includes('KO/') && kk.includes('START TIME')) n.time = obj[k];
+        } catch (e) { }
+        if (k === 'ANNOUNCER' || k === 'Kanal' || k === 'kanal' || k === 'Platform' || k === 'platform') { n.channel = obj[k]; n.announcer = obj[k]; }
 
-// DATE
-if (kk === 'DATE' || kk === 'TARİH' || kk === 'TARIH') {
-  n.date = obj[k];
-  n.dateISO = obj[k];
-}
-
-// EVENT / MATCH
-if (
-  kk === 'EVENT NAME - TURKISH' ||
-  kk === 'MAC' ||
-  kk === 'EVENT' ||
-  kk === 'TITLE' ||
-  kk === 'BAŞLIK' ||
-  kk === 'BASLIK'
-) {
-  n.match = obj[k];
-  n.event = obj[k];
-}
-
-// TIME / START TIME / TSİ
-if (
-  kk === 'SAAT' ||
-  kk === 'TIME' ||
-  kk === 'START_TIME_TSI' ||
-  kk === 'START TIME TSI' ||
-  (kk.includes('START') && kk.includes('TIME'))
-) {
-  n.time = obj[k];
-}
-
-// ANNOUNCER / PLATFORM
-if (
-  kk === 'ANNOUNCER' ||
-  kk === 'KANAL' ||
-  kk === 'PLATFORM'
-) {
-  n.channel = obj[k];
-  n.announcer = obj[k];
-}
-
-// StartEpoch hesaplama (Yayın Akışı için)
-const dVal = n.date || n.dateISO;
-const tVal = n.time;
-
-if (dVal && tVal) {
-  try {
-    const datePart = String(dVal).includes('.')
-      ? String(dVal).split('.').reverse().join('-')
-      : String(dVal).split(' ')[0];
-
-    const timePart = String(tVal).trim().length === 5
-      ? `${String(tVal).trim()}:00`
-      : String(tVal).trim();
-
-    const isoStr = `${datePart}T${timePart}`;
-    const dt = new Date(isoStr);
-
-    if (!isNaN(dt.getTime())) {
-      n.startEpoch = dt.getTime();
-    }
-  } catch (e) {}
-}
-
+        // StartEpoch hesaplama (Yayın Akışı için)
+        const dVal = n.date || n.dateISO;
+        const tVal = n.time;
+        if (dVal && tVal) {
+            try {
+                const datePart = String(dVal).includes('.') ? dVal.split('.').reverse().join('-') : dVal;
+                // datePart might be "dd.mm.yyyy" if not handled correctly, but reverse.join('-') handles it
+                const isoStr = `${String(datePart).split(' ')[0]}T${String(tVal).trim()}`;
+                const dt = new Date(isoStr);
+                if (!isNaN(dt.getTime())) n.startEpoch = dt.getTime();
+            } catch (e) { }
+        }
 
         // Notlar / Detaylar
         if (k === 'Details' || k === 'Detay') n.details = obj[k];
@@ -267,11 +220,16 @@ async function apiCall(action, params = {}) {
                 return { result: "success" };
             }
             case "logCard": {
+                // Sütun isimleri için robust mapping (Data tablosu)
                 const payload = {
                     Type: params.type,
+                    type: params.type,
                     Category: params.category,
+                    category: params.category,
                     Title: params.title,
+                    title: params.title,
                     Text: params.text,
+                    text: params.text,
                     Script: params.script,
                     Code: params.code,
                     Status: params.status,
@@ -280,13 +238,99 @@ async function apiCall(action, params = {}) {
                     Detail: params.detail,
                     Pronunciation: params.pronunciation,
                     Icon: params.icon,
-                    Date: params.date || new Date(),
+                    Date: params.date || new Date().toISOString(),
                     QuizOptions: params.quizOptions,
                     QuizAnswer: params.quizAnswer
                 };
                 const { error } = await sb.from('Data').insert([payload]);
                 if (error) throw error;
                 return { result: "success" };
+            }
+            case "addCard": return await apiCall("logCard", params);
+            case "editCard": {
+                const { error } = await sb.from('Data').update({
+                    Category: params.category,
+                    category: params.category,
+                    Title: params.title,
+                    title: params.title,
+                    Text: params.text,
+                    text: params.text,
+                    Script: params.script,
+                    Code: params.code,
+                    Link: params.link,
+                    Image: params.image,
+                    image: params.image
+                }).eq('id', params.id);
+                return { result: error ? "error" : "success" };
+            }
+            case "deleteCard": {
+                const { error } = await sb.from('Data').delete().eq('id', params.id);
+                return { result: error ? "error" : "success" };
+            }
+            case "saveUser": {
+                const { id, username, fullName, role, group, password } = params;
+                const payload = {
+                    Username: username,
+                    username: username,
+                    FullName: fullName,
+                    Name: fullName,
+                    "Tam İsim": fullName,
+                    "İsim": fullName,
+                    Role: role,
+                    role: role,
+                    Group: group,
+                    group: group
+                };
+                if (password) {
+                    const hashed = CryptoJS.SHA256(password).toString();
+                    payload.Password = hashed;
+                    payload.password = hashed;
+                    payload.ForceChange = '1';
+                }
+
+                let res;
+                if (id) {
+                    res = await sb.from('Users').update(payload).eq('id', id);
+                } else {
+                    res = await sb.from('Users').insert([payload]);
+                }
+                if (res.error) throw res.error;
+                return { result: "success" };
+            }
+            case "deleteUser": {
+                const { error } = await sb.from('Users').delete().eq('id', params.id);
+                return { result: error ? "error" : "success" };
+            }
+            case "exportEvaluations": {
+                // Rapor için verileri çek ve formatla
+                let query = sb.from('Evaluations').select('*');
+                if (params.targetAgent !== 'all') query = query.ilike('AgentName', params.targetAgent);
+
+                const { data, error } = await query.order('CallDate', { ascending: false });
+                if (error) throw error;
+
+                const normalized = data.map(normalizeKeys);
+                const filtered = params.targetPeriod === 'all' ? normalized : normalized.filter(e => {
+                    const d = e.callDate || e.date;
+                    if (!d) return false;
+                    const p = d.split('.');
+                    if (p.length < 3) return false;
+                    return `${p[1]}-${p[2].split(' ')[0]}` === params.targetPeriod;
+                });
+
+                const headers = ["Temsilci", "Değerlendiren", "Call ID", "Çağrı Tarihi", "Dönem", "Puan", "Detaylar", "Durum", "Geri Bildirim"];
+                const rows = filtered.map(e => [
+                    e.agentName || e.agent || '',
+                    e.evaluator || '',
+                    e.callId || '',
+                    e.callDate || '',
+                    e.period || '',
+                    e.score || 0,
+                    e.details || '',
+                    e.status || '',
+                    e.feedback || ''
+                ]);
+                return { result: "success", headers, data: rows, fileName: `Evaluations_${params.targetPeriod}.xls` };
             }
             case "updateEvaluation": {
                 const { error } = await sb.from('Evaluations').update({
@@ -409,6 +453,9 @@ async function apiCall(action, params = {}) {
                     CreatedBy: params.creator || (localStorage.getItem("sSportUser") || ''),
                     StartDate: params.startDate || '',
                     EndDate: params.endDate || '',
+                    // Supabase 'date' kolonları için YYYY-MM-DD garantisi
+                    start_date: params.startDate || '',
+                    end_date: params.endDate || '',
                     Duration: params.duration || '',
                     Status: 'Aktif',
                     Date: new Date().toLocaleString('tr-TR')
@@ -589,8 +636,8 @@ async function apiCall(action, params = {}) {
                 const { data: tData, error: tErr } = await sb
                     .from('Tokens')
                     .select('*')
-                    .gte('CreatedAt', since)
-                    .order('CreatedAt', { ascending: false });
+                    .or(`CreatedAt.gte.${since},createdat.gte.${since}`) // Her iki casing versiyonunu da ara
+                    .order('id', { ascending: false }); // id her zaman vardır
                 if (tErr) throw tErr;
 
                 const tokens = (tData || []).map(normalizeKeys);
@@ -660,7 +707,9 @@ async function apiCall(action, params = {}) {
                     Username: params.username || currentUser,
                     Score: params.score,
                     TotalQuestions: params.total,
-                    SuccessRate: params.successRate,
+                    // Desteklenen tüm kolon adlarını (SuccessRate, Successrate, Success, Başarı) kapsamak için:
+                    SuccessRate: params.successRate || params.average || "0%",
+                    Successrate: params.successRate || params.average || "0%",
                     Date: new Date().toISOString()
                 };
                 const { error } = await sb.from('QuizResults').insert([payload]);
@@ -734,7 +783,7 @@ async function loadHomeBlocks() {
         data.forEach(row => {
             const normalized = normalizeKeys(row);
             // blockId veya key/Key alanını tespit et
-            const id = normalized.key || row.Key || normalized.blockId || row.BlockId || row.id;
+            const id = (normalized.key || row.Key || normalized.blockId || row.BlockId || row.id || '').toString().toLowerCase();
             if (id) homeBlocks[id] = normalized;
         });
 
@@ -1284,21 +1333,6 @@ function checkAdmin(role) {
     try { applyPermissionsToUI(); } catch (e) { }
 }
 
-async function loadPermissionsOnStartup() {
-    try {
-        const { data, error } = await sb.from('RolePermissions').select('*');
-        if (error) throw error;
-
-        // Rol bazlı filtrele ve UI uygula
-        const myRole = getMyRole();
-        const perms = data.filter(p => !p.Role || normalizeRole(p.Role) === myRole);
-
-        // Global'de sakla gerekiyorsa veya direkt uygula
-        applyPermissionsToUI(perms);
-    } catch (err) {
-        console.error("[Pusula] Permissions Fetch Error:", err);
-    }
-}
 function logout() {
     currentUser = ""; isAdminMode = false; isEditingActive = false;
     try { document.getElementById("user-display").innerText = "Misafir"; } catch (e) { }
@@ -1360,10 +1394,17 @@ async function changePasswordPopup(isMandatory = false) {
                 throw new Error("Mevcut şifreniz hatalı!");
             }
 
-            // 2. Yeni şifreyi güncelle
+            // 2. Yeni şifreyi güncelle (Hangi kolon varsa onu güncelle)
+            const updatePayload = {};
+            if ("Password" in userRecord) updatePayload.Password = newHashed;
+            else updatePayload.password = newHashed;
+
+            if ("ForceChange" in userRecord) updatePayload.ForceChange = '1';
+            else updatePayload.forcechange = '1';
+
             const { error: updateError } = await sb
                 .from('Users')
-                .update({ Password: newHashed, ForceChange: '1' })
+                .update(updatePayload)
                 .ilike('Username', currentUser);
 
             if (updateError) throw updateError;
@@ -3188,7 +3229,13 @@ function finishPenaltyGame() {
     if (restartBtn) restartBtn.style.display = 'block';
 
     // Leaderboard log (mevcut backend uyumu)
-    apiCall('logQuiz', { username: currentUser, token: getToken(), score: pScore * 10, total: 100 }).finally(() => {
+    apiCall('logQuiz', {
+        username: currentUser,
+        token: (typeof getToken === 'function' ? getToken() : ''),
+        score: pScore * 10,
+        total: 10,  // Toplam 10 top
+        successRate: acc + '%'
+    }).finally(() => {
         // lobby tablosunu güncel tut
         setTimeout(fetchLeaderboard, 600);
     });
@@ -4448,8 +4495,8 @@ async function assignTrainingPopup() {
                 target: target,
                 targetAgent: agent, // Kişiye özel atama için
                 creator: currentUser,
-                startDate: formatDateToDDMMYYYY(document.getElementById('swal-t-start').value),
-                endDate: formatDateToDDMMYYYY(document.getElementById('swal-t-end').value),
+                startDate: document.getElementById('swal-t-start').value, // YYYY-MM-DD (raw)
+                endDate: document.getElementById('swal-t-end').value,   // YYYY-MM-DD (raw)
                 duration: document.getElementById('swal-t-duration').value
             }
         }
@@ -4865,7 +4912,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
             const selectedPeriodForList = periodSelectForList ? periodSelectForList.value : null;
             if (selectedPeriodForList) {
                 filteredEvaluations = normalEvaluations.filter(e => {
-                    const dateVal = e.date || e.callDate;
+                    const dateVal = e.callDate || e.date; // CallDate'e öncelik verilmeli (Bug 5 Fix)
                     if (!dateVal) return false;
                     const parts = String(dateVal).split('.');
                     if (parts.length < 3) {
@@ -5334,8 +5381,8 @@ async function logEvaluationPopup() {
         .replace(/i̇/g, 'i').replace(/ı/g, 'i').replace(/ş/g, 's')
         .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c').trim();
 
-    const isChat = cleanGroup.includes('chat') || cleanGroup === 'ob';
-    const isTelesatis = cleanGroup.includes('telesat');
+    const isChat = cleanGroup.includes('chat') || cleanGroup === 'ob' || cleanGroup.includes('canli');
+    const isTelesatis = cleanGroup.includes('telesat') || cleanGroup.includes('satis') || cleanGroup.includes('sales');
 
     let criteriaGroup = agentGroup;
     if (isChat) criteriaGroup = 'Chat';
@@ -5778,9 +5825,10 @@ function renderHomePanels() {
     // --- GÜNÜN SÖZÜ (HomeBlocks -> e-tabla) ---
     const quoteEl = document.getElementById('home-quote');
     if (quoteEl) {
-        const qObj = (homeBlocks && homeBlocks.quote) ? homeBlocks.quote : null;
-        const content = (qObj?.content || localStorage.getItem('homeQuote') || '').trim();
-        const author = qObj?.title || '';
+        // blockId veya key farketmeksizin "quote" olarak indexliyoruz
+        const qObj = homeBlocks['quote'];
+        const content = (qObj?.content || qObj?.text || localStorage.getItem('homeQuote') || '').trim();
+        const author = qObj?.title || qObj?.head || '';
 
         if (content) {
             quoteEl.innerHTML = `
@@ -7866,6 +7914,129 @@ async function kickUser(username, token) {
 
 let allRolePermissions = []; // Backend'den gelen tüm yetki listesi
 
+async function fetchUserListForAdmin() {
+    try {
+        const res = await apiCall("getUserList", {});
+        if (res && res.result === "success") {
+            adminUserList = res.users || [];
+            console.log("[Pusula] Admin User List loaded:", adminUserList.length);
+        }
+    } catch (e) {
+        console.error("[Pusula] fetchUserListForAdmin error:", e);
+    }
+}
+
+// ------------------------------------------------------------
+// --- KULLANICI YÖNETİMİ (YENİ) ---
+// ------------------------------------------------------------
+async function openUserManagementPanel() {
+    try {
+        Swal.fire({ title: 'Yükleniyor...', didOpen: () => { Swal.showLoading() } });
+        const res = await apiCall("getUserList", {});
+        if (!res || res.result !== "success") throw new Error("Kullanıcı listesi alınamadı.");
+
+        const users = res.users || [];
+        const rowsHtml = users.map((u, idx) => `
+            <tr style="border-bottom:1px solid #eee">
+                <td style="padding:10px;text-align:center">${idx + 1}</td>
+                <td style="padding:10px;"><strong>${escapeHtml(u.username || u.name)}</strong></td>
+                <td style="padding:10px;">${escapeHtml(u.role || '-')}</td>
+                <td style="padding:10px;">${escapeHtml(u.group || '-')}</td>
+                <td style="padding:10px;text-align:center">
+                    <button class="x-btn-admin" onclick="editUserPopup('${u.id}')" style="background:var(--secondary);padding:5px 10px;font-size:0.75rem;"><i class="fas fa-edit"></i> Düzenle</button>
+                    <button class="x-btn-admin" onclick="deleteUser('${u.id}', '${escapeForJsString(u.username || u.name)}')" style="background:var(--accent);padding:5px 10px;font-size:0.75rem;"><i class="fas fa-trash"></i> Sil</button>
+                </td>
+            </tr>
+        `).join('');
+
+        const tableHtml = `
+            <div style="margin-bottom:15px;text-align:right">
+                <button class="x-btn-admin" onclick="editUserPopup()" style="background:var(--success);"><i class="fas fa-plus"></i> Yeni Kullanıcı Ekle</button>
+            </div>
+            <div style="max-height:450px;overflow:auto;border:1px solid #eee;border-radius:10px">
+                <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                    <thead style="background:#f9fafb;position:sticky;top:0;">
+                        <tr>
+                            <th style="padding:10px;">#</th>
+                            <th style="padding:10px;text-align:left">Kullanıcı</th>
+                            <th style="padding:10px;text-align:left">Rol</th>
+                            <th style="padding:10px;text-align:left">Grup</th>
+                            <th style="padding:10px;">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+        `;
+
+        Swal.fire({
+            title: "👥 Kullanıcı Yönetimi",
+            html: tableHtml,
+            width: 800,
+            showConfirmButton: true,
+            confirmButtonText: "Kapat"
+        });
+
+        // Global fonksiyon tanımları (Swal modal içinde onclick için)
+        window.editUserPopup = async function (id) {
+            let u = id ? users.find(x => String(x.id) === String(id)) : { username: '', role: 'agent', group: 'Genel' };
+            const { value: formValues } = await Swal.fire({
+                title: id ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı',
+                html: `
+                    <input id="u-name" class="swal2-input" placeholder="Kullanıcı Adı" value="${u.username || u.name || ''}">
+                    <input id="u-pass" type="password" class="swal2-input" placeholder="${id ? 'Şifreyi Değiştirmek İçin Yazın (Boş bırakırsanız değişmez)' : 'Şifre'}">
+                    <select id="u-role" class="swal2-input">
+                        <option value="agent" ${u.role === 'agent' ? 'selected' : ''}>Temsilci (Agent)</option>
+                        <option value="qusers" ${u.role === 'qusers' ? 'selected' : ''}>Kalite (QA)</option>
+                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Yönetici (Admin)</option>
+                        <option value="locadmin" ${u.role === 'locadmin' ? 'selected' : ''}>Tam Yetkili (LocAdmin)</option>
+                    </select>
+                    <input id="u-group" class="swal2-input" placeholder="Grup (Gerekiyorsa)" value="${u.group || ''}">
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Kaydet',
+                preConfirm: () => {
+                    const name = document.getElementById('u-name').value.trim();
+                    const pass = document.getElementById('u-pass').value.trim();
+                    if (!name || (!id && !pass)) { Swal.showValidationMessage('Kullanıcı adı ve şifre zorunludur'); return false; }
+                    return { id, username: name, password: pass, role: document.getElementById('u-role').value, group: document.getElementById('u-group').value };
+                }
+            });
+
+            if (formValues) {
+                Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading() });
+                const res = await apiCall("saveUser", formValues);
+                if (res.result === "success") {
+                    Swal.fire("Başarılı", "Kullanıcı kaydedildi.", "success").then(() => openUserManagementPanel());
+                } else {
+                    Swal.fire("Hata", res.message || "Kaydedilemedi", "error");
+                }
+            }
+        };
+
+        window.deleteUser = async function (id, name) {
+            const confirmed = await Swal.fire({
+                title: 'Emin misiniz?',
+                text: `${name} kullanıcısını silmek istediğinize emin misiniz?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Evet, Sil',
+                confirmButtonColor: '#d32f2f'
+            });
+            if (confirmed.isConfirmed) {
+                const res = await apiCall("deleteUser", { id });
+                if (res.result === "success") {
+                    Swal.fire("Silindi", "Kullanıcı silindi.", "success").then(() => openUserManagementPanel());
+                } else {
+                    Swal.fire("Hata", res.message || "Silinemedi", "error");
+                }
+            }
+        };
+
+    } catch (e) {
+        Swal.fire("Hata", e.message, "error");
+    }
+}
 async function openMenuPermissions() {
     try {
         Swal.fire({ title: 'Yetkiler Yükleniyor...', didOpen: () => { Swal.showLoading() } });
@@ -8146,6 +8317,9 @@ function applyPermissionsToUI() {
 
     const activeUsersBtn = document.getElementById('dropdownActiveUsers');
     if (activeUsersBtn && !hasPerm("ActiveUsers")) activeUsersBtn.style.display = 'none';
+
+    const userMgmtBtn = document.getElementById('dropdownUserMgmt');
+    if (userMgmtBtn && !hasPerm("UserAdmin")) userMgmtBtn.style.display = 'none';
 
     const menuMap = {
         "home": "home",
