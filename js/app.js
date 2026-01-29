@@ -105,6 +105,16 @@ function normalizeKeys(obj) {
         }
         if (k === 'Görsel' || k === 'Image' || k === 'Link') { n.image = obj[k]; n.link = obj[k]; }
 
+        // Trainings (Eğitimler)
+        if (k === 'ContentLink') { n.link = obj[k]; }
+        if (k === 'DocLink') { n.docLink = obj[k]; }
+        if (k === 'TargetUser') { n.targetUser = obj[k]; }
+        if (k === 'TargetGroup') { n.target = obj[k]; }
+        if (k === 'CreatedBy') { n.creator = obj[k]; }
+        if (k === 'StartDate') { n.startDate = obj[k]; }
+        if (k === 'EndDate') { n.endDate = obj[k]; }
+        if (k === 'Duration') { n.duration = obj[k]; }
+
         // Yayın Akışı (Special table keys)
         if (k === 'DATE' || k === 'Tarih' || k === 'tarih') { n.date = obj[k]; n.dateISO = obj[k]; }
         if (k === 'EVENT NAME - Turkish' || k === 'Mac' || k === 'mac' || k === 'Event' || k === 'event' || k === 'Title' || k === 'Başlık') { n.match = obj[k]; n.event = obj[k]; }
@@ -214,35 +224,116 @@ async function apiCall(action, params = {}) {
                 return { result: error ? "error" : "success" };
             }
             case "getTrainings": {
-                const { data, error } = await sb.from('Trainings').select('*');
-                if (error) throw error;
-                return { result: "success", trainings: (data || []).map(normalizeKeys) };
+                const username = localStorage.getItem("sSportUser") || "";
+                const userGroup = localStorage.getItem("sSportGroup") || "";
+                const asAdmin = !!params.asAdmin;
+
+                const { data: tData, error: tErr } = await sb.from('Trainings').select('*').order('Date', { ascending: false });
+                if (tErr) throw tErr;
+
+                // Kullanıcı logları
+                let completedSet = new Set();
+                try {
+                    const { data: lData, error: lErr } = await sb.from('Training_Logs').select('*').eq('Username', username);
+                    if (!lErr && Array.isArray(lData)) {
+                        lData.forEach(l => {
+                            const st = String(l.Status || '').toLowerCase();
+                            if (st === 'completed' || st === 'tamamlandi' || st === 'tamamlandı' || l.Status === 1 || l.Status === true) {
+                                completedSet.add(String(l.TrainingID));
+                            }
+                        });
+                    }
+                } catch (e) { }
+
+                const filtered = (tData || []).filter(t => {
+                    if (asAdmin) return true;
+                    const tg = String(t.TargetGroup || '').toLowerCase();
+                    const tu = String(t.TargetUser || '').toLowerCase();
+                    const st = String(t.Status || '').toLowerCase();
+                    if (st && st !== 'aktif' && st !== 'active') return false;
+
+                    if (!tg || tg === 'all' || tg === 'herkes') return true;
+                    if (tg === 'group' || tg === 'grup') return String(userGroup || '').toLowerCase() === tu;
+                    if (tg === 'individual' || tg === 'bireysel') return String(username || '').toLowerCase() === tu;
+                    return String(userGroup || '').toLowerCase() === tg;
+                });
+
+                const trainings = filtered.map(t => {
+                    const n = normalizeKeys(t);
+                    n.title = n.title || t.Title || '';
+                    n.desc = n.desc || t.Description || '';
+                    n.link = n.link || t.ContentLink || '';
+                    n.docLink = n.docLink || t.DocLink || '';
+                    n.target = n.target || t.TargetGroup || 'All';
+                    n.targetUser = n.targetUser || t.TargetUser || '';
+                    n.creator = n.creator || t.CreatedBy || '';
+                    n.startDate = n.startDate || t.StartDate || '';
+                    n.endDate = n.endDate || t.EndDate || '';
+                    n.duration = n.duration || t.Duration || '';
+                    n.date = n.date || formatDateToDDMMYYYY(t.Date);
+
+                    const idStr = String(t.id || t.ID || n.id || '');
+                    n.isCompleted = completedSet.has(idStr);
+                    return n;
+                });
+
+                return { result: "success", trainings };
             }
             case "startTraining": {
-                // Trainings tablosunda kullanıcı bazlı tamamlanma durumunu tutan ayrı bir tablo (TrainingStatus) olabilir.
-                // Şimdilik basitleştirilmiş bir yapı:
+                const username = localStorage.getItem("sSportUser") || "";
+                const trainingId = params.trainingId;
+
+                // completed ise tekrar started yazma
+                const { data: existing } = await sb.from('Training_Logs')
+                    .select('*')
+                    .eq('TrainingID', trainingId)
+                    .eq('Username', username)
+                    .maybeSingle();
+
+                if (existing && String(existing.Status || '').toLowerCase() === 'completed') {
+                    return { result: "success" };
+                }
+
+                const { error } = await sb.from('Training_Logs').upsert([{
+                    TrainingID: trainingId,
+                    Username: username,
+                    Status: 'started',
+                    Date: new Date().toISOString()
+                }], { onConflict: 'TrainingID,Username' });
+
+                if (error) throw error;
                 return { result: "success" };
             }
             case "completeTraining": {
-                const { error } = await sb.from('Trainings').update({ isCompleted: true }).eq('id', params.trainingId);
+                const username = localStorage.getItem("sSportUser") || "";
+                const trainingId = params.trainingId;
+
+                const { error } = await sb.from('Training_Logs').upsert([{
+                    TrainingID: trainingId,
+                    Username: username,
+                    Status: 'completed',
+                    Date: new Date().toISOString()
+                }], { onConflict: 'TrainingID,Username' });
+
                 if (error) throw error;
                 return { result: "success" };
             }
             case "assignTraining": {
-                const { error } = await sb.from('Trainings').insert([{
-                    title: params.title,
-                    desc: params.desc,
-                    link: params.link,
-                    docLink: params.docLink,
-                    target: params.target,
-                    targetUser: params.targetAgent,
-                    creator: params.creator,
-                    startDate: params.startDate,
-                    endDate: params.endDate,
-                    duration: params.duration,
-                    Date: new Date().toLocaleString('tr-TR'),
-                    isCompleted: false
-                }]);
+                const payload = {
+                    Title: params.title || '',
+                    Description: params.desc || '',
+                    ContentLink: params.link || '',
+                    DocLink: params.docLink || '',
+                    TargetGroup: params.target || 'All',
+                    TargetUser: params.targetAgent || '',
+                    CreatedBy: params.creator || (localStorage.getItem("sSportUser") || ''),
+                    StartDate: params.startDate || '',
+                    EndDate: params.endDate || '',
+                    Duration: params.duration || '',
+                    Status: 'Aktif',
+                    Date: new Date().toLocaleString('tr-TR')
+                };
+                const { error } = await sb.from('Trainings').insert([payload]);
                 if (error) throw error;
                 return { result: "success" };
             }
@@ -316,13 +407,13 @@ async function apiCall(action, params = {}) {
                 // Mevcut tüm teklifleri tek seferde değiştiren bir yapı
                 await sb.from('Telesatis_DataTeklifleri').delete().neq('id', -1);
                 // Database kolon isimlerine geri map et
-                const dbOffers = params.offers.map(o => ({
-                    Segment: o.segment,
-                    Başlık: o.title,
-                    Açıklama: o.desc,
-                    Not: o.note,
-                    Görsel: o.image,
-                    Detay: o.detail || ''
+                const dbOffers = (params.offers || []).map(o => ({
+                    Segment: o.segment || '',
+                    "Teklif Adı": o.title || '',
+                    "Açıklama": o.desc || '',
+                    Not: o.note || '',
+                    Durum: o.status || 'Aktif',
+                    Görsel: o.image || ''
                 }));
                 const { error } = await sb.from('Telesatis_DataTeklifleri').insert(dbOffers);
                 return { result: error ? "error" : "success" };
@@ -337,9 +428,11 @@ async function apiCall(action, params = {}) {
                 const { scripts } = params;
                 // Mevcutları silip yenileri ekle (veya tek tek upsert)
                 await sb.from('Telesatis_Scripts').delete().neq('id', -1);
-                const { error } = await sb.from('Telesatis_Scripts').insert(scripts.map(s => ({
-                    Title: s.title,
-                    Content: s.text
+                const { error } = await sb.from('Telesatis_Scripts').insert((scripts || []).map(s => ({
+                    "Başlık": s.title || '',
+                    "Metin": s.text || '',
+                    UpdatedAt: new Date().toISOString(),
+                    UpdatedBy: (localStorage.getItem("sSportUser") || '')
                 })));
                 return { result: error ? "error" : "success" };
             }
@@ -384,254 +477,14 @@ async function apiCall(action, params = {}) {
                 return { result: error ? "error" : "success" };
             }
             case "getActiveUsers": {
-    // Tokens tablosundan “son giriş” bilgisi ile yaklaşık aktif kullanıcı listesi
-    // Not: Gerçek aktiflik için heartbeat gerekir; burada pratik bir yaklaşım kullanıyoruz.
-    const hours = Number(params.hours || 8);
-    const sinceISO = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-
-    // Son X saatte token üretenleri çek
-    const { data: tokens, error: tErr } = await sb
-        .from('Tokens')
-        .select('*')
-        .gte('CreatedAt', sinceISO)
-        .order('CreatedAt', { ascending: false });
-
-    if (tErr) {
-        console.warn('[Pusula] getActiveUsers Tokens error:', tErr);
-        return { result: "success", users: [] };
-    }
-
-    // Kullanıcı bilgileri (rol/grup)
-    const { data: usersRaw } = await sb.from('Users').select('*');
-    const usersMap = new Map();
-    (usersRaw || []).map(normalizeKeys).forEach(u => {
-        const key = (u.username || u.name || '').toString().toLowerCase().trim();
-        if (key) usersMap.set(key, u);
-    });
-
-    // Username bazında en yeni token
-    const latestByUser = new Map();
-    (tokens || []).forEach(t => {
-        const u = (t.Username || t.username || '').toString().trim();
-        if (!u) return;
-        const k = u.toLowerCase();
-        if (!latestByUser.has(k)) latestByUser.set(k, t);
-    });
-
-    const out = [];
-    latestByUser.forEach((t, k) => {
-        const u = usersMap.get(k);
-        out.push({
-            username: (t.Username || t.username || ''),
-            role: (u && (u.role || u.Role)) || (t.Role || t.role) || 'user',
-            group: (u && (u.group || u.Group)) || '',
-            loginTime: t.CreatedAt || t.createdat || '',
-            lastActivity: t.CreatedAt || t.createdat || '',
-            ip: t.IP || t.ip || '',
-            token: t.Token || t.token || ''
-        });
-    });
-
-    return { result: "success", users: out };
-}
-            case "addCard": {
-                // Data tablosuna yeni içerik ekleme
-                const payload = {
-                    Type: params.cardType || params.type || 'card',
-                    Category: params.category || '',
-                    Title: params.title || '',
-                    Text: params.text || '',
-                    Script: params.script || '',
-                    Tags: params.tags || '',
-                    Code: params.code || '',
-                    Link: params.link || '',
-                    Date: params.date || new Date().toISOString(),
-                    Icon: params.icon || '',
-                    Tip: params.tip || '',
-                    Detail: params.detail || '',
-                    Pronunciation: params.pronunciation || '',
-                    QuizOptions: params.quizOptions || '',
-                    QuizAnswer: params.quizAnswer || '',
-                    Status: params.status || 'Aktif',
-                    Image: params.image || ''
-                };
-                const { error } = await sb.from('Data').insert([payload]);
-                if (error) throw error;
-                return { result: "success" };
+                // Aktif kullanıcıları izleyen bir tablo (ActiveUsers) olmalı.
+                // Şimdilik boş dönelim.
+                return { result: "success", users: [] };
             }
-            case "exportEvaluations": {
-                let q = sb.from('Evaluations').select('*');
-                if (params.targetAgent && params.targetAgent !== 'all') q = q.eq('AgentName', params.targetAgent);
-                if (params.targetGroup && params.targetGroup !== 'all') q = q.eq('Group', params.targetGroup);
-
-                const { data, error } = await q.order('id', { ascending: false });
-                if (error) throw error;
-
-                // Dönem filtresi (MM-YYYY)
-                let rows = (data || []).map(normalizeKeys);
-                const period = params.targetPeriod || 'all';
-                if (period && period !== 'all') {
-                    const [mm, yyyy] = String(period).split('-');
-                    rows = rows.filter(r => {
-                        const cd = r.calldate || r.callDate || r.date || '';
-                        const dt = new Date(String(cd).replace(' ', 'T'));
-                        if (isNaN(dt)) return false;
-                        const m = String(dt.getMonth() + 1).padStart(2, '0');
-                        const y = String(dt.getFullYear());
-                        return m === mm && y === yyyy;
-                    });
-                }
-
-                const headers = [
-                    'Tarih', 'Dönem', 'Değerlendiren', 'Temsilci', 'Grup', 'Puan', 'Call ID', 'Durum', 'Temsilci Notu', 'Yönetici Cevabı', 'Geri Bildirim Türü'
-                ];
-
-                const out = rows.map(r => {
-                    const dtRaw = r.calldate || r.callDate || r.date || '';
-                    const dt = new Date(String(dtRaw).replace(' ', 'T'));
-                    const month = isNaN(dt) ? '' : String(dt.getMonth() + 1).padStart(2, '0');
-                    const year = isNaN(dt) ? '' : String(dt.getFullYear());
-                    const donem = month && year ? `${month}.${year}` : '';
-
-                    return [
-                        formatDateToDDMMYYYY(dtRaw) || '',
-                        donem,
-                        r.evaluator || '',
-                        r.agentname || r.agent || '',
-                        r.group || '',
-                        r.score ?? '',
-                        r.callid || '',
-                        r.durum || r.status || '',
-                        r['temsilci notu'] || r.agentNote || '',
-                        r['yönetici cevabı'] || r.managerReply || '',
-                        r.feedbacktype || ''
-                    ];
-                });
-
-                const fileName = period && period !== 'all' ? `Kalite_Rapor_${period}.xls` : 'Kalite_Rapor_TumZamanlar.xls';
-                return { result: "success", headers, data: out, fileName };
+            case "getQualityNotifications": {
+                // Şimdilik sıfır dönelim
+                return { result: "success", notifications: { pendingFeedbackCount: 0, unseenCount: 0 } };
             }
-            case "submitAgentNote": {
-                const note = params.note || '';
-                const status = params.status || 'Bekliyor';
-                const { error } = await sb.from('Evaluations').update({
-                    'Temsilci Notu': note,
-                    'Durum': status,
-                    Okundu: 0
-                }).eq('CallID', params.callId);
-                if (error) throw error;
-                return { result: "success" };
-            }
-            case "resolveAgentFeedback": {
-                const reply = params.reply || '';
-                const status = params.status || 'Tamamlandı';
-                const { error } = await sb.from('Evaluations').update({
-                    'Yönetici Cevabı': reply,
-                    'Durum': status,
-                    Okundu: 0
-                }).eq('CallID', params.callId);
-                if (error) throw error;
-                return { result: "success" };
-            }
-            case "logQuiz": {
-                const score = Number(params.score || 0);
-                const total = Number(params.total || 0);
-                const rate = total > 0 ? `%${Math.round((score / total) * 10)}` : '';
-                const { error } = await sb.from('QuizResults').insert([{ Username: params.username || currentUser, Score: score, TotalQuestions: total, SuccessRate: rate, Date: new Date().toISOString() }]);
-                return { result: error ? 'error' : 'success' };
-            }
-            case "kickUser": {
-                // Hedef kullanıcının token kayıtlarını sil
-                const targetUsername = params.targetUsername;
-                if (!targetUsername) return { result: 'error', message: 'Kullanıcı bulunamadı' };
-                const q = sb.from('Tokens').delete().eq('Username', targetUsername);
-                await q;
-                return { result: 'success' };
-            }
-            case "uploadImage": {
-                // Supabase Storage'a base64 upload. Bucket adı sırayla denenir.
-                const b64 = params.base64 || '';
-                const mime = params.mimeType || 'application/octet-stream';
-                const fileName = params.fileName || `image_${Date.now()}`;
-
-                const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-                const path = `${Date.now()}_${fileName}`.replace(/\s+/g, '_');
-
-                const buckets = ['images', 'public', 'uploads'];
-                let lastErr = null;
-                for (const bucket of buckets) {
-                    try {
-                        const up = await sb.storage.from(bucket).upload(path, bin, { contentType: mime, upsert: true });
-                        if (up.error) throw up.error;
-                        const pub = sb.storage.from(bucket).getPublicUrl(path);
-                        const url = pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : '';
-                        if (!url) throw new Error('Public URL üretilemedi');
-                        return { result: 'success', url };
-                    } catch (e) {
-                        lastErr = e;
-                    }
-                }
-                return { result: 'error', message: (lastErr && lastErr.message) ? lastErr.message : 'Yükleme başarısız' };
-            }
-            case "uploadTrainingDoc": {
-                const b64 = params.base64 || '';
-                const mime = params.mimeType || 'application/octet-stream';
-                const fileName = params.fileName || `doc_${Date.now()}`;
-                const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-                const path = `${Date.now()}_${fileName}`.replace(/\s+/g, '_');
-
-                const buckets = ['training', 'docs', 'uploads', 'public'];
-                let lastErr = null;
-                for (const bucket of buckets) {
-                    try {
-                        const up = await sb.storage.from(bucket).upload(path, bin, { contentType: mime, upsert: true });
-                        if (up.error) throw up.error;
-                        const pub = sb.storage.from(bucket).getPublicUrl(path);
-                        const url = pub && pub.data && pub.data.publicUrl ? pub.data.publicUrl : '';
-                        if (!url) throw new Error('Public URL üretilemedi');
-                        return { result: 'success', url };
-                    } catch (e) {
-                        lastErr = e;
-                    }
-                }
-                return { result: 'error', message: (lastErr && lastErr.message) ? lastErr.message : 'Yükleme başarısız' };
-            }
-case "getQualityNotifications": {
-    // Admin/LocAdmin: temsilci notu bırakılmış ama yanıtlanmamış kayıtlar
-    // User: kendi kayıtlarında “Okundu=0” olanlar
-    const username = params.username || currentUser;
-    const role = (params.role || '').toString();
-
-    let pendingFeedbackCount = 0;
-    let unseenCount = 0;
-
-    if (role === 'admin' || role === 'locadmin') {
-        // Temsilci Notu dolu ve (Yönetici Cevabı boş veya Durum != Tamamlandı)
-        const { data, error } = await sb
-            .from('Evaluations')
-            .select('id,Durum,Temsilci Notu,Yönetici Cevabı');
-
-        if (!error) {
-            pendingFeedbackCount = (data || []).filter(r => {
-                const note = (r['Temsilci Notu'] || r.temsilciNotu || '').toString().trim();
-                if (!note) return false;
-                const reply = (r['Yönetici Cevabı'] || r.yoneticiCevabi || '').toString().trim();
-                const status = (r.Durum || r.durum || '').toString().trim();
-                return !reply || (status && status !== 'Tamamlandı');
-            }).length;
-        }
-    } else {
-        const { count, error } = await sb
-            .from('Evaluations')
-            .select('id', { count: 'exact', head: true })
-            .eq('AgentName', username)
-            .or('Okundu.is.null,Okundu.eq.0');
-
-        if (!error) unseenCount = count || 0;
-    }
-
-    return { result: "success", notifications: { pendingFeedbackCount, unseenCount } };
-}
             case "getBroadcastFlow": {
                 const { data, error } = await sb.from('YayinAkisi').select('*');
                 if (error) {
@@ -640,12 +493,7 @@ case "getQualityNotifications": {
                 }
                 return { result: "success", items: (data || []).map(normalizeKeys) };
             }
-            case "getData": {
-    const { data, error } = await sb.from('Data').select('*');
-    if (error) throw error;
-    return { result: "success", data: data || [] };
-}
-case "deleteTechDoc": {
+            case "deleteTechDoc": {
                 const { error } = await sb.from('Teknik_Dokumanlar').delete().match({
                     Kategori: params.keyKategori,
                     Başlık: params.keyBaslik
@@ -1010,16 +858,6 @@ function checkSession() {
         }
 
         currentUser = savedUser;
-        // Token doğrulama (kick/aktif kullanıcı için). Tablo yoksa sessiz geç.
-        try {
-            (async () => {
-                const { data: tdata, error: terr } = await sb.from('Tokens').select('id').eq('Username', savedUser).eq('Token', savedToken).limit(1);
-                if (!terr && (!tdata || tdata.length === 0)) {
-                    logout();
-                }
-            })();
-        } catch (e) { }
-
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("user-display").innerText = currentUser;
         setHomeWelcomeUser(currentUser);
@@ -1146,12 +984,7 @@ async function girisYap() {
         // Oturum Verilerini Kaydet
         currentUser = data.Username;
         localStorage.setItem("sSportUser", currentUser);
-        const __token = "sb_" + Math.random().toString(36).substr(2);
-        localStorage.setItem("sSportToken", __token);
-        // Token kaydı (aktif kullanıcı / kick için)
-        try {
-            await sb.from("Tokens").insert([{ Username: currentUser, Token: __token, Role: data.Role || "user", CreatedAt: new Date().toISOString(), IP: globalUserIP || "" }]);
-        } catch (e) { /* tablo yoksa sessiz geç */ }
+        localStorage.setItem("sSportToken", "sb_" + Math.random().toString(36).substr(2));
         localStorage.setItem("sSportRole", data.Role);
         if (data.Group) localStorage.setItem("sSportGroup", data.Group);
         localStorage.setItem("sSportSessionDay", new Date().toISOString().slice(0, 10));
@@ -1345,6 +1178,32 @@ async function changePasswordPopup(isMandatory = false) {
             });
         }
     } else if (isMandatory) { changePasswordPopup(true); }
+}
+// --- DATA FETCHING (Supabase Optimized) ---
+async function loadContentData() {
+    try {
+        console.log("[Pusula] Fetching data from Supabase...");
+        const { data, error } = await sb
+            .from('Data')
+            .select('*');
+
+        if (error) throw error;
+
+        processRawData(data || []);
+        console.log("[Pusula] Data loaded successfully.");
+
+        // Barrier resolve
+        if (typeof __dataLoadedResolve === "function") __dataLoadedResolve();
+
+        // Post-render
+        if (typeof filterContent === "function") filterContent();
+        if (typeof startTicker === "function") startTicker();
+
+    } catch (err) {
+        console.error("[Pusula] Supabase Fetch Error:", err);
+        // Fallback to Apps Script if Supabase fails
+        apiCall("getData").then(res => processRawData(res.data)).catch(() => { });
+    }
 }
 // --- DATA PROCESSING (Refactored for Cache Support) ---
 function processRawData(rawData) {
@@ -3131,9 +2990,13 @@ function finishPenaltyGame() {
     if (optionsEl) optionsEl.style.display = 'none';
     if (restartBtn) restartBtn.style.display = 'block';
 
-    // Leaderboard log (Supabase)
-    apiCall("logQuiz", { username: currentUser, score: pScore * 10, total: 100 }).finally(() => {
-        // leaderboard tablosunu güncel tut
+    // Leaderboard log (mevcut backend uyumu)
+    fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "logQuiz", username: currentUser, token: getToken(), score: pScore * 10, total: 100 })
+    }).finally(() => {
+        // lobby tablosunu güncel tut
         setTimeout(fetchLeaderboard, 600);
     });
 }
@@ -7412,8 +7275,12 @@ async function editTechDoc(tabKey, baslik) {
 
     Swal.fire({ title: 'Kaydediliyor...', didOpen: () => Swal.showLoading(), showConfirmButton: false });
     try {
-        const d = await apiCall('upsertTechDoc', { keyKategori: it.kategori, keyBaslik: it.baslik, ...v });
-
+        const r = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'upsertTechDoc', username: currentUser, token: getToken(), keyKategori: it.kategori, keyBaslik: it.baslik, ...v })
+        });
+        const d = await r.json();
         if (d.result === 'success') {
             Swal.fire({ icon: 'success', title: 'Kaydedildi', timer: 1200, showConfirmButton: false });
             await loadTechDocsIfNeeded(true);
@@ -7441,8 +7308,12 @@ function deleteTechDoc(tabKey, baslik) {
             const all = await loadTechDocsIfNeeded(false);
             const it = all.find(x => x.categoryKey === tabKey && (x.baslik || '') === baslik);
             const keyKategori = it ? it.kategori : tabKey;
-            const d = await apiCall('deleteTechDoc', { keyKategori: keyKategori, keyBaslik: baslik });
-
+            const r = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'deleteTechDoc', username: currentUser, token: getToken(), keyKategori: keyKategori, keyBaslik: baslik })
+            });
+            const d = await r.json();
             if (d.result === 'success') {
                 await loadTechDocsIfNeeded(true);
                 filterTechDocList(tabKey);
