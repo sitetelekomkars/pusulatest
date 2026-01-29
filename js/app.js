@@ -119,6 +119,13 @@ function normalizeKeys(obj) {
         if (k === 'Feedback' || k === 'Geri Bildirim') n.feedback = obj[k];
         if (k === 'Temsilci Notu' || k === 'AgentNote') n.agentNote = obj[k];
         if (k === 'Yönetici Cevabı' || k === 'ManagerReply') n.managerReply = obj[k];
+
+        // --- SİHİRBAZLAR (Wizard / TechWizard) ---
+        if (k === 'StepID' || k === 'StepId' || k === 'AdımID') n.stepId = obj[k];
+        if (k === 'Options' || k === 'Buttons' || k === 'Seçenekler' || k === 'Butonlar') n.options = obj[k];
+        if (k === 'Alert' || k === 'Uyarı') n.alert = obj[k];
+        if (k === 'Result' || k === 'Sonuç') n.result = obj[k];
+        if (k === 'Script' || k === 'Senaryo') n.script = obj[k];
     });
     return n;
 }
@@ -1265,17 +1272,36 @@ async function loadWizardData() {
         if (error) throw error;
 
         wizardStepsData = {};
-        data.forEach(row => {
-            const stepId = String(row.StepID).trim();
+        (data || []).map(normalizeKeys).forEach(row => {
+            if (!row.stepId) return;
+            const stepId = String(row.stepId).trim();
+
             const opts = [];
-            if (row.Options) {
-                String(row.Options).split(',').forEach(p => {
+            let optRaw = row.options || "";
+            if (optRaw) {
+                String(optRaw).split(',').forEach(p => {
                     const parts = p.trim().split('|');
-                    if (parts.length === 2) opts.push({ text: parts[0].trim(), next: parts[1].trim() });
+                    // Format: "Text | NextId" veya "Text | NextId | Style"
+                    if (parts.length >= 2) {
+                        opts.push({
+                            text: parts[0].trim(),
+                            next: parts[1].trim(),
+                            style: parts[2] ? parts[2].trim() : 'primary'
+                        });
+                    }
                 });
             }
-            wizardStepsData[stepId] = { title: row.Title, text: row.Text, script: row.Script, result: row.Result, options: opts };
+
+            wizardStepsData[stepId] = {
+                title: row.title || row.Title || "",
+                text: row.text || row.Text || "",
+                script: row.script || "",
+                result: row.result || "",
+                alert: row.alert || "",
+                options: opts
+            };
         });
+        console.log("[Wizard] Data Loaded:", Object.keys(wizardStepsData).length, "steps");
     } catch (err) {
         console.error("[Pusula] Wizard Fetch Error:", err);
     }
@@ -1286,18 +1312,37 @@ async function loadTechWizardData() {
         const { data, error } = await sb.from('TechWizardSteps').select('*');
         if (error) throw error;
 
-        techWizardData = {}; // Global değişken ismini kontrol et
-        data.forEach(row => {
-            const stepId = String(row.StepID).trim();
+        techWizardData = {};
+        (data || []).map(normalizeKeys).forEach(row => {
+            if (!row.stepId) return;
+            const stepId = String(row.stepId).trim();
+
             const btns = [];
-            if (row.Buttons) {
-                String(row.Buttons).split(',').forEach(b => {
-                    const p = b.trim().split('|');
-                    if (p.length >= 2) btns.push({ text: p[0], next: p[1], style: p[2] || 'primary' });
+            let optRaw = row.options || ""; // normalizeKeys sayesinde Buttons da options oldu
+            if (optRaw) {
+                String(optRaw).split(',').forEach(b => {
+                    const parts = b.trim().split('|');
+                    if (parts.length >= 2) {
+                        btns.push({
+                            text: parts[0].trim(),
+                            next: parts[1].trim(),
+                            style: parts[2] ? parts[2].trim() : 'primary'
+                        });
+                    }
                 });
             }
-            techWizardData[stepId] = { title: row.Title, text: row.Text, script: row.Script, alert: row.Alert, buttons: btns };
+
+            techWizardData[stepId] = {
+                title: row.title || row.Title || "",
+                text: row.text || row.Text || "",
+                script: row.script || "",
+                alert: row.alert || "",
+                result: row.result || "",
+                buttons: btns,
+                options: btns // her ihtimale karşı
+            };
         });
+        console.log("[TechWizard] Data Loaded:", Object.keys(techWizardData).length, "steps");
     } catch (err) {
         console.error("[Pusula] TechWizard Fetch Error:", err);
     }
@@ -2898,8 +2943,9 @@ function openTechWizard() {
     openTechArea('wizard');
 }
 function twRenderStep() {
-    const contentDiv = document.getElementById('tech-wizard-content');
+    const contentDiv = document.getElementById('tech-wizard-content') || document.getElementById('x-wizard');
     const backBtn = document.getElementById('tw-btn-back');
+    if (!contentDiv) return;
     const stepData = techWizardData[twState.currentStep];
     if (twState.history.length > 0) backBtn.style.display = 'block'; else backBtn.style.display = 'none';
     if (!stepData) { contentDiv.innerHTML = `<div class="alert" style="color:red;">Hata: Adım bulunamadı (${twState.currentStep}).</div>`; return; }
