@@ -7914,7 +7914,8 @@ async function openActiveUsersPanel() {
                 </table>
             </div>
             <div style="margin-top:15px;padding:10px;background:#e3f2fd;border-radius:8px;font-size:0.9rem;color:#1976d2">
-                <i class="fas fa-info-circle"></i> Sistem anlık sinyal (heartbeat) takibi yapar. 60 saniye boyunca sinyal alınamayan kullanıcılar listeden düşer.
+                <i class="fas fa-info-circle"></i> <strong>Online:</strong> Son 1 dk içinde aktif. <strong>Offline:</strong> Son 24 saat içinde giriş yapmış.
+                <br><small>Not: "At" butonu kullanıcıyı bir sonraki sinyalde (max 30sn) sistemden düşürür.</small>
             </div>
         `;
 
