@@ -698,7 +698,7 @@
     </div>
   </div>
 
-  <div <div id="shift-fullscreen" class="q-fullscreen" style="display:none">
+  <div id="shift-fullscreen" class="q-fullscreen" style="display:none">
     <div class="q-sidebar">
       <div class="q-sidebar-header">
         <i class="fas fa-calendar-check fa-lg" aria-hidden="true"></i>
@@ -739,8 +739,6 @@
       </div>
     </div>
   </div>
-  </div>
-
   <div id="tech-fullscreen" class="q-fullscreen" style="display:none">
     <div class="q-sidebar">
       <div class="q-side-top tech-side-top">
@@ -856,65 +854,6 @@
       </div>
     </div>
   </div>
-  <script>
-    /* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
-    (function () {
-      function fixActive(tab) {
-        var root = document.getElementById('tech-fullscreen');
-        if (!root) return;
-        var items = root.querySelectorAll('.q-nav-menu .q-nav-item');
-        items.forEach(function (el) {
-          el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
-        });
-      }
-
-      var origSwitch = window.switchTechTab;
-      window.switchTechTab = function (tab) {
-        if (typeof origSwitch === 'function') {
-          origSwitch(tab);
-        }
-        setTimeout(function () { fixActive(tab); }, 0);
-      };
-
-      var origOpen = window.openTechArea;
-      window.openTechArea = function (tab) {
-        if (typeof origOpen === 'function') {
-          origOpen(tab);
-        }
-        setTimeout(function () { fixActive(tab || 'wizard'); }, 0);
-      };
-    })();
-  </script>
-
-  <script>
-    /* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
-    (function () {
-      function fixActive(tab) {
-        var root = document.getElementById('tech-fullscreen');
-        if (!root) return;
-        var items = root.querySelectorAll('.q-nav-menu .q-nav-item');
-        items.forEach(function (el) {
-          el.classList.toggle('active', el.getAttribute('data-tech-tab') === tab);
-        });
-      }
-
-      var origSwitch = window.switchTechTab;
-      window.switchTechTab = function (tab) {
-        if (typeof origSwitch === 'function') {
-          origSwitch(tab);
-        }
-        setTimeout(function () { fixActive(tab); }, 0);
-      };
-
-      var origOpen = window.openTechArea;
-      window.openTechArea = function (tab) {
-        if (typeof origOpen === 'function') {
-          origOpen(tab);
-        }
-        setTimeout(function () { fixActive(tab || 'wizard'); }, 0);
-      };
-    })();
-  </script>
   <script>
     /* Teknik menü aktiflik düzeltmesi (app.js'i bozmadan) */
     (function () {
