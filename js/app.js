@@ -52,6 +52,27 @@ function showGlobalError(message) {
     } catch (e) { }
 }
 
+// Base64 to Blob helper
+function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
+    try {
+        const byteCharacters = atob(b64Data);
+        const byteArrays = [];
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+        }
+        return new Blob(byteArrays, { type: contentType });
+    } catch (e) {
+        console.error("b64toBlob error:", e);
+        return null;
+    }
+}
+
 // --- SUPABASE BAĞLANTISI ---
 const SUPABASE_URL = "https://psauvjohywldldgppmxz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_ITFx76ndmOc3UJkNbHOSlQ_kD91kq45";
@@ -790,6 +811,26 @@ async function apiCall(action, params = {}) {
                     return { result: "success", items: [] };
                 }
                 return { result: "success", items: (data || []).map(normalizeKeys) };
+            }
+            case "uploadImage":
+            case "uploadTrainingDoc": {
+                const { fileName, mimeType, base64 } = params;
+                const blob = b64toBlob(base64, mimeType);
+                if (!blob) throw new Error("Dosya işlenemedi (Base64 Hatası)");
+
+                const folder = (action === 'uploadImage') ? 'images' : 'trainings';
+                const filePath = `${folder}/${Date.now()}_${fileName}`;
+
+                const { data, error } = await sb.storage.from('pusula').upload(filePath, blob, {
+                    contentType: mimeType,
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+                if (error) throw error;
+
+                const { data: publicURL } = sb.storage.from('pusula').getPublicUrl(filePath);
+                return { result: "success", url: publicURL.publicUrl };
             }
             case "deleteTechDoc": {
                 const { error } = await sb.from('Teknik_Dokumanlar').delete().eq('id', params.id);
@@ -4556,7 +4597,7 @@ async function assignTrainingPopup() {
                 <input id="swal-t-title" class="swal2-input" placeholder="Eğitim Başlığı" style="grid-column: 1 / 4;">
                 <textarea id="swal-t-desc" class="swal2-textarea" style="height:100px; grid-column: 1 / 4;" placeholder="Eğitim açıklaması veya talimatlar..."></textarea>
                 <input id="swal-t-link" class="swal2-input" placeholder="Video/Eğitim Linki (URL)" style="grid-column: 1 / 4;">
-                <input id="swal-t-doc" class="swal2-input" placeholder="Döküman Linki (Drive/PDF URL) (İsteğe Bağlı)" style="grid-column: 1 / 4;">
+                <input id="swal-t-doc" class="swal2-input" placeholder="Döküman Linki (PDF/URL) (İsteğe Bağlı)" style="grid-column: 1 / 4;">
                 <input id="swal-t-file" type="file" class="swal2-file" style="grid-column: 1 / 4; margin-top:6px;" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg">
                 <div style="grid-column:1/4; font-size:0.78rem; color:#6b7280; margin-top:-4px;">
                   İstersen dosyayı buradan yükle (PDF/Word/PowerPoint...). Yüklenen dosya eğitim kartında “Dökümanı İndir” olarak görünür.
@@ -7850,10 +7891,10 @@ try { window.openMenuPermissions = openMenuPermissions; } catch (e) { }
 // --- GÖRSEL YÜKLEME ARACI (Admin/LocAdmin) ---
 function openImageUploader() {
     Swal.fire({
-        title: 'Görsel Yükle (Drive)',
+        title: 'Görsel Yükle',
         html: `
         <div style="font-size:0.9rem;color:#555;margin-bottom:15px">
-           Seçtiğiniz görsel, Drive'daki doküman klasörüne yüklenecek ve size bir link verilecektir.
+           Seçtiğiniz görsel bulut sistemine yüklenecek ve size bir link verilecektir.
            Bu linki "Image" sütununa yapıştırarak kartlarda kullanabilirsiniz.
         </div>
         <input type="file" id="swal-img-input" accept="image/*" class="swal2-file" style="display:block;margin:0 auto;">
