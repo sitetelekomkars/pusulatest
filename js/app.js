@@ -82,10 +82,12 @@ function normalizeKeys(obj) {
 
         // Çağrı / Değerlendirme Bilgileri
         if (k === 'CallID' || k === 'CallId' || k === 'Call_ID') n.callId = obj[k];
-        if (k === 'CallDate' || k === 'Tarih' || k === 'Date') {
+        if (k === 'CallDate') n.callDate = formatDateToDDMMYYYY(obj[k]);
+        if (k === 'Date') n.date = formatDateToDDMMYYYY(obj[k]);
+        if (k === 'Tarih') {
             const formatted = formatDateToDDMMYYYY(obj[k]);
-            n.callDate = formatted;
-            n.date = formatted;
+            if (!n.callDate) n.callDate = formatted;
+            if (!n.date) n.date = formatted;
         }
         if (k === 'Score' || k === 'Puan' || k === 'Points') { n.score = obj[k]; n.points = obj[k]; }
         if (k === 'Orta Puan' || k === 'MediumScore') n.mediumScore = obj[k];
@@ -4870,7 +4872,7 @@ async function fetchEvaluationsForAgent(forcedName, silent = false) {
                 }
 
                 const callDateDisplay = evalItem.callDate && evalItem.callDate !== 'N/A' ? evalItem.callDate : 'N/A';
-                const listenDateDisplay = evalItem.date || 'N/A';
+                const listenDateDisplay = evalItem.date || evalItem.callDate || 'N/A';
 
                 const isSeen = evalItem.isSeen;
                 const agentNote = evalItem.agentNote || '';
