@@ -717,6 +717,7 @@ async function apiCall(action, params = {}) {
                 saveLog("Vardiya Talebi Gönderme", `${currentUser} -> ${params.date} ${params.shift}`);
                 return { result: "success" };
             }
+
             case "fetchFeedbackLogs": {
                 const { data, error } = await sb.from('Feedback_Logs').select('*');
                 if (error) throw error;
@@ -901,61 +902,6 @@ async function apiCall(action, params = {}) {
                     "Durum": params.status || 'Tamamlandı'
                 }).ilike('CallID', String(params.callId).replace('#', '').trim());
                 return { result: error ? "error" : "success" };
-            }
-            case "bulkUpdateBroadcast": {
-                // Sadece LocAdmin veya Admin için (Güvenlik)
-                if (!isLocAdmin && !isAdminMode) return { result: "error", message: "Yetkisiz işlem." };
-
-                try {
-                    // 1. Mevcut tüm veriyi temizle
-                    const { error: delErr } = await sb.from('YayinAkisi').delete().neq('Program', '---REPLACE-ALL---');
-                    if (delErr) {
-                        // Eğer Program kolonu yoksa veya filter hatası olursa id ile dene
-                        await sb.from('YayinAkisi').delete().neq('id', -1);
-                    }
-
-                    // 2. Yeni veriyi ekle
-                    if (params.items && params.items.length > 0) {
-                        const normalizedItems = params.items.map(raw => {
-                            const n = {};
-                            const k = Object.keys(raw).map(key => key.toLowerCase().trim());
-
-                            // Map Saat -> Saat, Program -> Program, Kanal -> Kanal, Tarih -> Tarih
-                            Object.keys(raw).forEach(key => {
-                                const cleanKey = key.toLowerCase().trim();
-                                if (cleanKey === 'saat' || cleanKey === 'time') n.Saat = raw[key];
-                                else if (cleanKey === 'program' || cleanKey === 'baslik' || cleanKey === 'başlık' || cleanKey === 'event') n.Program = raw[key];
-                                else if (cleanKey === 'kanal' || cleanKey === 'platform' || cleanKey === 'channel') n.Kanal = raw[key];
-                                else if (cleanKey === 'tarih' || cleanKey === 'date') n.Tarih = raw[key];
-                                else n[key] = raw[key]; // Diğer kolonlar olduğu gibi
-                            });
-                            return n;
-                        });
-
-                        const { error: insErr } = await sb.from('YayinAkisi').insert(normalizedItems);
-                        if (insErr) throw insErr;
-                    }
-                    saveLog("Yayın Akışı Toplu Güncelleme", `${params.items.length} kayıt eklendi.`);
-                    return { result: "success" };
-                } catch (e) {
-                    console.error("[Pusula Bulk Broadcast] Hata:", e);
-                    return { result: "error", message: "Bağlantı veya Yetki Hatası: " + e.message };
-                }
-            }
-            case "bulkUpdateShifts": {
-                if (!isLocAdmin && !isAdminMode) return { result: "error", message: "Yetkisiz işlem." };
-
-                try {
-                    // Vardiya tablosunda 'Temsilci' unique olmalı (Upsert için)
-                    const { error } = await sb.from('Vardiya').upsert(params.items, { onConflict: 'Temsilci' });
-                    if (error) throw error;
-
-                    saveLog("Vardiya Toplu Güncelleme", `${params.items.length} personel güncellendi.`);
-                    return { result: "success" };
-                } catch (e) {
-                    console.error("[Pusula Bulk Shifts] Hata:", e);
-                    return { result: "error", message: "Veritabanı Hatası: " + e.message };
-                }
             }
             case "getBroadcastFlow": {
                 // ...existing...
@@ -2630,7 +2576,7 @@ async function fetchBroadcastFlow() {
 async function openBroadcastFlow() {
     Swal.fire({
         title: "Yayın Akışı",
-        html: isEditingActive ? `<div style="text-align:right; margin-bottom:10px;"><button class="x-btn-admin" onclick="openBulkUpdateBroadcastPopup()" style="background:var(--secondary); font-size:0.8rem;"><i class="fas fa-file-import"></i> Toplu Güncelle (Excel)</button></div>` : '',
+        html: '',
         didOpen: () => Swal.showLoading(),
         showConfirmButton: false
     });
@@ -2703,7 +2649,7 @@ async function openBroadcastFlow() {
       </style>
     `;
 
-        let btnHtml = isEditingActive ? `<div style="text-align:right; margin-bottom:10px;"><button class="x-btn-admin" onclick="openBulkUpdateBroadcastPopup()" style="background:var(--secondary); font-size:0.8rem; border:none; color:white; padding:8px 12px; border-radius:4px; cursor:pointer;"><i class="fas fa-file-import"></i> Toplu Güncelle (Excel)</button></div>` : '';
+        let btnHtml = '';
         let html = `${css}${btnHtml}<div class="ba-wrap">`;
         html += `
       <div class="ba-legend">
@@ -6948,23 +6894,6 @@ async function openShiftArea(tab) {
         if (adminFilters) {
             adminFilters.style.display = 'flex';
             // Vardiya Yapıştır Butonu (Edit Mode aktifse)
-            if (isEditingActive && !document.getElementById('btn-bulk-shift')) {
-                const b = document.createElement('button');
-                b.id = 'btn-bulk-shift';
-                b.className = 'admin-btn';
-                b.style.margin = '4px';
-                b.style.background = 'var(--secondary)';
-                b.style.color = 'white';
-                b.style.border = 'none';
-                b.style.padding = '8px 12px';
-                b.style.borderRadius = '4px';
-                b.style.cursor = 'pointer';
-                b.innerHTML = '<i class="fas fa-paste"></i> Vardiya Yapıştır';
-                b.onclick = openBulkUpdateShiftsPopup;
-                adminFilters.appendChild(b);
-            } else if (!isEditingActive && document.getElementById('btn-bulk-shift')) {
-                document.getElementById('btn-bulk-shift').remove();
-            }
         }
     } else {
         if (adminFilters) adminFilters.style.display = 'none';
@@ -8998,225 +8927,3 @@ function checkQualityNotifications() {
         }).catch(e => console.log('Notif check error', e));
 }
 
-// ==========================================================
-// --- TOPLU GÜNCELLEME ARAÇLARI (Excel/Sheets Destekli) ---
-// ==========================================================
-
-function parseTSV(text) {
-    const lines = text.trim().split('\n').filter(l => l.trim() !== "");
-    if (lines.length === 0) return { headers: [], rows: [] };
-
-    const headers = lines[0].split('\t').map(h => h.trim());
-    const rows = lines.slice(1).map(line => line.split('\t').map(v => v.trim()));
-
-    return { headers, rows };
-}
-
-async function showAdvancedMappingPopup(parts, entityFields, title) {
-    const headers = parts.headers;
-    const rows = parts.rows.slice(0, 5);
-
-    let html = `
-        <div style="font-size:0.85rem; color:#666; margin-bottom:15px; text-align:left;">
-            Excel'den gelen sütunları (üstteki başlıklar), sistemdekiler ile eşleştirin. Eşleşmeyenler aktarılmaz.
-        </div>
-        <div style="overflow-x:auto; border:1px solid #eee; border-radius:8px; margin-bottom:20px; background:#fff;">
-            <table style="width:100%; border-collapse:collapse; font-size:0.75rem;">
-                <thead>
-                    <tr style="background:#f8f9fa;">
-                        ${headers.map((h, i) => `
-                            <th style="padding:10px; border:1px solid #eee; min-width:130px;">
-                                <div style="color:var(--primary); font-weight:700; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${h}">${h}</div>
-                                <select id="col-map-${i}" class="swal2-select" style="margin:0; width:100%; height:30px; font-size:0.7rem; padding:2px;">
-                                    <option value="">-- Atla --</option>
-                                    ${Object.keys(entityFields).map(f => `<option value="${f}">${entityFields[f]}</option>`).join('')}
-                                </select>
-                            </th>
-                        `).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(row => `
-                        <tr>
-                            ${row.map(cell => `<td style="padding:6px; border:1px solid #eee; color:#444; text-align:center;">${escapeHtml(cell)}</td>`).join('')}
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-        ${parts.rows.length > 5 ? `<div style="text-align:right; font-size:0.75rem; color:#999; margin-top:-15px;">... ${parts.rows.length - 5} satır daha</div>` : ''}
-    `;
-
-    const { value: mapping } = await Swal.fire({
-        title: title,
-        html: html,
-        width: Math.min(window.innerWidth * 0.95, 1200),
-        showCancelButton: true,
-        confirmButtonText: 'Verileri Onayla ve Aktar',
-        cancelButtonText: 'Vazgeç',
-        didOpen: () => {
-            headers.forEach((h, i) => {
-                const select = document.getElementById(`col-map-${i}`);
-                const lowH = h.toLowerCase().replace(/i̇/g, 'i').trim();
-                for (const f in entityFields) {
-                    const label = entityFields[f].toLowerCase().replace(/i̇/g, 'i');
-                    if (lowH === label || lowH === f.toLowerCase() || lowH.includes(label)) {
-                        select.value = f;
-                        break;
-                    }
-                }
-            });
-        },
-        preConfirm: () => {
-            const map = {};
-            let hasAny = false;
-            headers.forEach((h, i) => {
-                const val = document.getElementById(`col-map-${i}`).value;
-                if (val) { map[i] = val; hasAny = true; }
-            });
-            if (!hasAny) { Swal.showValidationMessage("Lütfen en az bir sütun eşleştirin!"); return false; }
-            return map;
-        }
-    });
-
-    if (!mapping) return null;
-
-    return parts.rows.map(row => {
-        const obj = {};
-        for (const i in mapping) {
-            const field = mapping[i];
-            obj[field] = row[i] || "";
-        }
-        return obj;
-    });
-}
-
-
-async function showMappingPopup(headers, requiredFields, title = "Sütunları Eşleştir") {
-    let html = `<div style="text-align:left; font-size:0.9rem;">
-        <p style="margin-bottom:15px; color:#666;">Yüklediğiniz tablodaki sütunların, sistemdeki hangi alanlara karşılık geldiğini seçin.</p>`;
-
-    Object.keys(requiredFields).forEach(targetKey => {
-        const label = requiredFields[targetKey];
-        html += `<div style="margin-bottom:12px;">
-            <label style="display:block; font-weight:700; margin-bottom:4px; color:var(--primary);">${label}</label>
-            <select id="map-${targetKey}" class="swal2-select" style="margin:0; width:100%; height:38px; font-size:0.9rem;">
-                <option value="">-- Atla / Yok --</option>
-                ${headers.map((h, i) => `<option value="${i}">${h}</option>`).join('')}
-            </select>
-        </div>`;
-    });
-    html += '</div>';
-
-    const { value: mapping } = await Swal.fire({
-        title: title,
-        html: html,
-        width: 450,
-        showCancelButton: true,
-        confirmButtonText: 'Devam Et',
-        cancelButtonText: 'Vazgeç',
-        didOpen: () => {
-            // Akıllı eşleşme denemesi
-            Object.keys(requiredFields).forEach(targetKey => {
-                const label = requiredFields[targetKey];
-                const select = document.getElementById(`map-${targetKey}`);
-
-                // Hem label hem targetKey üzerinden benzerlik ara
-                const searchNames = [label.toLowerCase(), targetKey.toLowerCase()];
-                const foundIndex = headers.findIndex(h => {
-                    const lowH = h.toLowerCase();
-                    return searchNames.some(sn => lowH.includes(sn) || sn.includes(lowH));
-                });
-
-                if (foundIndex !== -1) select.value = foundIndex;
-            });
-        },
-        preConfirm: () => {
-            const result = {};
-            let hasAny = false;
-            Object.keys(requiredFields).forEach(targetKey => {
-                const val = document.getElementById(`map-${targetKey}`).value;
-                if (val !== "") {
-                    result[targetKey] = parseInt(val);
-                    hasAny = true;
-                }
-            });
-            if (!hasAny) {
-                Swal.showValidationMessage("Lütfen en az bir sütun eşleştirin.");
-                return false;
-            }
-            return result;
-        }
-    });
-    return mapping;
-}
-
-
-async function openBulkUpdateBroadcastPopup() {
-    const { value: text } = await Swal.fire({
-        title: '📺 Yayın Akışı Toplu Güncelle',
-        html: `<textarea id="bulk-tsv" class="swal2-textarea" style="height:150px;" placeholder="Excel'den yapıştırın..."></textarea>`,
-        showCancelButton: true, confirmButtonText: 'İleri',
-        preConfirm: () => document.getElementById('bulk-tsv').value
-    });
-
-    if (text) {
-        const parts = parseTSV(text);
-        if (parts.rows.length === 0) return;
-
-        const items = await showAdvancedMappingPopup(parts, {
-            "saat": "Saat",
-            "program": "Program Adı",
-            "kanal": "Kanal",
-            "tarih": "Tarih (GG.AA.YYYY)"
-        }, "📺 Yayın Akışı Eşleştirme");
-
-        if (items) {
-            Swal.fire({ title: 'Güncelleniyor...', didOpen: () => Swal.showLoading() });
-            const res = await apiCall("bulkUpdateBroadcast", { items });
-            if (res.result === "success") {
-                Swal.fire('Başarılı', 'Güncellendi.', 'success').then(() => openBroadcastFlow());
-            } else {
-                Swal.fire('Hata', res.message, 'error');
-            }
-        }
-    }
-}
-
-
-async function openBulkUpdateShiftsPopup() {
-    const { value: text } = await Swal.fire({
-        title: '📅 Vardiya Toplu Güncelle',
-        html: `<textarea id="bulk-tsv-shift" class="swal2-textarea" style="height:150px;" placeholder="Excel'den kopyalayıp buraya yapıştırın..."></textarea>`,
-        width: 600, showCancelButton: true, confirmButtonText: 'İleri',
-        preConfirm: () => document.getElementById('bulk-tsv-shift').value
-    });
-
-    if (text) {
-        const parts = parseTSV(text);
-        if (parts.rows.length === 0) return;
-
-        const shiftFields = {
-            "Temsilci": "Temsilci Adı",
-            "Pazartesi": "Pazartesi",
-            "Salı": "Salı",
-            "Çarşamba": "Çarşamba",
-            "Perşembe": "Perşembe",
-            "Cuma": "Cuma",
-            "Cumartesi": "Cumartesi",
-            "Pazar": "Pazar"
-        };
-
-        const items = await showAdvancedMappingPopup(parts, shiftFields, "📅 Vardiya Kolon Eşleştirme");
-
-        if (items) {
-            Swal.fire({ title: 'Vardiyalar İşleniyor...', didOpen: () => Swal.showLoading() });
-            const res = await apiCall("bulkUpdateShifts", { items });
-            if (res.result === "success") {
-                Swal.fire('Başarılı', 'Vardiya tablosu güncellendi.', 'success').then(() => openShiftArea());
-            } else {
-                Swal.fire('Hata', res.message || 'Veritabanı sütun hatası!', 'error');
-            }
-        }
-    }
-}
