@@ -3716,132 +3716,7 @@ function twResetWizard() { twState.currentStep = 'start'; twState.history = []; 
 // --- YENİ KALİTE LMS MODÜLÜ (TAM EKRAN ENTEGRASYONU) ---
 // ==========================================================
 // Modülü Aç
-function openQualityArea() {
-    // Eski modalı kapat (eğer açıksa)
-    const oldModal = document.getElementById('quality-modal');
-    if (oldModal) oldModal.style.display = 'none';
-    // Tam ekranı aç
-    const fullScreen = document.getElementById('quality-fullscreen');
-    fullScreen.style.display = 'flex';
-    // Kullanıcı bilgisini güncelle
-    document.getElementById('q-side-name').innerText = currentUser;
-    document.getElementById('q-side-role').innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
-    document.getElementById('q-side-avatar').innerText = currentUser.charAt(0).toUpperCase();
-    // Dönem filtresini doldur
-    populateMonthFilterFull();
-    // Yetki kontrolü (Admin butonlarını göster/gizle)
-    const adminFilters = document.getElementById('admin-filters');
-    const assignBtn = document.getElementById('assign-training-btn');
-    const manualFeedbackBtn = document.getElementById('manual-feedback-admin-btn');
-
-    if (isAdminMode) {
-        if (adminFilters) {
-            adminFilters.style.display = 'flex';
-            // Buton bazlı yetki kontrolü (Admin için dinamik)
-            const rptBtn = adminFilters.querySelector('.admin-btn'); // Rapor Butonu
-            if (rptBtn) {
-                if (isLocAdmin || hasPerm("Reports")) rptBtn.style.display = '';
-                else rptBtn.style.display = 'none';
-            }
-            const addBtn = adminFilters.querySelector('.add-btn'); // Ekle Butonu
-            if (addBtn) {
-                // Ekle butonu için "AddContent" veya genel Admin yetkisi kontrolü
-                if (isLocAdmin || hasPerm("AddContent")) addBtn.style.display = '';
-                else addBtn.style.display = 'none';
-            }
-        }
-
-        // Eğitim Atama Yetkisi
-        if (assignBtn) {
-            // Eğitim atama yetkisi "Trainings" veya genel "Quality" olabilir, şimdilik locadmin veya adminMode yetiyor gibi ama garanti olsun
-            assignBtn.style.display = 'block';
-        }
-
-        if (manualFeedbackBtn) manualFeedbackBtn.style.display = 'flex'; // Buna da yetki eklenebilir ama şimdilik kalsın
-
-        // Kullanıcı listesi boşsa çek, sonra filtreleri doldur
-        if (adminUserList.length === 0) {
-            fetchUserListForAdmin().then(() => {
-                populateAllAdminFilters();
-            });
-        } else {
-            populateAllAdminFilters();
-        }
-    } else {
-        if (adminFilters) adminFilters.style.display = 'none';
-        if (assignBtn) assignBtn.style.display = 'none';
-        if (manualFeedbackBtn) manualFeedbackBtn.style.display = 'none';
-
-        // Admin değilse filtreleri gizle
-        const dashFilterArea = document.querySelector('#view-dashboard .q-view-header > div');
-        if (dashFilterArea && dashFilterArea.style.display !== 'none') {
-            // Burada basitçe dashboard filtre fonksiyonu admin kontrolü yapıyor.
-            populateDashboardFilters();
-        }
-    }
-    // Varsayılan sekmeyi aç
-    // Tıklanma simülasyonu ile ilk sekmeyi aktif et
-    const defaultTab = document.querySelector('.q-nav-item.active');
-    if (defaultTab) {
-        switchQualityTab('dashboard', defaultTab);
-    }
-}
-// Modülü Kapat
-function closeFullQuality() {
-    document.getElementById('quality-fullscreen').style.display = 'none';
-    // Eğer qusers ise (sadece kalite yetkisi varsa) logout yapmalı veya uyarı vermeli
-    if (localStorage.getItem("sSportRole") === 'qusers') {
-        logout();
-    }
-}
-// Sekme Değiştirme
-function switchQualityTab(tabName, element) {
-    // Menu active class
-    document.querySelectorAll('.q-nav-item').forEach(item => item.classList.remove('active'));
-    // Element varsa onu aktif yap, yoksa varsayılanı (dashboard) bulup aktif yap
-    if (element) {
-        element.classList.add('active');
-    } else {
-        document.querySelector(`.q-nav-item[onclick*="${tabName}"]`).classList.add('active');
-    }
-
-    // View active class
-    document.querySelectorAll('.q-view-section').forEach(section => section.classList.remove('active'));
-    document.getElementById(`view-${tabName}`).classList.add('active');
-    // Veri Yükleme
-    if (tabName === 'dashboard') loadQualityDashboard();
-    else if (tabName === 'evaluations') fetchEvaluationsForAgent();
-    else if (tabName === 'feedback') {
-        populateFeedbackFilters();
-        // Feedback için ay filtresini de doldur (eğer yoksa)
-        populateFeedbackMonthFilter();
-        refreshFeedbackData();
-    }
-    else if (tabName === 'training') loadTrainingData();
-}
-
-// YENİ: Feedback için Ay Filtresi
-function populateFeedbackMonthFilter() {
-    const el = document.getElementById('q-feedback-month');
-    if (!el) return;
-    if (el.innerHTML !== '') return; // Zaten doluysa tekrar doldurma
-
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    for (let i = 0; i < 6; i++) {
-        let month = (currentMonth - i + 12) % 12;
-        let year = currentYear - (currentMonth - i < 0 ? 1 : 0);
-        const value = `${String(month + 1).padStart(2, '0')}.${year}`;
-        const text = `${MONTH_NAMES[month]} ${year}`;
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = text;
-        if (i === 0) opt.selected = true;
-        el.appendChild(opt);
-    }
-}
+// Redundant Quality functions removed.
 // --- DASHBOARD FONKSİYONLARI ---
 function populateMonthFilterFull() {
     const selectIds = ['q-dash-month', 'q-eval-month']; // Dashboard + Değerlendirme listesi
@@ -3900,7 +3775,14 @@ function populateDashboardFilters() {
 
     if (!groupSelect) return;
 
-    const groups = [...new Set(adminUserList.map(u => u.group).filter(g => g))].sort();
+    // ✅ İstek: Sadece belirli takımlar gözüksün (Yönetim vs. gizli)
+    const allowedWords = ['chat', 'istchat', 'satış', 'satis'];
+    const groups = [...new Set(adminUserList.map(u => u.group).filter(g => {
+        if (!g) return false;
+        const low = g.toLowerCase();
+        return allowedWords.some(word => low.includes(word));
+    }))].sort();
+
     groupSelect.innerHTML = '<option value="all">Tüm Gruplar</option>';
     groups.forEach(g => {
         const opt = document.createElement('option');
@@ -5611,9 +5493,14 @@ function fetchUserListForAdmin() {
             if (data.result === "success") {
                 // Sadece rütbesi 'user' veya 'qusers' olanları (temsilcileri) göster
                 // Yönetim grubunu ve Admin/LocAdmin rütbelerini listeden temizle
+                const allowedWords = ['chat', 'istchat', 'satış', 'satis', 'telesatis', 'telesatış'];
                 adminUserList = data.users.filter(u => {
+                    if (!u.group) return false;
                     const r = String(u.role || '').toLowerCase().trim();
-                    return (r === 'user' || r === 'qusers') && u.group !== 'Yönetim';
+                    const g = String(u.group).toLowerCase().trim();
+                    const isStaff = (r === 'user' || r === 'qusers');
+                    const isAllowedGroup = allowedWords.some(w => g.includes(w));
+                    return isStaff && isAllowedGroup;
                 });
                 resolve(adminUserList);
             }
@@ -6438,7 +6325,7 @@ async function openQualityArea() {
     if (nm) nm.innerText = currentUser || 'Kullanıcı';
     if (rl) rl.innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
     // Yetki kontrolü (Admin butonlarını göster/gizle)
-    const adminFilters = document.getElementById('admin-filters');
+    const adminFilters = document.getElementById('q-admin-filters');
     const assignBtn = document.getElementById('assign-training-btn');
     const manualFeedbackBtn = document.getElementById('manual-feedback-admin-btn');
 
@@ -6464,7 +6351,12 @@ async function openQualityArea() {
         if (adminUserList.length) {
             const groupSelect = document.getElementById('q-admin-group');
             if (groupSelect) {
-                const groups = [...new Set(adminUserList.map(u => u.group).filter(Boolean))].sort();
+                const allowedWords = ['chat', 'istchat', 'satış', 'satis'];
+                const groups = [...new Set(adminUserList.map(u => u.group).filter(g => {
+                    if (!g) return false;
+                    const low = g.toLowerCase();
+                    return allowedWords.some(w => low.includes(w));
+                }))].sort();
                 groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
                 try { updateAgentListBasedOnGroup(); } catch (e) { }
             }
@@ -6985,55 +6877,32 @@ async function openShiftArea(tab) {
     if (nm) nm.innerText = currentUser || 'Kullanıcı';
     if (rl) rl.innerText = isAdminMode ? 'Yönetici' : 'Temsilci';
     // Yetki kontrolü (Admin butonlarını göster/gizle)
-    const adminFilters = document.getElementById('admin-filters');
-    const assignBtn = document.getElementById('assign-training-btn');
-    const manualFeedbackBtn = document.getElementById('manual-feedback-admin-btn');
-    const bulkShiftBtn = document.getElementById('bulk-shift-admin-btn');
+    const adminFilters = document.getElementById('shift-admin-filters');
 
     if (isAdminMode) {
         if (adminFilters) {
             adminFilters.style.display = 'flex';
-            // Buton bazlı yetki kontrolü
-            const rptBtn = adminFilters.querySelector('.admin-btn');
-            if (rptBtn) {
-                if (isLocAdmin || hasPerm('Reports')) rptBtn.style.display = '';
-                else rptBtn.style.display = 'none';
-            }
-            // Vardiya Yapıştır Butonu
+            // Vardiya Yapıştır Butonu (Edit Mode aktifse)
             if (isEditingActive && !document.getElementById('btn-bulk-shift')) {
                 const b = document.createElement('button');
                 b.id = 'btn-bulk-shift';
                 b.className = 'admin-btn';
                 b.style.margin = '4px';
                 b.style.background = 'var(--secondary)';
+                b.style.color = 'white';
+                b.style.border = 'none';
+                b.style.padding = '8px 12px';
+                b.style.borderRadius = '4px';
+                b.style.cursor = 'pointer';
                 b.innerHTML = '<i class="fas fa-paste"></i> Vardiya Yapıştır';
                 b.onclick = openBulkUpdateShiftsPopup;
                 adminFilters.appendChild(b);
             } else if (!isEditingActive && document.getElementById('btn-bulk-shift')) {
                 document.getElementById('btn-bulk-shift').remove();
             }
-            const addBtn = adminFilters.querySelector('.add-btn');
-            if (addBtn) {
-                if (isLocAdmin || hasPerm('AddContent')) addBtn.style.display = '';
-                else addBtn.style.display = 'none';
-            }
-        }
-        if (assignBtn) assignBtn.style.display = 'block';
-        if (manualFeedbackBtn) manualFeedbackBtn.style.display = 'flex';
-
-        // Grup filtresi dropdown'u admin kullanıcı listesi gelince dolacak
-        if (adminUserList.length) {
-            const groupSelect = document.getElementById('q-admin-group');
-            if (groupSelect) {
-                const groups = [...new Set(adminUserList.map(u => u.group).filter(Boolean))].sort();
-                groupSelect.innerHTML = `<option value="all">Tüm Gruplar</option>` + groups.map(g => `<option value="${g}">${g}</option>`).join('');
-                try { updateAgentListBasedOnGroup(); } catch (e) { }
-            }
         }
     } else {
         if (adminFilters) adminFilters.style.display = 'none';
-        if (assignBtn) assignBtn.style.display = 'none';
-        if (manualFeedbackBtn) manualFeedbackBtn.style.display = 'none';
     }
 
 
