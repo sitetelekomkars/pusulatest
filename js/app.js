@@ -1519,20 +1519,8 @@ async function sendHeartbeat() {
             return;
         }
 
-        // 2. Token Kontrolü (Single Session Enforcement)
-        const localToken = localStorage.getItem("sSportToken");
-        const { data: tokenData } = await sb.from('Tokens')
-            .select('Token')
-            .eq('Username', currentUser)
-            .maybeSingle();
-
-        if (!tokenData || tokenData.Token !== localToken) {
-            Swal.fire({
-                icon: 'warning', title: 'Oturum Kesildi',
-                text: 'Oturumunuz başka bir cihazda açılmış veya sonlandırılmış olabilir.',
-                allowOutsideClick: false, confirmButtonText: 'Tamam'
-            }).then(() => { logout(); });
-        }
+        // Supabase Auth zaten eşzamanlı oturum yönetimini sağlar. 
+        // Özel bir kısıtlama gerekmiyorsa burası boş bırakılabilir veya ek güvenlik kontrolleri eklenebilir.
 
     } catch (e) { console.warn("Heartbeat failed", e); }
 }
