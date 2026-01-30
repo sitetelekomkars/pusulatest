@@ -684,15 +684,12 @@ async function apiCall(action, params = {}) {
 
                 if (!data || data.length === 0) return { result: "success", shifts: {} };
 
-                // İlk satırdan tarih formatındaki kolonları bulalım ve sıralayalım
-                const allKeys = Object.keys(data[0]);
-                const dateHeaders = allKeys.filter(k =>
-                    k.match(/^\d{4}-\d{2}-\d{2}/)
-                ).sort(); // YYYY-MM-DD olduğu için alfabetik sort kronolojiktir
+                // Sabit gün sütunları (yeni yapı)
+                const dayHeaders = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
 
                 const rows = data.map(r => ({
                     name: r.Temsilci || r.temsilci || r.Name || r.username || '-',
-                    cells: dateHeaders.map(h => r[h] || '')
+                    cells: dayHeaders.map(h => r[h] || '')
                 }));
 
                 // Mevcut kullanıcının satırını bul
@@ -703,10 +700,10 @@ async function apiCall(action, params = {}) {
                 return {
                     result: "success",
                     shifts: {
-                        headers: dateHeaders,
+                        headers: dayHeaders,
                         rows: rows,
                         myRow: myRow,
-                        weekLabel: dateHeaders.length > 0 ? `${dateHeaders[0]} - ${dateHeaders[dateHeaders.length - 1]}` : ''
+                        weekLabel: 'Haftalık Vardiya Planı'
                     }
                 };
             }
