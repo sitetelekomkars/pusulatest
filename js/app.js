@@ -1103,7 +1103,6 @@ function enterBas(e) {
     if (e.key === 'Enter') girisYap();
 }
 let wizardStepsData = {};
-let trainingData = [];
 // YENİ: Chart instance'ı tutmak için
 let dashboardChart = null;
 let dashTrendChart = null;
@@ -1111,7 +1110,6 @@ let dashChannelChart = null;
 let dashScoreDistChart = null;
 let dashGroupAvgChart = null;
 // YENİ: Feedback Log Verisi (Manuel kayıt detayları için)
-let feedbackLogsData = [];
 // ==========================================================
 // --- KALİTE PUANLAMA LOGİĞİ V2 (PROFESYONEL) ---
 // ==========================================================
@@ -8364,8 +8362,6 @@ async function kickUser(username, token) {
 // ============================================================
 // --- GELİŞMİŞ YETKİ YÖNETİMİ (RBAC) (v14.2) ---
 // ============================================================
-
-let allRolePermissions = []; // Backend'den gelen tüm yetki listesi
 
 async function fetchUserListForAdmin() {
     try {
