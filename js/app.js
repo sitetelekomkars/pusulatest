@@ -678,37 +678,38 @@ async function apiCall(action, params = {}) {
                 return { result: "success", criteria };
             }
             case "getShiftData": {
-    const { data, error } = await sb.from('Vardiya').select('*');
-    if (error) throw error;
+                // User screenshot shows table name is "Vardiya" and schema is horizontal (columns are dates)
+                const { data, error } = await sb.from('Vardiya').select('*');
+                if (error) throw error;
 
-    if (!data || data.length === 0) {
-        return { result: "success", shifts: null };
-    }
+                if (!data || data.length === 0) return { result: "success", shifts: {} };
 
-    // 📌 Senin tablo yapına birebir uygun
-    const dayHeaders = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
+                // İlk satırdan tarih formatındaki kolonları bulalım ve sıralayalım
+                const allKeys = Object.keys(data[0]);
+                const dateHeaders = allKeys.filter(k =>
+                    k.match(/^\d{4}-\d{2}-\d{2}/)
+                ).sort(); // YYYY-MM-DD olduğu için alfabetik sort kronolojiktir
 
-    const rows = data.map(r => ({
-        name: r.Temsilci,
-        cells: dayHeaders.map(d => r[d] || "OFF")
-    }));
+                const rows = data.map(r => ({
+                    name: r.Temsilci || r.temsilci || r.Name || r.username || '-',
+                    cells: dateHeaders.map(h => r[h] || '')
+                }));
 
-    const myRow = rows.find(r =>
-        String(r.name).trim().toLowerCase() ===
-        String(currentUser).trim().toLowerCase()
-    );
+                // Mevcut kullanıcının satırını bul
+                const myRow = rows.find(r =>
+                    String(r.name).trim().toLowerCase() === String(currentUser).trim().toLowerCase()
+                );
 
-    return {
-        result: "success",
-        shifts: {
-            headers: dayHeaders,
-            rows: rows,
-            myRow: myRow,
-            weekLabel: "Haftalık Vardiya"
-        }
-    };
-}
-
+                return {
+                    result: "success",
+                    shifts: {
+                        headers: dateHeaders,
+                        rows: rows,
+                        myRow: myRow,
+                        weekLabel: dateHeaders.length > 0 ? `${dateHeaders[0]} - ${dateHeaders[dateHeaders.length - 1]}` : ''
+                    }
+                };
+            }
             case "submitShiftRequest": {
                 const { error } = await sb.from('ShiftRequests').insert([{
                     username: currentUser,
@@ -9077,56 +9078,29 @@ async function showMappingPopup(headers, requiredFields, title = "Sütunları E�
 async function openBulkUpdateBroadcastPopup() {
     const { value: text } = await Swal.fire({
         title: '📺 Yayın Akışı Toplu Güncelle',
-        html: `
-            <div style="text-align:left; font-size:0.85rem; color:#666; margin-bottom:10px;">
-                Excel veya Google Sheets'ten kopyaladığınız tabloyu buraya yapıştırın.<br>
-                <b>Sütun Başlıkları:</b> Saat, Program, Kanal, Tarih
-            </div>
-            <textarea id="bulk-tsv" class="swal2-textarea" style="height:200px;" placeholder="Excel'den kopyalayıp buraya yapıştırın..."></textarea>
-        `,
-        width: 600, showCancelButton: true, confirmButtonText: 'Veriyi İşle',
+        html: `<textarea id="bulk-tsv" class="swal2-textarea" style="height:150px;" placeholder="Excel'den yapıştırın..."></textarea>`,
+        showCancelButton: true, confirmButtonText: 'İleri',
         preConfirm: () => document.getElementById('bulk-tsv').value
     });
 
     if (text) {
         const parts = parseTSV(text);
-        if (parts.rows.length === 0) { Swal.fire('Hata', 'Geçerli bir tablo verisi bulunamadı.', 'error'); return; }
+        if (parts.rows.length === 0) return;
 
-        // Mapping Adımı
-        const mapping = await showMappingPopup(parts.headers, {
-            "saat": "Yayın Saati (Örn: 21:45)",
-            "program": "Program / Etkinlik Adı",
-            "kanal": "Yayın Kanalı",
-            "tarih": "Yayın Tarihi (Örn: 20.01.2024)"
+        const items = await showAdvancedMappingPopup(parts, {
+            "saat": "Saat",
+            "program": "Program Adı",
+            "kanal": "Kanal",
+            "tarih": "Tarih (GG.AA.YYYY)"
         }, "📺 Yayın Akışı Eşleştirme");
 
-        if (!mapping) return;
-
-        // Veriyi mapping'e göre objelere çevir
-        const items = parts.rows.map(row => {
-            const obj = {};
-            Object.keys(mapping).forEach(targetKey => {
-                const colIdx = mapping[targetKey];
-                obj[targetKey] = row[colIdx] || "";
-            });
-            return obj;
-        });
-
-        const confirmed = await Swal.fire({
-            title: 'Onaylıyor musunuz?',
-            text: `${items.length} adet yayın kaydı işlendi. MEVCUT TÜM AKIŞ SİLİNECEKTİR.`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Evet, Hepsini Değiştir'
-        });
-
-        if (confirmed.isConfirmed) {
+        if (items) {
             Swal.fire({ title: 'Güncelleniyor...', didOpen: () => Swal.showLoading() });
             const res = await apiCall("bulkUpdateBroadcast", { items });
             if (res.result === "success") {
-                Swal.fire('Başarılı', 'Yayın akışı güncellendi.', 'success').then(() => openBroadcastFlow());
+                Swal.fire('Başarılı', 'Güncellendi.', 'success').then(() => openBroadcastFlow());
             } else {
-                Swal.fire('Hata', res.message || 'İşlem başarısız.', 'error');
+                Swal.fire('Hata', res.message, 'error');
             }
         }
     }
@@ -9135,50 +9109,37 @@ async function openBulkUpdateBroadcastPopup() {
 
 async function openBulkUpdateShiftsPopup() {
     const { value: text } = await Swal.fire({
-        title: '📅 Vardiya Toplu Yapıştır',
-        html: `
-            <div style="text-align:left; font-size:0.85rem; color:#666; margin-bottom:10px;">
-                Tarih başlıkları (YYYY-MM-DD) olan vardiya tablonuzu yapıştırın.<br>
-                <b>İlk Sütun:</b> Temsilci
-            </div>
-            <textarea id="bulk-tsv-shift" class="swal2-textarea" style="height:200px;" placeholder="Excel tablosunu buraya yapıştırın..."></textarea>
-        `,
-        width: 800, showCancelButton: true, confirmButtonText: 'Vardiyaları Güncelle',
+        title: '📅 Vardiya Toplu Güncelle',
+        html: `<textarea id="bulk-tsv-shift" class="swal2-textarea" style="height:150px;" placeholder="Excel'den kopyalayıp buraya yapıştırın..."></textarea>`,
+        width: 600, showCancelButton: true, confirmButtonText: 'İleri',
         preConfirm: () => document.getElementById('bulk-tsv-shift').value
     });
 
     if (text) {
         const parts = parseTSV(text);
-        if (parts.rows.length === 0) { Swal.fire('Hata', 'Veri bulunamadı.', 'error'); return; }
+        if (parts.rows.length === 0) return;
 
-        // Mapping Adımı (Vardiya için sadece Temsilci sütununu sormak yeterli)
-        const mapping = await showMappingPopup(parts.headers, {
-            "agent": "Temsilci Sütunu (İsim veya S Sport ID)"
-        }, "📅 Vardiya Sütun Eşleştirme");
+        const shiftFields = {
+            "Temsilci": "Temsilci Adı",
+            "Pazartesi": "Pazartesi",
+            "Salı": "Salı",
+            "Çarşamba": "Çarşamba",
+            "Perşembe": "Perşembe",
+            "Cuma": "Cuma",
+            "Cumartesi": "Cumartesi",
+            "Pazar": "Pazar"
+        };
 
-        if (!mapping) return;
+        const items = await showAdvancedMappingPopup(parts, shiftFields, "📅 Vardiya Kolon Eşleştirme");
 
-        // Vardiya verisini işle
-        // Temsilci sütunu dışındaki tüm sütunları tarih olarak kabul et
-        const agentIdx = mapping["agent"];
-        const items = parts.rows.map(row => {
-            const obj = { "Temsilci": row[agentIdx] || "" };
-            parts.headers.forEach((h, i) => {
-                if (i === agentIdx) return;
-                // Eğer başlık bir tarih formatındaysa (yada herhangi bir başlıksa) ekle
-                if (h.length > 0) {
-                    obj[h] = row[i] || "";
-                }
-            });
-            return obj;
-        });
-
-        Swal.fire({ title: 'Vardiyalar İşleniyor...', didOpen: () => Swal.showLoading() });
-        const res = await apiCall("bulkUpdateShifts", { items });
-        if (res.result === "success") {
-            Swal.fire('Başarılı', 'Vardiya tablosu güncellendi.', 'success').then(() => openShiftArea());
-        } else {
-            Swal.fire('Hata', res.message || 'Güncellenemedi.', 'error');
+        if (items) {
+            Swal.fire({ title: 'Vardiyalar İşleniyor...', didOpen: () => Swal.showLoading() });
+            const res = await apiCall("bulkUpdateShifts", { items });
+            if (res.result === "success") {
+                Swal.fire('Başarılı', 'Vardiya tablosu güncellendi.', 'success').then(() => openShiftArea());
+            } else {
+                Swal.fire('Hata', res.message || 'Veritabanı sütun hatası!', 'error');
+            }
         }
     }
 }
