@@ -678,38 +678,37 @@ async function apiCall(action, params = {}) {
                 return { result: "success", criteria };
             }
             case "getShiftData": {
-                // User screenshot shows table name is "Vardiya" and schema is horizontal (columns are dates)
-                const { data, error } = await sb.from('Vardiya').select('*');
-                if (error) throw error;
+    const { data, error } = await sb.from('Vardiya').select('*');
+    if (error) throw error;
 
-                if (!data || data.length === 0) return { result: "success", shifts: {} };
+    if (!data || data.length === 0) {
+        return { result: "success", shifts: null };
+    }
 
-                // İlk satırdan tarih formatındaki kolonları bulalım ve sıralayalım
-                const allKeys = Object.keys(data[0]);
-                const dateHeaders = allKeys.filter(k =>
-                    k.match(/^\d{4}-\d{2}-\d{2}/)
-                ).sort(); // YYYY-MM-DD olduğu için alfabetik sort kronolojiktir
+    // 📌 Senin tablo yapına birebir uygun
+    const dayHeaders = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
 
-                const rows = data.map(r => ({
-                    name: r.Temsilci || r.temsilci || r.Name || r.username || '-',
-                    cells: dateHeaders.map(h => r[h] || '')
-                }));
+    const rows = data.map(r => ({
+        name: r.Temsilci,
+        cells: dayHeaders.map(d => r[d] || "OFF")
+    }));
 
-                // Mevcut kullanıcının satırını bul
-                const myRow = rows.find(r =>
-                    String(r.name).trim().toLowerCase() === String(currentUser).trim().toLowerCase()
-                );
+    const myRow = rows.find(r =>
+        String(r.name).trim().toLowerCase() ===
+        String(currentUser).trim().toLowerCase()
+    );
 
-                return {
-                    result: "success",
-                    shifts: {
-                        headers: dateHeaders,
-                        rows: rows,
-                        myRow: myRow,
-                        weekLabel: dateHeaders.length > 0 ? `${dateHeaders[0]} - ${dateHeaders[dateHeaders.length - 1]}` : ''
-                    }
-                };
-            }
+    return {
+        result: "success",
+        shifts: {
+            headers: dayHeaders,
+            rows: rows,
+            myRow: myRow,
+            weekLabel: "Haftalık Vardiya"
+        }
+    };
+}
+
             case "submitShiftRequest": {
                 const { error } = await sb.from('ShiftRequests').insert([{
                     username: currentUser,
