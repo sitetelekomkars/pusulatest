@@ -1294,12 +1294,18 @@ async function checkSession() {
         const user = session.user;
 
         // Profil bilgilerini çek (rol, grup vs.)
-        const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+        const { data: profile, error: profileErr } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+
+        if (profileErr) {
+            console.error("[Pusula] Profil çekilirken hata oluştu:", profileErr);
+        }
 
         if (!profile) {
             // Eğer profil yoksa (henüz oluşturulmamışsa)
-            console.warn("[Pusula] Profil bulunamadı. Kullanıcı yetkisiz olarak devam ediyor.");
-            logout();
+            console.warn("[Pusula] Profil bulunamadı. UID:", user.id);
+            Swal.fire('Hata', 'Profiliniz veritabanında bulunamadı. Lütfen yöneticiye başvurun.', 'error').then(() => {
+                logout();
+            });
             return;
         }
 
@@ -1362,8 +1368,11 @@ async function girisYap() {
 
     try {
         // Supabase Auth Girişi
+        const loginEmail = uEmail.includes('@') ? uEmail : `${uEmail}@sitetelekom.com.tr`;
+        console.log("[Pusula] Giriş denemesi:", loginEmail);
+
         const { data, error } = await sb.auth.signInWithPassword({
-            email: uEmail.includes('@') ? uEmail : `${uEmail}@ssportplus.com`,
+            email: loginEmail,
             password: uPass
         });
 
