@@ -2269,6 +2269,10 @@ function toggleEditMode() {
     }
     filterContent();
     try { if (currentCategory === 'home') renderHomePanels(); } catch (e) { }
+    // Fullscreen alanlarını güncelle (eğer açıklarsa butonların gelmesi için)
+    if (document.getElementById('quality-fullscreen').style.display === 'flex') openQualityArea();
+    if (document.getElementById('shift-fullscreen').style.display === 'flex') openShiftArea();
+
     if (document.getElementById('guide-modal').style.display === 'flex') openGuide();
     if (document.getElementById('sales-modal').style.display === 'flex') openSales();
     if (document.getElementById('news-modal').style.display === 'flex') openNews();
@@ -2702,7 +2706,8 @@ async function openBroadcastFlow() {
       </style>
     `;
 
-        let html = `${css}<div class="ba-wrap">`;
+        let btnHtml = isEditingActive ? `<div style="text-align:right; margin-bottom:10px;"><button class="x-btn-admin" onclick="openBulkUpdateBroadcastPopup()" style="background:var(--secondary); font-size:0.8rem; border:none; color:white; padding:8px 12px; border-radius:4px; cursor:pointer;"><i class="fas fa-file-import"></i> Toplu Güncelle (Excel)</button></div>` : '';
+        let html = `${css}${btnHtml}<div class="ba-wrap">`;
         html += `
       <div class="ba-legend">
         <span class="ba-dot"><i class="up"></i> Yaklaşan / Gelecek</span>
@@ -3717,9 +3722,31 @@ function twResetWizard() { twState.currentStep = 'start'; twState.history = []; 
 // ==========================================================
 // Modülü Aç
 // Redundant Quality functions removed.
+function populateFeedbackMonthFilter() {
+    const el = document.getElementById('q-feedback-month');
+    if (!el) return;
+    // if (el.innerHTML !== '') return; // Her ihtimale karşı doldur
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    el.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+        let month = (currentMonth - i + 12) % 12;
+        let year = currentYear - (currentMonth - i < 0 ? 1 : 0);
+        const value = `${String(month + 1).padStart(2, '0')}.${year}`;
+        const text = `${MONTH_NAMES[month]} ${year}`;
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        if (i === 0) opt.selected = true;
+        el.appendChild(opt);
+    }
+}
 // --- DASHBOARD FONKSİYONLARI ---
 function populateMonthFilterFull() {
-    const selectIds = ['q-dash-month', 'q-eval-month']; // Dashboard + Değerlendirme listesi
+    const selectIds = ['q-dash-month', 'q-eval-month', 'q-feedback-month']; // Tüm ay filtrelerini doldur
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
