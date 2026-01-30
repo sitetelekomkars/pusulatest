@@ -686,7 +686,7 @@ async function apiCall(action, params = {}) {
     }
 
     // 📌 Senin tablo yapına birebir uygun
-    const dayHeaders = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
+    const dayHeaders = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
 
     const rows = data.map(r => ({
         name: r.Temsilci,
