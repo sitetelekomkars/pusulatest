@@ -6410,6 +6410,47 @@ async function openQualityArea() {
     switchQualityTab('dashboard');
 }
 
+// Modülü Kapat
+function closeFullQuality() {
+    document.getElementById('quality-fullscreen').style.display = 'none';
+    document.body.classList.remove('fs-open');
+    document.body.style.overflow = '';
+    // Eğer qusers ise (sadece kalite yetkisi varsa) logout yapmalı veya uyarı vermeli
+    if (localStorage.getItem("sSportRole") === 'qusers') {
+        logout();
+    }
+}
+
+// Sekme Değiştirme
+function switchQualityTab(tabName, element) {
+    // Menu active class
+    document.querySelectorAll('#quality-fullscreen .q-nav-item').forEach(item => item.classList.remove('active'));
+
+    // Element varsa onu aktif yap, yoksa nav içerisinden bul
+    if (element) {
+        element.classList.add('active');
+    } else {
+        const navItem = document.querySelector(`#quality-fullscreen .q-nav-item[onclick*="${tabName}"]`);
+        if (navItem) navItem.classList.add('active');
+    }
+
+    // View active class
+    document.querySelectorAll('#quality-fullscreen .q-view-section').forEach(section => section.classList.remove('active'));
+    const targetView = document.getElementById(`view-${tabName}`);
+    if (targetView) targetView.classList.add('active');
+
+    // Veri Yükleme
+    if (tabName === 'dashboard') loadQualityDashboard();
+    else if (tabName === 'evaluations') fetchEvaluationsForAgent();
+    else if (tabName === 'feedback') {
+        populateFeedbackFilters();
+        populateFeedbackMonthFilter();
+        refreshFeedbackData();
+    }
+    else if (tabName === 'training') loadTrainingData();
+}
+
+
 async function openTelesalesArea() {
     // Menü yetkisi: telesales (TeleSatış) - yetkisiz kullanıcı fullscreen'e giremesin
     try {
@@ -8965,28 +9006,74 @@ function checkQualityNotifications() {
 // ==========================================================
 
 function parseTSV(text) {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
+    const lines = text.trim().split('\n').filter(l => l.trim() !== "");
+    if (lines.length === 0) return { headers: [], rows: [] };
 
-    // Headerları temizle (Türkçe karakter ve boşlukları normalize et)
     const headers = lines[0].split('\t').map(h => h.trim());
+    const rows = lines.slice(1).map(line => line.split('\t').map(v => v.trim()));
 
-    return lines.slice(1).map(line => {
-        const values = line.split('\t');
-        const obj = {};
-        headers.forEach((h, i) => {
-            let val = (values[i] || "").trim();
-            // Sayısal değerleri çevir
-            if (val !== "" && !isNaN(val) && !val.includes('-')) {
-                if (/^[0-9.,]+$/.test(val)) {
-                    val = Number(val.replace(',', '.'));
-                }
-            }
-            obj[h] = val;
-        });
-        return obj;
-    });
+    return { headers, rows };
 }
+
+async function showMappingPopup(headers, requiredFields, title = "Sütunları Eşleştir") {
+    let html = `<div style="text-align:left; font-size:0.9rem;">
+        <p style="margin-bottom:15px; color:#666;">Yüklediğiniz tablodaki sütunların, sistemdeki hangi alanlara karşılık geldiğini seçin.</p>`;
+
+    Object.keys(requiredFields).forEach(targetKey => {
+        const label = requiredFields[targetKey];
+        html += `<div style="margin-bottom:12px;">
+            <label style="display:block; font-weight:700; margin-bottom:4px; color:var(--primary);">${label}</label>
+            <select id="map-${targetKey}" class="swal2-select" style="margin:0; width:100%; height:38px; font-size:0.9rem;">
+                <option value="">-- Atla / Yok --</option>
+                ${headers.map((h, i) => `<option value="${i}">${h}</option>`).join('')}
+            </select>
+        </div>`;
+    });
+    html += '</div>';
+
+    const { value: mapping } = await Swal.fire({
+        title: title,
+        html: html,
+        width: 450,
+        showCancelButton: true,
+        confirmButtonText: 'Devam Et',
+        cancelButtonText: 'Vazgeç',
+        didOpen: () => {
+            // Akıllı eşleşme denemesi
+            Object.keys(requiredFields).forEach(targetKey => {
+                const label = requiredFields[targetKey];
+                const select = document.getElementById(`map-${targetKey}`);
+
+                // Hem label hem targetKey üzerinden benzerlik ara
+                const searchNames = [label.toLowerCase(), targetKey.toLowerCase()];
+                const foundIndex = headers.findIndex(h => {
+                    const lowH = h.toLowerCase();
+                    return searchNames.some(sn => lowH.includes(sn) || sn.includes(lowH));
+                });
+
+                if (foundIndex !== -1) select.value = foundIndex;
+            });
+        },
+        preConfirm: () => {
+            const result = {};
+            let hasAny = false;
+            Object.keys(requiredFields).forEach(targetKey => {
+                const val = document.getElementById(`map-${targetKey}`).value;
+                if (val !== "") {
+                    result[targetKey] = parseInt(val);
+                    hasAny = true;
+                }
+            });
+            if (!hasAny) {
+                Swal.showValidationMessage("Lütfen en az bir sütun eşleştirin.");
+                return false;
+            }
+            return result;
+        }
+    });
+    return mapping;
+}
+
 
 async function openBulkUpdateBroadcastPopup() {
     const { value: text } = await Swal.fire({
@@ -9003,12 +9090,32 @@ async function openBulkUpdateBroadcastPopup() {
     });
 
     if (text) {
-        const items = parseTSV(text);
-        if (items.length === 0) { Swal.fire('Hata', 'Geçerli bir tablo verisi bulunamadı.', 'error'); return; }
+        const parts = parseTSV(text);
+        if (parts.rows.length === 0) { Swal.fire('Hata', 'Geçerli bir tablo verisi bulunamadı.', 'error'); return; }
+
+        // Mapping Adımı
+        const mapping = await showMappingPopup(parts.headers, {
+            "saat": "Yayın Saati (Örn: 21:45)",
+            "program": "Program / Etkinlik Adı",
+            "kanal": "Yayın Kanalı",
+            "tarih": "Yayın Tarihi (Örn: 20.01.2024)"
+        }, "📺 Yayın Akışı Eşleştirme");
+
+        if (!mapping) return;
+
+        // Veriyi mapping'e göre objelere çevir
+        const items = parts.rows.map(row => {
+            const obj = {};
+            Object.keys(mapping).forEach(targetKey => {
+                const colIdx = mapping[targetKey];
+                obj[targetKey] = row[colIdx] || "";
+            });
+            return obj;
+        });
 
         const confirmed = await Swal.fire({
             title: 'Onaylıyor musunuz?',
-            text: `${items.length} adet yayın kaydı eklenecek. MEVCUT TÜM AKIŞ SİLİNECEKTİR.`,
+            text: `${items.length} adet yayın kaydı işlendi. MEVCUT TÜM AKIŞ SİLİNECEKTİR.`,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Evet, Hepsini Değiştir'
@@ -9026,6 +9133,7 @@ async function openBulkUpdateBroadcastPopup() {
     }
 }
 
+
 async function openBulkUpdateShiftsPopup() {
     const { value: text } = await Swal.fire({
         title: '📅 Vardiya Toplu Yapıştır',
@@ -9041,8 +9149,30 @@ async function openBulkUpdateShiftsPopup() {
     });
 
     if (text) {
-        const items = parseTSV(text);
-        if (items.length === 0) { Swal.fire('Hata', 'Veri bulunamadı.', 'error'); return; }
+        const parts = parseTSV(text);
+        if (parts.rows.length === 0) { Swal.fire('Hata', 'Veri bulunamadı.', 'error'); return; }
+
+        // Mapping Adımı (Vardiya için sadece Temsilci sütununu sormak yeterli)
+        const mapping = await showMappingPopup(parts.headers, {
+            "agent": "Temsilci Sütunu (İsim veya S Sport ID)"
+        }, "📅 Vardiya Sütun Eşleştirme");
+
+        if (!mapping) return;
+
+        // Vardiya verisini işle
+        // Temsilci sütunu dışındaki tüm sütunları tarih olarak kabul et
+        const agentIdx = mapping["agent"];
+        const items = parts.rows.map(row => {
+            const obj = { "Temsilci": row[agentIdx] || "" };
+            parts.headers.forEach((h, i) => {
+                if (i === agentIdx) return;
+                // Eğer başlık bir tarih formatındaysa (yada herhangi bir başlıksa) ekle
+                if (h.length > 0) {
+                    obj[h] = row[i] || "";
+                }
+            });
+            return obj;
+        });
 
         Swal.fire({ title: 'Vardiyalar İşleniyor...', didOpen: () => Swal.showLoading() });
         const res = await apiCall("bulkUpdateShifts", { items });
