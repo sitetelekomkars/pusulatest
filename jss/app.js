@@ -452,88 +452,106 @@ async function apiCall(action, params = {}) {
                 saveLog("Kullanıcı Profil Silme", `ID: ${params.id}`);
                 return { result: "success" };
             }
-                // ... (skip unchanged lines) ...
+            case "exportEvaluations": {
+                // Rapor için verileri çek ve formatla
+                let query = sb.from('Evaluations').select('*');
+                if (params.targetAgent !== 'all') query = query.ilike('AgentName', params.targetAgent);
+                if (params.targetGroup !== 'all') query = query.ilike('Group', params.targetGroup);
 
-                if (inputVal) {
-                    let identifier = inputVal.trim();
-                    // Domain eklemeyi kaldırdık, GAS arka planda profilden bulacak.
+                const { data, error } = await query.order('id', { ascending: false });
+                if (error) throw error;
 
-                    Swal.fire({ title: 'Gönderiliyor...', didOpen: () => { Swal.showLoading() } });
+                const normalized = (data || []).map(normalizeKeys);
+                const filtered = params.targetPeriod === 'all' ? normalized : normalized.filter(e => {
+                    // Tarih formatı: "DD.MM.YYYY" veya ISO
+                    const d = e.callDate || e.date;
+                    if (!d) return false;
 
+                    if (d.includes('.')) {
+                        const p = d.split('.');
+                        if (p.length >= 3) {
+                            const mm = p[1];
+                            const yyyy = p[2].split(' ')[0];
+                            return `${mm}-${yyyy}` === params.targetPeriod;
+                        }
+                    } else if (d.includes('-')) {
+                        const p = d.split('-');
+                        if (p.length >= 2) {
+                            const yyyy = p[0];
+                            const mm = p[1];
+                            return `${mm}-${yyyy}` === params.targetPeriod;
+                        }
+                    }
+                    return false;
+                });
+
+                // --- DİNAMİK KIRILIM SÜTUNLARI (BUG FIX: Kırılım Kırılım Göster) ---
+                let dynamicHeaders = [];
+                let questionMap = new Set();
+
+                // 1. Tüm benzersiz kriterleri (soruları) topla
+                filtered.forEach(e => {
                     try {
-                        // ✅ CUSTOM FLOW: Google Apps Script üzerinden gönderim
-                        const res = await fetch(GAS_MAIL_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                action: "resetPassword",
-                                email: identifier // Username veya Email olabilir
-                            })
-                        });
+                        const dObj = typeof e.details === 'string' ? JSON.parse(e.details) : e.details;
+                        if (Array.isArray(dObj)) {
+                            dObj.forEach(it => {
+                                if (it.q) questionMap.add(it.q);
+                            });
+                        }
+                    } catch (err) { }
+                });
 
-                        // no-cors modunda yanıt okuyamayız, bu yüzden başarılı varsayarız.
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Başarılı',
-                            text: 'Şifre sıfırlama bağlantısı sistemde kayıtlı e-posta adresinize gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
-                            confirmButtonText: 'Tamam'
-                        });
+                const uniqueQuestions = Array.from(questionMap);
+                uniqueQuestions.forEach(q => {
+                    dynamicHeaders.push(q);
+                    dynamicHeaders.push(`Not (${q})`);
+                });
 
-                    } catch (e) {
-                    });
+                // Zengin Rapor Formatı (Old System Style)
+                const headers = [
+                    "Log Tarihi", "Değerleyen", "Temsilci", "Grup", "Call ID",
+                    "Puan", "Genel Geri Bildirim", "Durum", "Temsilci Notu",
+                    "Yönetici Cevabı", "Çağrı Tarihi", ...dynamicHeaders
+                ];
 
-                    const uniqueQuestions = Array.from(questionMap);
-                    uniqueQuestions.forEach(q => {
-                        dynamicHeaders.push(q);
-                        dynamicHeaders.push(`Not (${q})`);
-                    });
-
-                    // Zengin Rapor Formatı (Old System Style)
-                    const headers = [
-                        "Log Tarihi", "Değerleyen", "Temsilci", "Grup", "Call ID",
-                        "Puan", "Genel Geri Bildirim", "Durum", "Temsilci Notu",
-                        "Yönetici Cevabı", "Çağrı Tarihi", ...dynamicHeaders
+                const rows = filtered.map(e => {
+                    let baseRow = [
+                        e.date || '', // Log Tarihi (Zaten DD.MM.YYYY formatında)
+                        e.evaluator || '',
+                        e.agentName || e.agent || '',
+                        e.group || '',
+                        e.callId || '',
+                        e.score || 0,
+                        e.feedback || '',
+                        e.status || e.durum || '',
+                        e.agentNote || '',
+                        e.managerReply || '',
+                        e.callDate || ''
                     ];
 
-                    const rows = filtered.map(e => {
-                        let baseRow = [
-                            e.date || '', // Log Tarihi (Zaten DD.MM.YYYY formatında)
-                            e.evaluator || '',
-                            e.agentName || e.agent || '',
-                            e.group || '',
-                            e.callId || '',
-                            e.score || 0,
-                            e.feedback || '',
-                            e.status || e.durum || '',
-                            e.agentNote || '',
-                            e.managerReply || '',
-                            e.callDate || ''
-                        ];
+                    // Kriter detaylarını ayıkla
+                    let evalDetails = [];
+                    try {
+                        evalDetails = typeof e.details === 'string' ? JSON.parse(e.details) : (e.details || []);
+                        if (!Array.isArray(evalDetails)) evalDetails = [];
+                    } catch (err) { evalDetails = []; }
 
-                        // Kriter detaylarını ayıkla
-                        let evalDetails = [];
-                        try {
-                            evalDetails = typeof e.details === 'string' ? JSON.parse(e.details) : (e.details || []);
-                            if (!Array.isArray(evalDetails)) evalDetails = [];
-                        } catch (err) { evalDetails = []; }
-
-                        // Her bir benzersiz soru için puan ve not sütunlarını doldur
-                        uniqueQuestions.forEach(q => {
-                            const match = evalDetails.find(it => it.q === q);
-                            if (match) {
-                                baseRow.push(match.score);
-                                baseRow.push(match.note || '');
-                            } else {
-                                baseRow.push('');
-                                baseRow.push('');
-                            }
-                        });
-
-                        return baseRow;
+                    // Her bir benzersiz soru için puan ve not sütunlarını doldur
+                    uniqueQuestions.forEach(q => {
+                        const match = evalDetails.find(it => it.q === q);
+                        if (match) {
+                            baseRow.push(match.score);
+                            baseRow.push(match.note || '');
+                        } else {
+                            baseRow.push('');
+                            baseRow.push('');
+                        }
                     });
-                    return { result: "success", headers, data: rows, fileName: `Evaluations_${params.targetPeriod}.xls` };
-                }
+
+                    return baseRow;
+                });
+                return { result: "success", headers, data: rows, fileName: `Evaluations_${params.targetPeriod}.xls` };
+            }
             case "updateEvaluation": {
                 const { error } = await sb.from('Evaluations').update({
                     CallDate: params.callDate,
@@ -1485,11 +1503,8 @@ async function forgotPasswordPopup() {
     });
 
     if (inputVal) {
-        let emailToSend = inputVal.trim();
-        // Eğer @ içermiyorsa sonuna domain ekle
-        if (!emailToSend.includes('@')) {
-            emailToSend += "@ssportplus.com";
-        }
+        let identifier = inputVal.trim();
+        // Domain eklemeyi kaldırdık, GAS arka planda profilden bulacak.
 
         Swal.fire({ title: 'Gönderiliyor...', didOpen: () => { Swal.showLoading() } });
 
@@ -1501,7 +1516,7 @@ async function forgotPasswordPopup() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: "resetPassword",
-                    email: emailToSend
+                    email: identifier
                 })
             });
 
@@ -1510,7 +1525,7 @@ async function forgotPasswordPopup() {
             Swal.fire({
                 icon: 'success',
                 title: 'Başarılı',
-                text: 'Şifre sıfırlama bağlantısı e-posta adresinize (' + emailToSend + ') gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
+                text: 'Şifre sıfırlama bağlantısı sistemde kayıtlı e-posta adresinize gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
                 confirmButtonText: 'Tamam'
             });
 
