@@ -1496,7 +1496,7 @@ async function forgotPasswordPopup() {
         title: 'Şifre Sıfırlama',
         input: 'text', // Email yerine text (Kullanıcı adı da girilebilsin)
         inputLabel: 'Kullanıcı Adı veya E-posta',
-        inputPlaceholder: 'Örn: ad.soyad veya ad.soyad@ssportplus.com',
+        inputPlaceholder: 'Örn: fener',
         showCancelButton: true,
         confirmButtonText: 'Sıfırlama Linki Gönder',
         cancelButtonText: 'İptal'
