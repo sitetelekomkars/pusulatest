@@ -432,555 +432,538 @@ async function apiCall(action, params = {}) {
                     return { result: "error", message: "Yeni kullanıcılar Supabase Dashboard üzerinden eklenmelidir." };
                 }
 
-                username: username,
+                const payload = {
+                    username: username,
                     full_name: fullName,
-                        role: role,
-                            group_name: group
-            };
+                    role: role,
+                    group_name: group
+                };
 
                 const { error } = await sb.from('profiles').update(payload).eq('id', id);
                 if (error) throw error;
 
                 saveLog("Kullanıcı Profil Güncelleme", `${username} (ID: ${id})`);
                 return { result: "success" };
-        }
+            }
             case "deleteUser": {
-            // Profili sil (Auth kullanıcısı Dashboard'dan silinmeli/engellenmeli)
-            const { error } = await sb.from('profiles').delete().eq('id', params.id);
-            if (error) throw error;
-            saveLog("Kullanıcı Profil Silme", `ID: ${params.id}`);
-            return { result: "success" };
-        }
-            case "exportEvaluations": {
-            // Rapor için verileri çek ve formatla
-            let query = sb.from('Evaluations').select('*');
-            if (params.targetAgent !== 'all') query = query.ilike('AgentName', params.targetAgent);
-            if (params.targetGroup !== 'all') query = query.ilike('Group', params.targetGroup);
+                // Profili sil (Auth kullanıcısı Dashboard'dan silinmeli/engellenmeli)
+                const { error } = await sb.from('profiles').delete().eq('id', params.id);
+                if (error) throw error;
+                saveLog("Kullanıcı Profil Silme", `ID: ${params.id}`);
+                return { result: "success" };
+            }
+                // ... (skip unchanged lines) ...
 
-            const { data, error } = await query.order('id', { ascending: false });
-            if (error) throw error;
+                if (inputVal) {
+                    let identifier = inputVal.trim();
+                    // Domain eklemeyi kaldırdık, GAS arka planda profilden bulacak.
 
-            const normalized = (data || []).map(normalizeKeys);
-            const filtered = params.targetPeriod === 'all' ? normalized : normalized.filter(e => {
-                // Tarih formatı: "DD.MM.YYYY" veya ISO
-                const d = e.callDate || e.date;
-                if (!d) return false;
+                    Swal.fire({ title: 'Gönderiliyor...', didOpen: () => { Swal.showLoading() } });
 
-                if (d.includes('.')) {
-                    const p = d.split('.');
-                    if (p.length >= 3) {
-                        const mm = p[1];
-                        const yyyy = p[2].split(' ')[0];
-                        return `${mm}-${yyyy}` === params.targetPeriod;
-                    }
-                } else if (d.includes('-')) {
-                    const p = d.split('-');
-                    if (p.length >= 2) {
-                        const yyyy = p[0];
-                        const mm = p[1];
-                        return `${mm}-${yyyy}` === params.targetPeriod;
-                    }
+                    try {
+                        // ✅ CUSTOM FLOW: Google Apps Script üzerinden gönderim
+                        const res = await fetch(GAS_MAIL_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: "resetPassword",
+                                email: identifier // Username veya Email olabilir
+                            })
+                        });
+
+                        // no-cors modunda yanıt okuyamayız, bu yüzden başarılı varsayarız.
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Başarılı',
+                            text: 'Şifre sıfırlama bağlantısı sistemde kayıtlı e-posta adresinize gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
+                            confirmButtonText: 'Tamam'
+                        });
+
+                    } catch (e) {
+                    });
+
+                    const uniqueQuestions = Array.from(questionMap);
+                    uniqueQuestions.forEach(q => {
+                        dynamicHeaders.push(q);
+                        dynamicHeaders.push(`Not (${q})`);
+                    });
+
+                    // Zengin Rapor Formatı (Old System Style)
+                    const headers = [
+                        "Log Tarihi", "Değerleyen", "Temsilci", "Grup", "Call ID",
+                        "Puan", "Genel Geri Bildirim", "Durum", "Temsilci Notu",
+                        "Yönetici Cevabı", "Çağrı Tarihi", ...dynamicHeaders
+                    ];
+
+                    const rows = filtered.map(e => {
+                        let baseRow = [
+                            e.date || '', // Log Tarihi (Zaten DD.MM.YYYY formatında)
+                            e.evaluator || '',
+                            e.agentName || e.agent || '',
+                            e.group || '',
+                            e.callId || '',
+                            e.score || 0,
+                            e.feedback || '',
+                            e.status || e.durum || '',
+                            e.agentNote || '',
+                            e.managerReply || '',
+                            e.callDate || ''
+                        ];
+
+                        // Kriter detaylarını ayıkla
+                        let evalDetails = [];
+                        try {
+                            evalDetails = typeof e.details === 'string' ? JSON.parse(e.details) : (e.details || []);
+                            if (!Array.isArray(evalDetails)) evalDetails = [];
+                        } catch (err) { evalDetails = []; }
+
+                        // Her bir benzersiz soru için puan ve not sütunlarını doldur
+                        uniqueQuestions.forEach(q => {
+                            const match = evalDetails.find(it => it.q === q);
+                            if (match) {
+                                baseRow.push(match.score);
+                                baseRow.push(match.note || '');
+                            } else {
+                                baseRow.push('');
+                                baseRow.push('');
+                            }
+                        });
+
+                        return baseRow;
+                    });
+                    return { result: "success", headers, data: rows, fileName: `Evaluations_${params.targetPeriod}.xls` };
                 }
-                return false;
-            });
+            case "updateEvaluation": {
+                const { error } = await sb.from('Evaluations').update({
+                    CallDate: params.callDate,
+                    Score: params.score,
+                    Details: params.details,
+                    Feedback: params.feedback,
+                    Durum: params.status
+                }).eq('CallID', params.callId);
+                if (error) throw error;
+                saveLog("Değerlendirme Güncelleme", `CallID: ${params.callId}`);
+                return { result: "success" };
+            }
+            case "markEvaluationSeen": {
+                const { error } = await sb.from('Evaluations').update({ Okundu: true }).eq('CallID', params.callId);
+                if (error) throw error;
+                saveLog("Değerlendirme Okundu İşaretleme", `CallID: ${params.callId}`);
+                return { result: "success" };
+            }
+            case "getTrainings": {
+                const username = localStorage.getItem("sSportUser") || "";
+                const userGroup = localStorage.getItem("sSportGroup") || "";
+                const asAdmin = !!params.asAdmin;
 
-            // --- DİNAMİK KIRILIM SÜTUNLARI (BUG FIX: Kırılım Kırılım Göster) ---
-            let dynamicHeaders = [];
-            let questionMap = new Set();
+                const { data: tData, error: tErr } = await sb.from('Trainings').select('*').order('Date', { ascending: false });
+                if (tErr) throw tErr;
 
-            // 1. Tüm benzersiz kriterleri (soruları) topla
-            filtered.forEach(e => {
+                // Kullanıcı logları
+                let completedSet = new Set();
                 try {
-                    const dObj = typeof e.details === 'string' ? JSON.parse(e.details) : e.details;
-                    if (Array.isArray(dObj)) {
-                        dObj.forEach(it => {
-                            if (it.q) questionMap.add(it.q);
+                    const { data: lData, error: lErr } = await sb.from('Training_Logs').select('*').eq('Username', username);
+                    if (!lErr && Array.isArray(lData)) {
+                        lData.forEach(l => {
+                            const st = String(l.Status || '').toLowerCase();
+                            if (st === 'completed' || st === 'tamamlandi' || st === 'tamamlandı' || l.Status === 1 || l.Status === true) {
+                                completedSet.add(String(l.TrainingID));
+                            }
                         });
                     }
-                } catch (err) { }
-            });
+                } catch (e) { }
 
-            const uniqueQuestions = Array.from(questionMap);
-            uniqueQuestions.forEach(q => {
-                dynamicHeaders.push(q);
-                dynamicHeaders.push(`Not (${q})`);
-            });
+                const filtered = (tData || []).filter(t => {
+                    if (asAdmin) return true;
+                    const tg = String(t.TargetGroup || '').toLowerCase();
+                    const tu = String(t.TargetUser || '').toLowerCase();
+                    const st = String(t.Status || '').toLowerCase();
+                    if (st && st !== 'aktif' && st !== 'active') return false;
 
-            // Zengin Rapor Formatı (Old System Style)
-            const headers = [
-                "Log Tarihi", "Değerleyen", "Temsilci", "Grup", "Call ID",
-                "Puan", "Genel Geri Bildirim", "Durum", "Temsilci Notu",
-                "Yönetici Cevabı", "Çağrı Tarihi", ...dynamicHeaders
-            ];
-
-            const rows = filtered.map(e => {
-                let baseRow = [
-                    e.date || '', // Log Tarihi (Zaten DD.MM.YYYY formatında)
-                    e.evaluator || '',
-                    e.agentName || e.agent || '',
-                    e.group || '',
-                    e.callId || '',
-                    e.score || 0,
-                    e.feedback || '',
-                    e.status || e.durum || '',
-                    e.agentNote || '',
-                    e.managerReply || '',
-                    e.callDate || ''
-                ];
-
-                // Kriter detaylarını ayıkla
-                let evalDetails = [];
-                try {
-                    evalDetails = typeof e.details === 'string' ? JSON.parse(e.details) : (e.details || []);
-                    if (!Array.isArray(evalDetails)) evalDetails = [];
-                } catch (err) { evalDetails = []; }
-
-                // Her bir benzersiz soru için puan ve not sütunlarını doldur
-                uniqueQuestions.forEach(q => {
-                    const match = evalDetails.find(it => it.q === q);
-                    if (match) {
-                        baseRow.push(match.score);
-                        baseRow.push(match.note || '');
-                    } else {
-                        baseRow.push('');
-                        baseRow.push('');
-                    }
+                    if (!tg || tg === 'all' || tg === 'herkes') return true;
+                    if (tg === 'group' || tg === 'grup') return String(userGroup || '').toLowerCase() === tu;
+                    if (tg === 'individual' || tg === 'bireysel') return String(username || '').toLowerCase() === tu;
+                    return String(userGroup || '').toLowerCase() === tg;
                 });
 
-                return baseRow;
-            });
-            return { result: "success", headers, data: rows, fileName: `Evaluations_${params.targetPeriod}.xls` };
-        }
-            case "updateEvaluation": {
-            const { error } = await sb.from('Evaluations').update({
-                CallDate: params.callDate,
-                Score: params.score,
-                Details: params.details,
-                Feedback: params.feedback,
-                Durum: params.status
-            }).eq('CallID', params.callId);
-            if (error) throw error;
-            saveLog("Değerlendirme Güncelleme", `CallID: ${params.callId}`);
-            return { result: "success" };
-        }
-            case "markEvaluationSeen": {
-            const { error } = await sb.from('Evaluations').update({ Okundu: true }).eq('CallID', params.callId);
-            if (error) throw error;
-            saveLog("Değerlendirme Okundu İşaretleme", `CallID: ${params.callId}`);
-            return { result: "success" };
-        }
-            case "getTrainings": {
-            const username = localStorage.getItem("sSportUser") || "";
-            const userGroup = localStorage.getItem("sSportGroup") || "";
-            const asAdmin = !!params.asAdmin;
+                const trainings = filtered.map(t => {
+                    const n = normalizeKeys(t);
+                    n.title = n.title || t.Title || '';
+                    n.desc = n.desc || t.Description || '';
+                    n.link = n.link || t.ContentLink || '';
+                    n.docLink = n.docLink || t.DocLink || '';
+                    n.target = n.target || t.TargetGroup || 'All';
+                    n.targetUser = n.targetUser || t.TargetUser || '';
+                    n.creator = n.creator || t.CreatedBy || '';
+                    n.startDate = n.startDate || t.StartDate || '';
+                    n.endDate = n.endDate || t.EndDate || '';
+                    n.duration = n.duration || t.Duration || '';
+                    n.date = n.date || formatDateToDDMMYYYY(t.Date);
 
-            const { data: tData, error: tErr } = await sb.from('Trainings').select('*').order('Date', { ascending: false });
-            if (tErr) throw tErr;
+                    const idStr = String(t.id || t.ID || n.id || '');
+                    n.isCompleted = completedSet.has(idStr);
+                    return n;
+                });
 
-            // Kullanıcı logları
-            let completedSet = new Set();
-            try {
-                const { data: lData, error: lErr } = await sb.from('Training_Logs').select('*').eq('Username', username);
-                if (!lErr && Array.isArray(lData)) {
-                    lData.forEach(l => {
-                        const st = String(l.Status || '').toLowerCase();
-                        if (st === 'completed' || st === 'tamamlandi' || st === 'tamamlandı' || l.Status === 1 || l.Status === true) {
-                            completedSet.add(String(l.TrainingID));
-                        }
-                    });
-                }
-            } catch (e) { }
-
-            const filtered = (tData || []).filter(t => {
-                if (asAdmin) return true;
-                const tg = String(t.TargetGroup || '').toLowerCase();
-                const tu = String(t.TargetUser || '').toLowerCase();
-                const st = String(t.Status || '').toLowerCase();
-                if (st && st !== 'aktif' && st !== 'active') return false;
-
-                if (!tg || tg === 'all' || tg === 'herkes') return true;
-                if (tg === 'group' || tg === 'grup') return String(userGroup || '').toLowerCase() === tu;
-                if (tg === 'individual' || tg === 'bireysel') return String(username || '').toLowerCase() === tu;
-                return String(userGroup || '').toLowerCase() === tg;
-            });
-
-            const trainings = filtered.map(t => {
-                const n = normalizeKeys(t);
-                n.title = n.title || t.Title || '';
-                n.desc = n.desc || t.Description || '';
-                n.link = n.link || t.ContentLink || '';
-                n.docLink = n.docLink || t.DocLink || '';
-                n.target = n.target || t.TargetGroup || 'All';
-                n.targetUser = n.targetUser || t.TargetUser || '';
-                n.creator = n.creator || t.CreatedBy || '';
-                n.startDate = n.startDate || t.StartDate || '';
-                n.endDate = n.endDate || t.EndDate || '';
-                n.duration = n.duration || t.Duration || '';
-                n.date = n.date || formatDateToDDMMYYYY(t.Date);
-
-                const idStr = String(t.id || t.ID || n.id || '');
-                n.isCompleted = completedSet.has(idStr);
-                return n;
-            });
-
-            return { result: "success", trainings };
-        }
+                return { result: "success", trainings };
+            }
             case "startTraining": {
-            const username = localStorage.getItem("sSportUser") || "";
-            const trainingId = params.trainingId;
+                const username = localStorage.getItem("sSportUser") || "";
+                const trainingId = params.trainingId;
 
-            // completed ise tekrar started yazma
-            const { data: existing } = await sb.from('Training_Logs')
-                .select('*')
-                .eq('TrainingID', trainingId)
-                .eq('Username', username)
-                .maybeSingle();
+                // completed ise tekrar started yazma
+                const { data: existing } = await sb.from('Training_Logs')
+                    .select('*')
+                    .eq('TrainingID', trainingId)
+                    .eq('Username', username)
+                    .maybeSingle();
 
-            if (existing && String(existing.Status || '').toLowerCase() === 'completed') {
+                if (existing && String(existing.Status || '').toLowerCase() === 'completed') {
+                    return { result: "success" };
+                }
+
+                const { error } = await sb.from('Training_Logs').upsert([{
+                    TrainingID: trainingId,
+                    Username: username,
+                    Status: 'started',
+                    Date: new Date().toISOString()
+                }], { onConflict: 'TrainingID,Username' });
+
+                if (error) throw error;
+                saveLog("Eğitim Başlatma", `ID: ${params.trainingId}`);
+                return { result: "success" };
+            }
+            case "completeTraining": {
+                const username = localStorage.getItem("sSportUser") || "";
+                const trainingId = params.trainingId;
+
+                const { error } = await sb.from('Training_Logs').upsert([{
+                    TrainingID: trainingId,
+                    Username: username,
+                    Status: 'completed',
+                    Date: new Date().toISOString()
+                }], { onConflict: 'TrainingID,Username' });
+
+                if (error) throw error;
+                saveLog("Eğitim Tamamlama", `ID: ${params.trainingId}`);
+                return { result: "success" };
+            }
+            case "assignTraining": {
+                const payload = {
+                    Title: params.title || '',
+                    Description: params.desc || '',
+                    ContentLink: params.link || '',
+                    DocLink: params.docLink || '',
+                    TargetGroup: params.target || 'All',
+                    TargetUser: params.targetAgent || '',
+                    CreatedBy: params.creator || (localStorage.getItem("sSportUser") || ''),
+                    StartDate: params.startDate || '',
+                    EndDate: params.endDate || '',
+                    Duration: params.duration || '',
+                    Status: 'Aktif',
+                    Date: new Date().toISOString()
+                };
+                const { error } = await sb.from('Trainings').insert([payload]);
+                if (error) throw error;
+                saveLog("Eğitim Atama", `${params.title} -> ${params.target}`);
+                return { result: "success" };
+            }
+            case "getUserList": {
+                const { data, error } = await sb.from('profiles').select('*');
+                if (error) return { result: "success", users: [] };
+                // Normalize keys for UI
+                const users = (data || []).map(u => ({
+                    id: u.id,
+                    username: u.username || u.email,
+                    name: u.full_name || u.username,
+                    role: u.role,
+                    group: u.group || u.group_name
+                }));
+                return { result: "success", users: users };
+            }
+            case "getCriteria": {
+                let q = sb.from('Settings').select('*');
+                if (params.group) q = q.eq('Grup', params.group);
+                const { data, error } = await q.order('Sira', { ascending: true });
+                if (error) throw error;
+
+                const criteria = (data || []).map(normalizeKeys).filter(c => c.text);
+                return { result: "success", criteria };
+            }
+            case "getShiftData": {
+                // User screenshot shows table name is "Vardiya" and schema is horizontal (columns are dates)
+                const { data, error } = await sb.from('Vardiya').select('*');
+                if (error) throw error;
+
+                if (!data || data.length === 0) return { result: "success", shifts: {} };
+
+                // Sabit gün sütunları (yeni yapı)
+                const dayHeaders = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+
+                const rows = data.map(r => ({
+                    name: r.Temsilci || r.temsilci || r.Name || r.username || '-',
+                    cells: dayHeaders.map(h => r[h] || '')
+                }));
+
+                // Mevcut kullanıcının satırını bul
+                const myRow = rows.find(r =>
+                    String(r.name).trim().toLowerCase() === String(currentUser).trim().toLowerCase()
+                );
+
+                return {
+                    result: "success",
+                    shifts: {
+                        headers: dayHeaders,
+                        rows: rows,
+                        myRow: myRow,
+                        weekLabel: 'Haftalık Vardiya Planı'
+                    }
+                };
+            }
+            case "submitShiftRequest": {
+                const { error } = await sb.from('ShiftRequests').insert([{
+                    username: currentUser,
+                    ...params,
+                    timestamp: new Date().toISOString()
+                }]);
+                if (error) throw error;
+                saveLog("Vardiya Talebi Gönderme", `${currentUser} -> ${params.date} ${params.shift}`);
                 return { result: "success" };
             }
 
-            const { error } = await sb.from('Training_Logs').upsert([{
-                TrainingID: trainingId,
-                Username: username,
-                Status: 'started',
-                Date: new Date().toISOString()
-            }], { onConflict: 'TrainingID,Username' });
-
-            if (error) throw error;
-            saveLog("Eğitim Başlatma", `ID: ${params.trainingId}`);
-            return { result: "success" };
-        }
-            case "completeTraining": {
-            const username = localStorage.getItem("sSportUser") || "";
-            const trainingId = params.trainingId;
-
-            const { error } = await sb.from('Training_Logs').upsert([{
-                TrainingID: trainingId,
-                Username: username,
-                Status: 'completed',
-                Date: new Date().toISOString()
-            }], { onConflict: 'TrainingID,Username' });
-
-            if (error) throw error;
-            saveLog("Eğitim Tamamlama", `ID: ${params.trainingId}`);
-            return { result: "success" };
-        }
-            case "assignTraining": {
-            const payload = {
-                Title: params.title || '',
-                Description: params.desc || '',
-                ContentLink: params.link || '',
-                DocLink: params.docLink || '',
-                TargetGroup: params.target || 'All',
-                TargetUser: params.targetAgent || '',
-                CreatedBy: params.creator || (localStorage.getItem("sSportUser") || ''),
-                StartDate: params.startDate || '',
-                EndDate: params.endDate || '',
-                Duration: params.duration || '',
-                Status: 'Aktif',
-                Date: new Date().toISOString()
-            };
-            const { error } = await sb.from('Trainings').insert([payload]);
-            if (error) throw error;
-            saveLog("Eğitim Atama", `${params.title} -> ${params.target}`);
-            return { result: "success" };
-        }
-            case "getUserList": {
-            const { data, error } = await sb.from('profiles').select('*');
-            if (error) return { result: "success", users: [] };
-            // Normalize keys for UI
-            const users = (data || []).map(u => ({
-                id: u.id,
-                username: u.username || u.email,
-                name: u.full_name || u.username,
-                role: u.role,
-                group: u.group || u.group_name
-            }));
-            return { result: "success", users: users };
-        }
-            case "getCriteria": {
-            let q = sb.from('Settings').select('*');
-            if (params.group) q = q.eq('Grup', params.group);
-            const { data, error } = await q.order('Sira', { ascending: true });
-            if (error) throw error;
-
-            const criteria = (data || []).map(normalizeKeys).filter(c => c.text);
-            return { result: "success", criteria };
-        }
-            case "getShiftData": {
-            // User screenshot shows table name is "Vardiya" and schema is horizontal (columns are dates)
-            const { data, error } = await sb.from('Vardiya').select('*');
-            if (error) throw error;
-
-            if (!data || data.length === 0) return { result: "success", shifts: {} };
-
-            // Sabit gün sütunları (yeni yapı)
-            const dayHeaders = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
-
-            const rows = data.map(r => ({
-                name: r.Temsilci || r.temsilci || r.Name || r.username || '-',
-                cells: dayHeaders.map(h => r[h] || '')
-            }));
-
-            // Mevcut kullanıcının satırını bul
-            const myRow = rows.find(r =>
-                String(r.name).trim().toLowerCase() === String(currentUser).trim().toLowerCase()
-            );
-
-            return {
-                result: "success",
-                shifts: {
-                    headers: dayHeaders,
-                    rows: rows,
-                    myRow: myRow,
-                    weekLabel: 'Haftalık Vardiya Planı'
-                }
-            };
-        }
-            case "submitShiftRequest": {
-            const { error } = await sb.from('ShiftRequests').insert([{
-                username: currentUser,
-                ...params,
-                timestamp: new Date().toISOString()
-            }]);
-            if (error) throw error;
-            saveLog("Vardiya Talebi Gönderme", `${currentUser} -> ${params.date} ${params.shift}`);
-            return { result: "success" };
-        }
-
             case "fetchFeedbackLogs": {
-            const { data, error } = await sb.from('Feedback_Logs').select('*');
-            if (error) throw error;
-            return { result: "success", feedbackLogs: (data || []).map(normalizeKeys) };
-        }
+                const { data, error } = await sb.from('Feedback_Logs').select('*');
+                if (error) throw error;
+                return { result: "success", feedbackLogs: (data || []).map(normalizeKeys) };
+            }
             case "getTelesalesOffers": {
-            const { data, error } = await sb.from('Telesatis_DataTeklifleri').select('*');
-            return { result: "success", data: (data || []).map(normalizeKeys) };
-        }
+                const { data, error } = await sb.from('Telesatis_DataTeklifleri').select('*');
+                return { result: "success", data: (data || []).map(normalizeKeys) };
+            }
             case "saveAllTelesalesOffers": {
-            // Mevcut tüm teklifleri tek seferde değiştiren bir yapı
-            await sb.from('Telesatis_DataTeklifleri').delete().neq('id', -1);
-            // Database kolon isimlerine geri map et
-            const dbOffers = (params.offers || []).map(o => ({
-                Segment: o.segment || '',
-                "Teklif Adı": o.title || '',
-                "Açıklama": o.desc || '',
-                Not: o.note || '',
-                Durum: o.status || 'Aktif',
-                Görsel: o.image || ''
-            }));
-            const { error } = await sb.from('Telesatis_DataTeklifleri').insert(dbOffers);
-            saveLog("Telesatış Teklifleri Güncelleme", `${dbOffers.length} teklif kaydedildi.`);
-            return { result: error ? "error" : "success" };
-        }
+                // Mevcut tüm teklifleri tek seferde değiştiren bir yapı
+                await sb.from('Telesatis_DataTeklifleri').delete().neq('id', -1);
+                // Database kolon isimlerine geri map et
+                const dbOffers = (params.offers || []).map(o => ({
+                    Segment: o.segment || '',
+                    "Teklif Adı": o.title || '',
+                    "Açıklama": o.desc || '',
+                    Not: o.note || '',
+                    Durum: o.status || 'Aktif',
+                    Görsel: o.image || ''
+                }));
+                const { error } = await sb.from('Telesatis_DataTeklifleri').insert(dbOffers);
+                saveLog("Telesatış Teklifleri Güncelleme", `${dbOffers.length} teklif kaydedildi.`);
+                return { result: error ? "error" : "success" };
+            }
             case "getTelesalesScripts": {
-            const { data, error } = await sb.from('Telesatis_Scripts').select('*');
-            return { result: "success", items: (data || []).map(normalizeKeys) };
-        }
+                const { data, error } = await sb.from('Telesatis_Scripts').select('*');
+                return { result: "success", items: (data || []).map(normalizeKeys) };
+            }
             case "saveTelesalesScripts": {
-            // Scripts verisini Sheets'e veya varsa DB tablosuna kaydet
-            // Burada Telesatis_Scripts tablosu kullanılıyor olabilir
-            const { scripts } = params;
-            // Mevcutları silip yenileri ekle (veya tek tek upsert)
-            await sb.from('Telesatis_Scripts').delete().neq('id', -1);
-            const { error } = await sb.from('Telesatis_Scripts').insert((scripts || []).map(s => ({
-                "Başlık": s.title || '',
-                "Metin": s.text || '',
-                UpdatedAt: new Date().toISOString(),
-                UpdatedBy: (localStorage.getItem("sSportUser") || '')
-            })));
-            saveLog("Telesatış Script Güncelleme", `${scripts.length} script kaydedildi.`);
-            return { result: error ? "error" : "success" };
-        }
+                // Scripts verisini Sheets'e veya varsa DB tablosuna kaydet
+                // Burada Telesatis_Scripts tablosu kullanılıyor olabilir
+                const { scripts } = params;
+                // Mevcutları silip yenileri ekle (veya tek tek upsert)
+                await sb.from('Telesatis_Scripts').delete().neq('id', -1);
+                const { error } = await sb.from('Telesatis_Scripts').insert((scripts || []).map(s => ({
+                    "Başlık": s.title || '',
+                    "Metin": s.text || '',
+                    UpdatedAt: new Date().toISOString(),
+                    UpdatedBy: (localStorage.getItem("sSportUser") || '')
+                })));
+                saveLog("Telesatış Script Güncelleme", `${scripts.length} script kaydedildi.`);
+                return { result: error ? "error" : "success" };
+            }
             case "getTechDocs": {
-            const { data, error } = await sb.from('Teknik_Dokumanlar').select('*');
-            return { result: "success", data: (data || []).map(normalizeKeys) };
-        }
+                const { data, error } = await sb.from('Teknik_Dokumanlar').select('*');
+                return { result: "success", data: (data || []).map(normalizeKeys) };
+            }
             case "getTechDocCategories": {
-            const { data, error } = await sb.from('Teknik_Dokumanlar').select('Kategori');
-            const cats = [...new Set(data.filter(x => x.Kategori).map(x => x.Kategori))];
-            return { result: "success", categories: cats };
-        }
+                const { data, error } = await sb.from('Teknik_Dokumanlar').select('Kategori');
+                const cats = [...new Set(data.filter(x => x.Kategori).map(x => x.Kategori))];
+                return { result: "success", categories: cats };
+            }
             case "upsertTechDoc": {
-            // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel, Adım, Not, Link
-            const { data: sampleData } = await sb.from('Teknik_Dokumanlar').select('*').limit(1);
-            const dbCols = sampleData && sampleData[0] ? Object.keys(sampleData[0]) : [];
+                // Teknik_Dokumanlar: Kategori, Başlık, İçerik, Görsel, Adım, Not, Link
+                const { data: sampleData } = await sb.from('Teknik_Dokumanlar').select('*').limit(1);
+                const dbCols = sampleData && sampleData[0] ? Object.keys(sampleData[0]) : [];
 
-            const findCol = (choices) => {
-                for (let c of choices) {
-                    const found = dbCols.find(x => x.toLowerCase() === c.toLowerCase());
-                    if (found) return found;
+                const findCol = (choices) => {
+                    for (let c of choices) {
+                        const found = dbCols.find(x => x.toLowerCase() === c.toLowerCase());
+                        if (found) return found;
+                    }
+                    return null;
+                };
+
+                const payload = {};
+                const add = (choices, val) => {
+                    const col = findCol(choices);
+                    if (col) payload[col] = val;
+                };
+
+                if (params.id) add(['id', 'ID'], params.id);
+                add(['Kategori', 'Category'], params.kategori);
+                add(['Başlık', 'Baslik', 'Title'], params.baslik);
+                add(['İçerik', 'Icerik', 'Content'], params.icerik);
+                add(['Adım', 'Adim', 'Step'], params.adim || '');
+                add(['Not', 'Note'], params.not || '');
+                add(['Link'], params.link || '');
+                add(['Görsel', 'Gorsel', 'Image', 'Resim'], params.image || null);
+                add(['Durum', 'Status'], params.durum || 'Aktif');
+
+                const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: findCol(['id', 'ID']) || 'id' });
+                if (error) {
+                    console.error("[Pusula] upsertTechDoc error:", error);
+                    return { result: "error", message: error.message };
                 }
-                return null;
-            };
-
-            const payload = {};
-            const add = (choices, val) => {
-                const col = findCol(choices);
-                if (col) payload[col] = val;
-            };
-
-            if (params.id) add(['id', 'ID'], params.id);
-            add(['Kategori', 'Category'], params.kategori);
-            add(['Başlık', 'Baslik', 'Title'], params.baslik);
-            add(['İçerik', 'Icerik', 'Content'], params.icerik);
-            add(['Adım', 'Adim', 'Step'], params.adim || '');
-            add(['Not', 'Note'], params.not || '');
-            add(['Link'], params.link || '');
-            add(['Görsel', 'Gorsel', 'Image', 'Resim'], params.image || null);
-            add(['Durum', 'Status'], params.durum || 'Aktif');
-
-            const { error } = await sb.from('Teknik_Dokumanlar').upsert(payload, { onConflict: findCol(['id', 'ID']) || 'id' });
-            if (error) {
-                console.error("[Pusula] upsertTechDoc error:", error);
-                return { result: "error", message: error.message };
+                saveLog("Teknik Döküman Kayıt", `${params.baslik} (${params.kategori})`);
+                return { result: "success" };
             }
-            saveLog("Teknik Döküman Kayıt", `${params.baslik} (${params.kategori})`);
-            return { result: "success" };
-        }
             case "updateHomeBlock": {
-            // Supabase'de kolon adı 'Key' (Görüntülerden teyit edildi)
-            const { error } = await sb.from('HomeBlocks').upsert({
-                Key: params.key,
-                Title: params.title,
-                Content: params.content,
-                VisibleGroups: params.visibleGroups
-            }, { onConflict: 'Key' });
-            if (error) throw error;
-            saveLog("Blok İçerik Güncelleme", `${params.key}`);
-            return { result: error ? "error" : "success" };
-        }
+                // Supabase'de kolon adı 'Key' (Görüntülerden teyit edildi)
+                const { error } = await sb.from('HomeBlocks').upsert({
+                    Key: params.key,
+                    Title: params.title,
+                    Content: params.content,
+                    VisibleGroups: params.visibleGroups
+                }, { onConflict: 'Key' });
+                if (error) throw error;
+                saveLog("Blok İçerik Güncelleme", `${params.key}`);
+                return { result: error ? "error" : "success" };
+            }
             case "updateDoc": {
-            // Database kolon isimleri: Başlık, İçerik, Kategori, Görsel, Link
-            const { error } = await sb.from('Teknik_Dokumanlar').update({
-                Başlık: params.title,
-                İçerik: params.content,
-                Kategori: params.category,
-                Görsel: params.image,
-                Link: params.link
-            }).eq('id', params.id);
-            return { result: error ? "error" : "success" };
-        }
+                // Database kolon isimleri: Başlık, İçerik, Kategori, Görsel, Link
+                const { error } = await sb.from('Teknik_Dokumanlar').update({
+                    Başlık: params.title,
+                    İçerik: params.content,
+                    Kategori: params.category,
+                    Görsel: params.image,
+                    Link: params.link
+                }).eq('id', params.id);
+                return { result: error ? "error" : "success" };
+            }
             case "getActiveUsers": {
-            // Real-time Users (Heartbeat tabanlı - profiles tablosundan)
-            const heartbeatThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                // Real-time Users (Heartbeat tabanlı - profiles tablosundan)
+                const heartbeatThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-            const { data: activeUsers, error: uErr } = await sb
-                .from('profiles')
-                .select('*') // Tüm kolonları çek (group vs group_name hatasını önlemek için)
-                .gt('last_seen', heartbeatThreshold)
-                .order('last_seen', { ascending: false });
+                const { data: activeUsers, error: uErr } = await sb
+                    .from('profiles')
+                    .select('*') // Tüm kolonları çek (group vs group_name hatasını önlemek için)
+                    .gt('last_seen', heartbeatThreshold)
+                    .order('last_seen', { ascending: false });
 
-            if (uErr) {
-                console.error("Active Users Error:", uErr);
-                return { result: "error", message: "Veri çekilemedi: " + uErr.message };
+                if (uErr) {
+                    console.error("Active Users Error:", uErr);
+                    return { result: "error", message: "Veri çekilemedi: " + uErr.message };
+                }
+
+                const users = (activeUsers || []).map(u => ({
+                    username: u.username,
+                    role: u.role,
+                    group: u.group || u.group_name, // Fallback
+                    last_seen: u.last_seen,
+                    id: u.id
+                }));
+                return { result: "success", users: users };
             }
-
-            const users = (activeUsers || []).map(u => ({
-                username: u.username,
-                role: u.role,
-                group: u.group || u.group_name, // Fallback
-                last_seen: u.last_seen,
-                id: u.id
-            }));
-            return { result: "success", users: users };
-        }
             case "logAction": {
-            // Bug 7 Fix: Sistem logları
-            const { error } = await sb.from('Logs').insert([{
-                Username: params.username || currentUser,
-                Action: params.action,
-                Details: params.details,
-                "İP ADRESİ": params.ip || '-',
-                Date: new Date().toISOString()
-            }]);
-            return { result: error ? "error" : "success" };
-        }
-            case "submitAgentNote": {
-            // Bug 6 Fix: Not ekleme (Görseldeki kolon isimlerine göre: "Temsilci Notu")
-            const { error } = await sb.from('Evaluations').update({
-                "Temsilci Notu": params.note,
-                "Durum": params.status || 'Bekliyor'
-            }).ilike('CallID', String(params.callId).replace('#', '').trim());
-
-            if (error) console.error("[Pusula Note Error]", error);
-            return { result: error ? "error" : "success", message: error ? error.message : "" };
-        }
-            case "logQuiz": {
-            // Feature: Quiz Logging (QuizResults tablosu)
-            const { error } = await sb.from('QuizResults').insert([{
-                Username: params.username,
-                Score: params.score,
-                TotalQuestions: params.total,
-                SuccessRate: params.successRate,
-                Date: new Date().toISOString()
-            }]);
-            if (error) console.error("[Pusula Quiz Error]", error);
-            return { result: error ? "error" : "success" };
-        }
-            case "getLogs": {
-            const { data, error } = await sb.from('Logs')
-                .select('*')
-                .order('Date', { ascending: false })
-                .limit(500);
-            if (error) throw error;
-            return { result: "success", logs: data };
-        }
-            case "resolveAgentFeedback": {
-            const { error } = await sb.from('Evaluations').update({
-                "Yönetici Cevabı": params.reply,
-                "Durum": params.status || 'Tamamlandı'
-            }).ilike('CallID', String(params.callId).replace('#', '').trim());
-            return { result: error ? "error" : "success" };
-        }
-            case "getBroadcastFlow": {
-            // ...existing...
-            const { data, error } = await sb.from('YayinAkisi').select('*');
-            if (error) {
-                console.warn("[Pusula] BroadcastFlow fetch error:", error);
-                return { result: "success", items: [] };
+                // Bug 7 Fix: Sistem logları
+                const { error } = await sb.from('Logs').insert([{
+                    Username: params.username || currentUser,
+                    Action: params.action,
+                    Details: params.details,
+                    "İP ADRESİ": params.ip || '-',
+                    Date: new Date().toISOString()
+                }]);
+                return { result: error ? "error" : "success" };
             }
-            return { result: "success", items: (data || []).map(normalizeKeys) };
-        }
+            case "submitAgentNote": {
+                // Bug 6 Fix: Not ekleme (Görseldeki kolon isimlerine göre: "Temsilci Notu")
+                const { error } = await sb.from('Evaluations').update({
+                    "Temsilci Notu": params.note,
+                    "Durum": params.status || 'Bekliyor'
+                }).ilike('CallID', String(params.callId).replace('#', '').trim());
+
+                if (error) console.error("[Pusula Note Error]", error);
+                return { result: error ? "error" : "success", message: error ? error.message : "" };
+            }
+            case "logQuiz": {
+                // Feature: Quiz Logging (QuizResults tablosu)
+                const { error } = await sb.from('QuizResults').insert([{
+                    Username: params.username,
+                    Score: params.score,
+                    TotalQuestions: params.total,
+                    SuccessRate: params.successRate,
+                    Date: new Date().toISOString()
+                }]);
+                if (error) console.error("[Pusula Quiz Error]", error);
+                return { result: error ? "error" : "success" };
+            }
+            case "getLogs": {
+                const { data, error } = await sb.from('Logs')
+                    .select('*')
+                    .order('Date', { ascending: false })
+                    .limit(500);
+                if (error) throw error;
+                return { result: "success", logs: data };
+            }
+            case "resolveAgentFeedback": {
+                const { error } = await sb.from('Evaluations').update({
+                    "Yönetici Cevabı": params.reply,
+                    "Durum": params.status || 'Tamamlandı'
+                }).ilike('CallID', String(params.callId).replace('#', '').trim());
+                return { result: error ? "error" : "success" };
+            }
+            case "getBroadcastFlow": {
+                // ...existing...
+                const { data, error } = await sb.from('YayinAkisi').select('*');
+                if (error) {
+                    console.warn("[Pusula] BroadcastFlow fetch error:", error);
+                    return { result: "success", items: [] };
+                }
+                return { result: "success", items: (data || []).map(normalizeKeys) };
+            }
             case "uploadImage":
             case "uploadTrainingDoc": {
-            const { fileName, mimeType, base64 } = params;
-            const blob = b64toBlob(base64, mimeType);
-            if (!blob) throw new Error("Dosya işlenemedi (Base64 Hatası)");
+                const { fileName, mimeType, base64 } = params;
+                const blob = b64toBlob(base64, mimeType);
+                if (!blob) throw new Error("Dosya işlenemedi (Base64 Hatası)");
 
-            const folder = (action === 'uploadImage') ? 'images' : 'trainings';
-            const filePath = `${folder}/${Date.now()}_${fileName}`;
+                const folder = (action === 'uploadImage') ? 'images' : 'trainings';
+                const filePath = `${folder}/${Date.now()}_${fileName}`;
 
-            const { data, error } = await sb.storage.from('pusula').upload(filePath, blob, {
-                contentType: mimeType,
-                cacheControl: '3600',
-                upsert: false
-            });
+                const { data, error } = await sb.storage.from('pusula').upload(filePath, blob, {
+                    contentType: mimeType,
+                    cacheControl: '3600',
+                    upsert: false
+                });
 
-            if (error) throw error;
+                if (error) throw error;
 
-            const { data: publicURL } = sb.storage.from('pusula').getPublicUrl(filePath);
-            saveLog("Dosya Yükleme", `${fileName} (${folder})`);
-            return { result: "success", url: publicURL.publicUrl };
-        }
-            case "deleteTechDoc": {
-            const { error } = await sb.from('Teknik_Dokumanlar').delete().eq('id', params.id);
-            if (error) {
-                console.error("[Pusula] deleteTechDoc error:", error);
-                return { result: "error", message: error.message };
+                const { data: publicURL } = sb.storage.from('pusula').getPublicUrl(filePath);
+                saveLog("Dosya Yükleme", `${fileName} (${folder})`);
+                return { result: "success", url: publicURL.publicUrl };
             }
-            saveLog("Teknik Döküman Silme", `ID: ${params.id}`);
-            return { result: "success" };
-        }
+            case "deleteTechDoc": {
+                const { error } = await sb.from('Teknik_Dokumanlar').delete().eq('id', params.id);
+                if (error) {
+                    console.error("[Pusula] deleteTechDoc error:", error);
+                    return { result: "error", message: error.message };
+                }
+                saveLog("Teknik Döküman Silme", `ID: ${params.id}`);
+                return { result: "success" };
+            }
             default:
-        console.warn(`[Pusula] Bilinmeyen apiCall action: ${action}`);
-        return { result: "error", message: `Hizmet taşınıyor: ${action}` };
-    }
+                console.warn(`[Pusula] Bilinmeyen apiCall action: ${action}`);
+                return { result: "error", message: `Hizmet taşınıyor: ${action}` };
+        }
     } catch (err) {
-    console.error(`[Pusula] apiCall Error (${action}):`, err);
-    return { result: "error", message: err.message };
-}
+        console.error(`[Pusula] apiCall Error (${action}):`, err);
+        return { result: "error", message: err.message };
+    }
 }
 
 // SweetAlert2 yoksa minimal yedek (sessiz kırılma olmasın)
@@ -1491,17 +1474,23 @@ async function logout() {
 }
 
 async function forgotPasswordPopup() {
-    const { value: email } = await Swal.fire({
+    const { value: inputVal } = await Swal.fire({
         title: 'Şifre Sıfırlama',
-        input: 'email',
-        inputLabel: 'E-posta Adresiniz',
-        inputPlaceholder: 'ornek@ssportplus.com',
+        input: 'text', // Email yerine text (Kullanıcı adı da girilebilsin)
+        inputLabel: 'Kullanıcı Adı veya E-posta',
+        inputPlaceholder: 'Örn: ad.soyad veya ad.soyad@ssportplus.com',
         showCancelButton: true,
         confirmButtonText: 'Sıfırlama Linki Gönder',
         cancelButtonText: 'İptal'
     });
 
-    if (email) {
+    if (inputVal) {
+        let emailToSend = inputVal.trim();
+        // Eğer @ içermiyorsa sonuna domain ekle
+        if (!emailToSend.includes('@')) {
+            emailToSend += "@ssportplus.com";
+        }
+
         Swal.fire({ title: 'Gönderiliyor...', didOpen: () => { Swal.showLoading() } });
 
         try {
@@ -1512,7 +1501,7 @@ async function forgotPasswordPopup() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: "resetPassword",
-                    email: email
+                    email: emailToSend
                 })
             });
 
@@ -1521,7 +1510,7 @@ async function forgotPasswordPopup() {
             Swal.fire({
                 icon: 'success',
                 title: 'Başarılı',
-                text: 'Şifre sıfırlama bağlantısı e-posta adresinize gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
+                text: 'Şifre sıfırlama bağlantısı e-posta adresinize (' + emailToSend + ') gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
                 confirmButtonText: 'Tamam'
             });
 
