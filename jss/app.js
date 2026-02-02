@@ -1453,14 +1453,35 @@ async function logout() {
         await sb.auth.signOut();
     } catch (e) { console.error("Logout error:", e); }
 
+    currentUser = ""; currentUserId = ""; isAdminMode = false; isEditingActive = false;
+    try { document.getElementById("user-display").innerText = "Misafir"; } catch (e) { }
+    setHomeWelcomeUser("Misafir");
+    document.body.classList.remove('editing');
+
     localStorage.removeItem("sSportUser");
     localStorage.removeItem("sSportToken");
     localStorage.removeItem("sSportRole");
     localStorage.removeItem("sSportGroup");
+    localStorage.clear();
 
+    if (sessionTimeout) clearTimeout(sessionTimeout);
+
+    document.getElementById("main-app").style.display = "none";
     document.getElementById("login-screen").style.removeProperty("display");
     document.getElementById("login-screen").style.display = "flex";
-    document.getElementById("main-app").style.display = "none";
+    document.getElementById("passInput").value = "";
+    document.getElementById("usernameInput").value = "";
+    document.getElementById("error-msg").style.display = "none";
+
+    // Fullscreen'leri kapat
+    document.getElementById('quality-fullscreen').style.display = 'none';
+    try { document.getElementById('tech-fullscreen').style.display = 'none'; } catch (e) { }
+    try { document.getElementById('telesales-fullscreen').style.display = 'none'; } catch (e) { }
+
+    // AI Bot'u gizle
+    const aiBot = document.getElementById('ai-widget-container');
+    if (aiBot) aiBot.style.display = 'none';
+
     try { document.getElementById("app-preloader").style.display = "none"; } catch (e) { }
     console.log("[Pusula] Çıkış yapıldı.");
 }
@@ -1532,25 +1553,6 @@ function checkAdmin(role) {
     try { applyPermissionsToUI(); } catch (e) { }
 }
 
-function logout() {
-    currentUser = ""; currentUserId = ""; isAdminMode = false; isEditingActive = false;
-    try { document.getElementById("user-display").innerText = "Misafir"; } catch (e) { }
-    setHomeWelcomeUser("Misafir");
-    document.body.classList.remove('editing');
-    localStorage.clear(); // Tüm verileri temizle
-    if (sessionTimeout) clearTimeout(sessionTimeout);
-
-    document.getElementById("main-app").style.display = "none";
-    document.getElementById("login-screen").style.display = "flex";
-    document.getElementById("passInput").value = "";
-    document.getElementById("usernameInput").value = "";
-    document.getElementById("error-msg").style.display = "none";
-
-    // Fullscreen'i kapat
-    document.getElementById('quality-fullscreen').style.display = 'none';
-    try { document.getElementById('tech-fullscreen').style.display = 'none'; } catch (e) { }
-    try { document.getElementById('telesales-fullscreen').style.display = 'none'; } catch (e) { }
-}
 // --- HEARTBEAT SYSTEM ---
 let sessionInterval;
 let heartbeatInterval; // Yeni Heartbeat Timer
@@ -8363,7 +8365,8 @@ async function openMenuPermissions() {
                         { key: "RbacAdmin", label: "Yetki Yönetimi", perms: ["Execute"] },
                         { key: "ActiveUsers", label: "Aktif Kullanıcılar", perms: ["Execute"] },
                         { key: "UserAdmin", label: "Kullanıcı Yönetimi", perms: ["Execute"] },
-                        { key: "SystemLogs", label: "Sistem Logları", perms: ["Execute"] }
+                        { key: "SystemLogs", label: "Sistem Logları", perms: ["Execute"] },
+                        { key: "AiBot", label: "AI Asistan Erişimi", perms: ["Execute"] }
                     ]
                 },
                 {
@@ -8596,6 +8599,9 @@ function applyPermissionsToUI() {
 
     const logsBtn = document.getElementById('dropdownLogs');
     if (logsBtn) logsBtn.style.display = hasPerm("SystemLogs") ? 'flex' : 'none';
+
+    const aiBotContainer = document.getElementById('ai-widget-container');
+    if (aiBotContainer) aiBotContainer.style.display = (currentUser && hasPerm("AiBot")) ? 'block' : 'none';
 
     const menuMap = {
         "home": "home",
