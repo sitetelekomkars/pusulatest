@@ -910,4 +910,53 @@
   </script>
 </body>
 
+<!-- AI ASİSTAN WIDGET -->
+<div id="ai-widget-container"
+  style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; font-family: 'Segoe UI', sans-serif;">
+  <!-- Chat Button -->
+  <button id="ai-toggle-btn" onclick="toggleAIChat()" style="
+        width: 60px; height: 60px; border-radius: 50%; background: #fca311; border: none;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3); cursor: pointer; transition: transform 0.2s;
+        display: flex; align-items: center; justify-content: center;">
+    <span style="font-size: 30px;">🤖</span>
+  </button>
+
+  <!-- Chat Box -->
+  <div id="ai-chat-box" style="
+        display: none; width: 350px; height: 500px; background: #14213d; border-radius: 15px;
+        position: absolute; bottom: 80px; right: 0; box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+        flex-direction: column; overflow: hidden; border: 1px solid #fca311;">
+
+    <!-- Header -->
+    <div
+      style="padding: 15px; background: #000000; color: white; border-bottom: 2px solid #fca311; display: flex; justify-content: space-between; align-items: center;">
+      <h5 style="margin: 0; font-size: 16px;">Pusula Asistan</h5>
+      <button onclick="toggleAIChat()"
+        style="background: none; border: none; color: white; cursor: pointer; font-size: 20px;">×</button>
+    </div>
+
+    <!-- Messages Area -->
+    <div id="ai-messages"
+      style="flex: 1; padding: 15px; overflow-y: auto; background: #e5e5e5; display: flex; flex-direction: column; gap: 10px;">
+      <div class="ai-msg-system"
+        style="background: #fff; padding: 10px; border-radius: 10px; font-size: 14px; max-width: 80%; align-self: flex-start; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        Merhaba! Ben S Sport Plus asistanıyım. Size nasıl yardımcı olabilirim?
+        <br><br>
+        <i>Örn: "Üyelik paketleri neler?", "İade maili yaz"</i>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div style="padding: 10px; background: #fff; border-top: 1px solid #ddd; display: flex; gap: 5px;">
+      <input type="text" id="ai-input" placeholder="Bir soru sorun..."
+        style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; outline: none;"
+        onkeypress="handleAIEnter(event)">
+      <button onclick="sendAIMessage()" id="ai-send-btn"
+        style="background: #fca311; border: none; border-radius: 5px; width: 40px; cursor: pointer; color: black; font-weight: bold;">➤</button>
+    </div>
+  </div>
+</div>
+
+</body>
+
 </html>
