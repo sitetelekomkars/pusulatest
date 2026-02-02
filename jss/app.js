@@ -80,26 +80,6 @@ const sb = (window.supabase && typeof window.supabase.createClient === 'function
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
     : null;
 
-// ✅ YENİ: Şifre Sıfırlama Linki Yakalama
-if (sb) {
-    sb.auth.onAuthStateChange((event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-            console.log("[Auth] Şifre sıfırlama modu algılandı.");
-            // Sayfa yüklendiğinde hafif bir gecikme ile popup aç
-            setTimeout(() => {
-                // Eğer changePasswordPopup henuz define edilmediyse, document.ready beklemek gerekebilir.
-                // Fonksiyon hoisted ise sorun yok.
-                if (typeof changePasswordPopup === 'function') {
-                    changePasswordPopup(true); // Zorunlu modda aç (kapatılamaz)
-                } else {
-                    console.warn("changePasswordPopup bulunamadı, bekleniyor...");
-                    window.addEventListener('DOMContentLoaded', () => changePasswordPopup(true));
-                }
-            }, 1000);
-        }
-    });
-}
-
 // ✅ YENİ: Mail Bildirim Ayarları (Google Apps Script Web App URL buraya gelecek)
 const GAS_MAIL_URL = "https://script.google.com/macros/s/AKfycbwZZbRVksffgpu_WvkgCoZehIBVTTTm5j5SEqffwheCU44Q_4d9b64kSmf40wL1SR8/exec"; // Burayı kendi Web App URL'niz ile güncelleyin
 
@@ -1492,46 +1472,30 @@ async function logout() {
 }
 
 async function forgotPasswordPopup() {
-    const { value: inputVal } = await Swal.fire({
+    const { value: email } = await Swal.fire({
         title: 'Şifre Sıfırlama',
-        input: 'text', // Email yerine text (Kullanıcı adı da girilebilsin)
-        inputLabel: 'Kullanıcı Adı veya E-posta',
-        inputPlaceholder: 'Örn: fener',
+        input: 'email',
+        inputLabel: 'E-posta Adresiniz',
+        inputPlaceholder: 'ornek@ssportplus.com',
         showCancelButton: true,
         confirmButtonText: 'Sıfırlama Linki Gönder',
         cancelButtonText: 'İptal'
     });
 
-    if (inputVal) {
-        let identifier = inputVal.trim();
-        // Domain eklemeyi kaldırdık, GAS arka planda profilden bulacak.
-
+    if (email) {
         Swal.fire({ title: 'Gönderiliyor...', didOpen: () => { Swal.showLoading() } });
 
         try {
-            // ✅ CUSTOM FLOW: Google Apps Script üzerinden gönderim
-            const res = await fetch(GAS_MAIL_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: "resetPassword",
-                    email: identifier
-                })
+            const { error } = await sb.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin, // Şifre sıfırlama sonrası dönülecek URL
             });
 
-            // no-cors modunda yanıt okuyamayız, bu yüzden başarılı varsayarız.
-            // (GAS tarafında hata olsa bile kullanıcıya "Mail gönderildi" deriz - güvenlik için de iyi)
-            Swal.fire({
-                icon: 'success',
-                title: 'Başarılı',
-                text: 'Şifre sıfırlama bağlantısı sistemde kayıtlı e-posta adresinize gönderildi. (Gelen kutunuzu ve Spam klasörünü kontrol edin)',
-                confirmButtonText: 'Tamam'
-            });
+            if (error) throw error;
 
+            Swal.fire('Başarılı', 'Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.', 'success');
         } catch (e) {
             console.error("Forgot Pass Error:", e);
-            Swal.fire('Hata', 'İstek gönderilemedi. Lütfen internet bağlantınızı kontrol edin.', 'error');
+            Swal.fire('Hata', e.message || 'İşlem başarısız.', 'error');
         }
     }
 }
