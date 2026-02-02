@@ -8852,14 +8852,6 @@ function checkQualityNotifications() {
 
 function toggleAIChat() {
     const chatBox = document.getElementById("ai-chat-box");
-    const container = document.getElementById("ai-widget-container");
-
-    // Sağ tık yasağını bu konteyner için del
-    if (container && !container.dataset.contextFixed) {
-        container.addEventListener('contextmenu', e => e.stopPropagation());
-        container.dataset.contextFixed = "true";
-    }
-
     const isVisible = chatBox.style.display === "flex";
     chatBox.style.display = isVisible ? "none" : "flex";
     if (!isVisible) {
