@@ -8331,16 +8331,19 @@ async function openMenuPermissions() {
         }
 
         allRolePermissions = res.permissions || [];
+        // 🕵️ LocAdmin filtreli roller (Sadece grup isimleri)
+        const roles = (res.groups || ["admin", "qusers", "users"]).filter(r =>
+            r.toLowerCase() !== 'locadmin' && !r.startsWith('u:')
+        );
 
-        // ✅ Dinamik Roller: Backend'den (Users sayfasından) gelen grupları kullan
-        const roles = res.groups || ["admin", "qusers", "users"];
+        let rbacMode = 'roles'; // 'roles' veya 'users'
         let activeTabIndex = 0;
+        let selectedUser = null;
+        let userSearchQuery = "";
+        let adminUserList = []; // Kullanıcı listesi (lazily loaded)
 
-        const renderRbacContent = (roleIndex) => {
-            const role = roles[roleIndex];
-            const rolePerms = allRolePermissions.filter(p => p.role === role);
-
-            // ✅ Dinamik Sayfa Listesi (Arayüzdeki tüm data-menu-key öğelerini otomatik bulur)
+        const renderRbacContent = (containerOnly = false) => {
+            // ✅ Dinamik Sayfa Listesi
             const pageLabels = {
                 home: "Ana Sayfa", search: "Arama Çubuğu", news: "Duyurular", tech: "Teknik Sayfası",
                 persuasion: "İkna Sayfası", campaign: "Kampanya Sayfası", info: "Bilgi Sayfası",
@@ -8360,7 +8363,6 @@ async function openMenuPermissions() {
                     processedKeys.add(key);
                 }
             });
-            // Alfabetik sırala
             discoveredPages.sort((a, b) => a.label.localeCompare(b.label, 'tr'));
 
             const resources = [
@@ -8377,9 +8379,7 @@ async function openMenuPermissions() {
                         { key: "AiBot", label: "AI Asistan Erişimi", perms: ["Execute"] }
                     ]
                 },
-                {
-                    cat: "Sayfa Erişimi", items: discoveredPages
-                },
+                { cat: "Sayfa Erişimi", items: discoveredPages },
                 {
                     cat: "Kalite Yönetimi", items: [
                         { key: "Evaluation", label: "Değerlendirme Yapma", perms: ["Execute"] },
@@ -8389,31 +8389,54 @@ async function openMenuPermissions() {
                 }
             ];
 
+            const currentId = rbacMode === 'roles' ? roles[activeTabIndex] : ("u:" + (selectedUser ? selectedUser.username : ""));
+            const currentPerms = allRolePermissions.filter(p => p.role === currentId);
+
             let html = `
                 <div class="rbac-container">
-                    <div class="rbac-header">
-                        <div style="font-weight:700;color:var(--primary)">
-                            <i class="fas fa-user-shield"></i> 
-                            <span style="text-transform:capitalize">${role}</span> Rolü Yetki Tanımları
-                        </div>
-                        <div class="rbac-info-box">
-                            <i class="fas fa-info-circle"></i> LocAdmin her zaman tam yetkilidir.
-                        </div>
+                    <div class="rbac-tabs">
+                        <button class="rbac-tab-btn ${rbacMode === 'roles' ? 'active' : ''}" onclick="window.switchRbacMode('roles')">
+                            <i class="fas fa-users-gear"></i> Grup Yetkileri
+                        </button>
+                        <button class="rbac-tab-btn ${rbacMode === 'users' ? 'active' : ''}" onclick="window.switchRbacMode('users')">
+                            <i class="fas fa-user-lock"></i> Kullanıcı Bazlı Yetki
+                        </button>
                     </div>
 
-                    <div class="rbac-role-selector">
-                        ${roles.map((r, i) => `
-                            <button class="rbac-role-btn ${i === roleIndex ? 'active' : ''}" onclick="window.switchRbacRole(${i})">
-                                ${r.toUpperCase()}
-                            </button>
-                        `).join('')}
-                    </div>
+                    ${rbacMode === 'roles' ? `
+                        <div class="rbac-role-selector" style="margin-top:15px">
+                            ${roles.map((r, i) => `
+                                <button class="rbac-role-btn ${i === activeTabIndex ? 'active' : ''}" onclick="window.switchRbacRole(${i})">
+                                    ${r.toUpperCase()}
+                                </button>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div class="rbac-user-selector" style="margin-top:15px">
+                            <input type="text" class="swal2-input rbac-search" placeholder="Kullanıcı ara..." 
+                                value="${userSearchQuery}" onkeyup="window.searchRbacUser(this.value)" style="margin:0; width:100%; font-size:0.9rem">
+                            <div class="rbac-user-list">
+                                ${adminUserList.filter(u => !userSearchQuery || u.username.toLowerCase().includes(userSearchQuery.toLowerCase())).map(u => `
+                                    <div class="rbac-user-item ${selectedUser && selectedUser.username === u.username ? 'active' : ''}" 
+                                        onclick="window.selectRbacUser('${u.username}')">
+                                        <i class="fas fa-user-circle"></i>
+                                        <span>${u.username}</span>
+                                        <small>${u.group || 'Grup Yok'}</small>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `}
 
-                    <div class="rbac-table-wrapper">
+                    <div class="rbac-table-wrapper" style="${rbacMode === 'users' && !selectedUser ? 'display:none' : ''}">
+                        <div style="padding:10px; font-weight:600; color:var(--primary); font-size:0.9rem; border-bottom:1px solid #eee">
+                            <i class="fas fa-shield-alt"></i> 
+                            ${rbacMode === 'roles' ? `${currentId.toUpperCase()} Grubu` : `${selectedUser?.username} Özel`} Yetkileri
+                        </div>
                         <table class="rbac-table">
                             <thead>
                                 <tr>
-                                    <th style="text-align:left">Kaynak / Yetki Alanı</th>
+                                    <th style="text-align:left">Kaynak</th>
                                     <th style="text-align:center">Durum</th>
                                 </tr>
                             </thead>
@@ -8421,16 +8444,19 @@ async function openMenuPermissions() {
                                 ${resources.map(cat => `
                                     <tr class="rbac-category-row"><td colspan="2">${cat.cat}</td></tr>
                                     ${cat.items.map(item => {
-                const isEnabled = rolePerms.some(p => p.resource === item.key && p.value === true);
-                // HTML içinde çift tırnak çakışmasını önlemek için rol ismini güvenli hale getir
-                const safeRole = role.replace(/'/g, "\\'");
+                const permRecord = currentPerms.find(p => p.resource === item.key);
+                const isEnabled = permRecord ? permRecord.value : false;
+                const isOverridden = rbacMode === 'users' && permRecord;
                 return `
-                                            <tr>
-                                                <td class="rbac-resource-name">${item.label}</td>
+                                            <tr class="${isOverridden ? 'rbac-overridden' : ''}">
+                                                <td class="rbac-resource-name">
+                                                    ${item.label}
+                                                    ${isOverridden ? '<span class="rbac-tag-ovr">Bireysel</span>' : ''}
+                                                </td>
                                                 <td style="text-align:center">
                                                     <label class="rbac-switch">
-                                                        <input type="checkbox" id="perm_${roleIndex}_${item.key}" ${isEnabled ? 'checked' : ''} 
-                                                            onchange="window.toggleRbacPerm('${safeRole}', '${item.key}', this.checked)">
+                                                        <input type="checkbox" id="perm_${item.key}" ${isEnabled ? 'checked' : ''} 
+                                                            onchange="window.toggleRbacPerm('${currentId}', '${item.key}', this.checked)">
                                                         <span class="rbac-slider"></span>
                                                     </label>
                                                 </td>
@@ -8446,44 +8472,73 @@ async function openMenuPermissions() {
             return html;
         };
 
-        // Modal içinden çağrılacak global fonksiyonlar
-        window.switchRbacRole = (idx) => {
-            activeTabIndex = idx;
-            Swal.update({ html: renderRbacContent(idx) });
+        // Modal Global Fonksiyonları
+        window.switchRbacMode = async (mode) => {
+            rbacMode = mode;
+            if (mode === 'users' && adminUserList.length === 0) {
+                const uRes = await apiCall("getUserList", {});
+                adminUserList = uRes.users || [];
+            }
+            Swal.update({ html: renderRbacContent() });
         };
 
-        window.toggleRbacPerm = (role, resource, val) => {
-            const idx = allRolePermissions.findIndex(p => p.role === role && p.resource === resource);
+        window.switchRbacRole = (idx) => {
+            activeTabIndex = idx;
+            Swal.update({ html: renderRbacContent() });
+        };
+
+        window.selectRbacUser = (username) => {
+            selectedUser = adminUserList.find(u => u.username === username);
+            Swal.update({ html: renderRbacContent() });
+        };
+
+        window.searchRbacUser = (q) => {
+            userSearchQuery = q;
+            const container = document.querySelector('.rbac-user-list');
+            if (container) {
+                const filtered = adminUserList.filter(u => !q || u.username.toLowerCase().includes(q.toLowerCase()));
+                container.innerHTML = filtered.map(u => `
+                    <div class="rbac-user-item ${selectedUser && selectedUser.username === u.username ? 'active' : ''}" 
+                        onclick="window.selectRbacUser('${u.username}')">
+                        <i class="fas fa-user-circle"></i>
+                        <span>${u.username}</span>
+                        <small>${u.group || 'Grup Yok'}</small>
+                    </div>
+                `).join('');
+            }
+        };
+
+        window.toggleRbacPerm = (id, resource, val) => {
+            const idx = allRolePermissions.findIndex(p => p.role === id && p.resource === resource);
             if (idx > -1) {
                 allRolePermissions[idx].value = val;
             } else {
-                allRolePermissions.push({ role, resource, permission: "All", value: val });
+                allRolePermissions.push({ role: id, resource: resource, permission: "All", value: val });
+            }
+            if (rbacMode === 'users') {
+                Swal.update({ html: renderRbacContent() });
             }
         };
 
         Swal.fire({
-            title: "🛡️ Gelişmiş Yetki Yönetimi",
-            html: renderRbacContent(0),
-            width: 800,
+            title: "🛡️ Yetki Yönetimi",
+            html: renderRbacContent(),
+            width: 850,
             showCancelButton: true,
             cancelButtonText: "Vazgeç",
             confirmButtonText: "Değişiklikleri Kaydet",
             confirmButtonColor: "var(--success)",
             preConfirm: async () => {
-                const results = [];
-                roles.forEach(r => {
-                    const rPerms = allRolePermissions.filter(p => p.role === r).map(p => ({
-                        resource: p.resource,
-                        permission: p.permission || "All",
-                        value: p.value
-                    }));
-                    results.push({ role: r, perms: rPerms });
-                });
-
                 try {
                     Swal.showLoading();
-                    for (const resObj of results) {
-                        await apiCall("setRolePermissions", resObj);
+                    const uniqueRoles = [...new Set(allRolePermissions.map(p => p.role))];
+                    for (const r of uniqueRoles) {
+                        const rPerms = allRolePermissions.filter(p => p.role === r).map(p => ({
+                            resource: p.resource,
+                            permission: p.permission || "All",
+                            value: p.value
+                        }));
+                        await apiCall("setRolePermissions", { role: r, perms: rPerms });
                     }
                     return true;
                 } catch (e) {
@@ -8492,7 +8547,8 @@ async function openMenuPermissions() {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire("Başarılı", "Tüm yetkiler güncellendi. Kullanıcıların etkilenmesi için sayfayı yenilemeleri gerekebilir.", "success");
+                Swal.fire("Başarılı", "Tüm yetkiler güncellendi.", "success");
+                loadPermissionsOnStartup();
             }
         });
 
